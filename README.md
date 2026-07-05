@@ -35,7 +35,10 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **Drivers** — desired speed, per-car speed spread, time headway (following
     distance), minimum gap, acceleration, comfortable braking
   - **Lane changing** — politeness, incentive threshold, safety braking limit
-  - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each exit
+  - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each exit.
+    The map label at each ramp shows its *measured* flow over the last minute:
+    on-ramps show achieved vs. requested (they fall behind when the merge queue
+    backs up), exits show what their share % currently amounts to in cars/min.
   - **View** — color cars by speed (red = stopped → green = at desired speed) or
     give each car a fixed color; overhead vs. perspective camera
 

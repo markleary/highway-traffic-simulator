@@ -53,6 +53,7 @@ export class SceneRenderer {
     this.scene.add(ground);
 
     this.roadGroup = null;
+    this.rampFlowEls = {};
     this.buildRoad();
     this.buildRamps();
     this.buildCars();
@@ -135,7 +136,13 @@ export class SceneRenderer {
       // Label at the ramp's outer end, nudged past the pavement.
       const el = document.createElement('div');
       el.className = `map-label ${ramp.type}`;
-      el.textContent = ramp.label;
+      const name = document.createElement('div');
+      name.textContent = ramp.label;
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      sub.textContent = '—';
+      el.append(name, sub);
+      this.rampFlowEls[ramp.id] = sub;
       const atStart = ramp.type === 'on'; // on-ramps enter at u=0, exits leave at u=1
       const anchor = ramp.curve.getPointAt(atStart ? 0 : 1);
       const dir = ramp.curve.getTangentAt(atStart ? 0 : 1);
@@ -204,6 +211,20 @@ export class SceneRenderer {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
+  }
+
+  // Measured vs. requested flow, so it's visible when a ramp can't keep up
+  // (queue backing up) or how much traffic an exit share amounts to.
+  updateRampLabels(flows) {
+    for (const ramp of RAMPS) {
+      const el = this.rampFlowEls[ramp.id];
+      if (!el) continue;
+      const measured = flows[ramp.id].toFixed(1);
+      el.textContent =
+        ramp.type === 'on'
+          ? `${measured} of ${params[ramp.rateKey]} /min`
+          : `${measured}/min (${params[ramp.rateKey]}%)`;
+    }
   }
 
   // The view target sits east of the loop's center so the scene shifts left

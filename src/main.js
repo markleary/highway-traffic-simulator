@@ -51,6 +51,7 @@ const el = {
 };
 setInterval(() => {
   const s = sim.stats();
+  renderer.updateRampLabels(sim.rampFlows());
   el.cars.textContent = s.count;
   el.speed.textContent =
     params.units === 'imperial'

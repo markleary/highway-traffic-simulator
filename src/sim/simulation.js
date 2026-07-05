@@ -56,7 +56,8 @@ export class Simulation {
     this.time = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
-    for (const ramp of RAMPS) this.rampState.set(ramp.id, { cars: [], credit: 0 });
+    // per-ramp event timestamps (merges / exits) for measured-flow readouts
+    for (const ramp of RAMPS) this.rampState.set(ramp.id, { cars: [], credit: 0, flowTimes: [] });
 
     const lanes = params.lanes;
     const perLane = Math.floor(params.initialCars / lanes);
@@ -146,6 +147,20 @@ export class Simulation {
     this.despawnExited();
     this.spawnFromRamps(h);
     while (this.flowTimes.length && this.flowTimes[0] < this.time - 60) this.flowTimes.shift();
+    for (const st of this.rampState.values()) {
+      while (st.flowTimes.length && st.flowTimes[0] < this.time - 60) st.flowTimes.shift();
+    }
+  }
+
+  // Measured throughput of each ramp (cars/min over the last minute).
+  rampFlows() {
+    const window = Math.min(this.time, 60);
+    const flows = {};
+    for (const ramp of RAMPS) {
+      const st = this.rampState.get(ramp.id);
+      flows[ramp.id] = window > 5 ? st.flowTimes.length * (60 / window) : 0;
+    }
+    return flows;
   }
 
   accelMainline(arrs) {
@@ -310,7 +325,9 @@ export class Simulation {
             car.ramp = ramp;
             car.rampPos = forwardDist(ramp.sDiverge, car.s);
             car.exitRamp = null;
-            this.rampState.get(ramp.id).cars.push(car);
+            const st = this.rampState.get(ramp.id);
+            st.cars.push(car);
+            st.flowTimes.push(this.time);
           } else {
             car.exitRamp = null; // missed the exit; carry on around the loop
           }
@@ -365,6 +382,7 @@ export class Simulation {
         car.ramp = null;
         car.lcCooldown = 3;
         insertSorted(lane0, car);
+        st.flowTimes.push(this.time);
         this.counters.merged++;
       }
     }
