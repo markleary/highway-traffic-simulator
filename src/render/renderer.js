@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { ROAD, RAMPS, pointAt, forwardAt } from '../sim/road.js';
 import { params } from '../params.js';
 
@@ -13,6 +14,14 @@ export class SceneRenderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
 
+    // DOM overlay for map labels: crisp, constant screen size at any zoom
+    this.labelRenderer = new CSS2DRenderer();
+    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    this.labelRenderer.domElement.style.position = 'absolute';
+    this.labelRenderer.domElement.style.top = '0';
+    this.labelRenderer.domElement.style.pointerEvents = 'none';
+    container.appendChild(this.labelRenderer.domElement);
+
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(BG);
     this.scene.fog = new THREE.Fog(BG, 800, 2000);
@@ -23,13 +32,13 @@ export class SceneRenderer {
       1,
       3000
     );
-    this.setDefaultView();
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI * 0.49;
     this.controls.minDistance = 40;
     this.controls.maxDistance = 1400;
+    this.setDefaultView(); // after controls exist, so the view target sticks
 
     this.scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x36462f, 0.9));
     const sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
@@ -122,6 +131,20 @@ export class SceneRenderer {
       this.scene.add(rampEdgeLine(ramp.curve, 2.7, lineMat, 0, 1));
       if (ramp.type === 'on') this.scene.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0, 0.55));
       else this.scene.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0.45, 1));
+
+      // Label at the ramp's outer end, nudged past the pavement.
+      const el = document.createElement('div');
+      el.className = `map-label ${ramp.type}`;
+      el.textContent = ramp.label;
+      const atStart = ramp.type === 'on'; // on-ramps enter at u=0, exits leave at u=1
+      const anchor = ramp.curve.getPointAt(atStart ? 0 : 1);
+      const dir = ramp.curve.getTangentAt(atStart ? 0 : 1);
+      if (atStart) dir.negate();
+      anchor.addScaledVector(dir, 16);
+      anchor.y = 2;
+      const labelObj = new CSS2DObject(el);
+      labelObj.position.copy(anchor);
+      this.scene.add(labelObj);
     }
   }
 
@@ -180,24 +203,29 @@ export class SceneRenderer {
   render() {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
   }
 
+  // The view target sits east of the loop's center so the scene shifts left
+  // on screen, keeping interchange A and its labels clear of the control
+  // panel that occupies the right edge.
   setDefaultView() {
-    this.camera.position.set(0, 250, 380);
-    this.camera.lookAt(0, 0, 0);
-    if (this.controls) this.controls.target.set(0, 0, 0);
+    this.camera.position.set(100, 270, 405);
+    this.camera.lookAt(100, 0, 0);
+    if (this.controls) this.controls.target.set(100, 0, 0);
   }
 
   setTopView() {
-    this.camera.position.set(0, 640, 0.1);
-    this.camera.lookAt(0, 0, 0);
-    this.controls.target.set(0, 0, 0);
+    this.camera.position.set(100, 660, 0.1);
+    this.camera.lookAt(100, 0, 0);
+    this.controls.target.set(100, 0, 0);
   }
 
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
   }
 }
 

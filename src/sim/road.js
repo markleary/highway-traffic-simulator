@@ -54,7 +54,7 @@ function outwardAt(s, target = new THREE.Vector3()) {
   return target.set(Math.cos(th), 0, Math.sin(th));
 }
 
-function makeOnRamp(id, rateKey, sJoin) {
+function makeOnRamp(id, rateKey, label, sJoin) {
   const J = pointAt(sJoin);
   const F = forwardAt(sJoin);
   const O = outwardAt(sJoin);
@@ -65,6 +65,7 @@ function makeOnRamp(id, rateKey, sJoin) {
   return {
     id,
     rateKey,     // params key holding this ramp's inflow (cars/min)
+    label,       // shown on the map, matches the panel's slider names
     type: 'on',
     sJoin,
     curve,       // runs entry → merge point
@@ -73,7 +74,7 @@ function makeOnRamp(id, rateKey, sJoin) {
   };
 }
 
-function makeOffRamp(id, rateKey, sDiverge) {
+function makeOffRamp(id, rateKey, label, sDiverge) {
   const D = pointAt(sDiverge);
   const F = forwardAt(sDiverge);
   const O = outwardAt(sDiverge);
@@ -85,6 +86,7 @@ function makeOffRamp(id, rateKey, sDiverge) {
   return {
     id,
     rateKey,     // params key holding this ramp's exit share (%)
+    label,       // shown on the map, matches the panel's slider names
     type: 'off',
     sDiverge,
     decideS: wrap(sDiverge - decideDist),
@@ -98,8 +100,8 @@ function makeOffRamp(id, rateKey, sDiverge) {
 // Diverge/join points are spaced so the two ramps of an interchange never
 // cross: the off-ramp fully clears the corridor before the on-ramp enters it.
 export const RAMPS = [
-  makeOffRamp('offA', 'offRampA', 0.04 * LOOP),
-  makeOnRamp('onA', 'onRampA', 0.24 * LOOP),
-  makeOffRamp('offB', 'offRampB', 0.54 * LOOP),
-  makeOnRamp('onB', 'onRampB', 0.74 * LOOP),
+  makeOffRamp('offA', 'offRampA', 'Exit A', 0.04 * LOOP),
+  makeOnRamp('onA', 'onRampA', 'On-ramp A', 0.24 * LOOP),
+  makeOffRamp('offB', 'offRampB', 'Exit B', 0.54 * LOOP),
+  makeOnRamp('onB', 'onRampB', 'On-ramp B', 0.74 * LOOP),
 ];

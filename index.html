@@ -25,6 +25,14 @@
     }
     .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-top: 4px; }
     .hint { right: 12px; bottom: 12px; font-size: 11px; color: #9fb0c0; }
+    .map-label {
+      color: #dbe4ee; background: rgba(10, 16, 14, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px;
+      padding: 1px 7px; font-size: 11px; white-space: nowrap;
+      pointer-events: none; user-select: none;
+    }
+    .map-label.on { border-left: 3px solid #7ec8a0; }
+    .map-label.off { border-left: 3px solid #d9b64a; }
   </style>
 </head>
 <body>
