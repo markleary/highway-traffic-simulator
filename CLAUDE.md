@@ -39,7 +39,11 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Model & conventions
 
-- SI units internally (m, s, m/s²); the UI shows km/h. `KMH = 1/3.6` converts.
+- SI units internally (m, s, m/s, m/s²) — everything in `params` is SI. Units are
+  a display-only concern: `params.units` ('imperial' default | 'metric') drives the
+  HUD formatting and the panel, which binds unit-labeled sliders to a proxy object
+  and writes converted SI back (see `panel.js`; toggling units rebuilds the panel).
+  Conversion factors (`KMH`, `MPH`, `FT`) live in `params.js`.
 - Longitudinal control: **IDM** (Intelligent Driver Model). Lane changes:
   simplified **MOBIL** (incentive + safety criterion, mild keep-right bias, forced
   drift toward lane 0 when the car has chosen an upcoming exit).

@@ -1,5 +1,5 @@
 import { LOOP, RAMPS, ROAD, R_REF, wrap, forwardDist } from './road.js';
-import { params, KMH } from '../params.js';
+import { params } from '../params.js';
 import { Car } from './car.js';
 
 // Intelligent Driver Model. Returns acceleration in m/s².
@@ -82,7 +82,7 @@ export class Simulation {
   }
 
   v0(car) {
-    return params.desiredSpeedKmh * KMH * car.v0Factor;
+    return params.desiredSpeed * car.v0Factor;
   }
 
   // Desired speed, reduced when the car is heading for an exit: it slows to
@@ -92,7 +92,7 @@ export class Simulation {
     let v0 = this.v0(car);
     if (car.exitRamp) {
       const dist = forwardDist(car.s, car.exitRamp.sDiverge);
-      const rampV0 = params.rampSpeedKmh * KMH;
+      const rampV0 = params.rampSpeed;
       if (car.lane === 0 && dist < 130) {
         v0 = Math.min(v0, rampV0 + ((v0 - rampV0) * dist) / 130);
       } else if (car.lane > 0 && dist < 250) {
@@ -161,7 +161,7 @@ export class Simulation {
 
   accelRamps(lane0) {
     const p = params;
-    const rampV0 = p.rampSpeedKmh * KMH;
+    const rampV0 = p.rampSpeed;
     for (const ramp of RAMPS) {
       const st = this.rampState.get(ramp.id);
       st.cars.sort((a, b) => a.rampPos - b.rampPos);
@@ -417,7 +417,7 @@ export class Simulation {
     const window = Math.min(this.time, 60);
     return {
       count: this.cars.length,
-      avgSpeedKmh: n ? (sum / n) / KMH : 0,
+      avgSpeed: n ? sum / n : 0, // m/s; display layer converts
       flowPerMin: window > 5 ? this.flowTimes.length * (60 / window) : 0,
       ...this.counters,
     };

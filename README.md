@@ -29,6 +29,7 @@ branch → `main` / root**. That's it — there is nothing to build.
 
 - **Drag** to orbit, **scroll** to zoom, **Space** to pause.
 - The panel (top right) changes the simulation live:
+  - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
   - **Road** — number of lanes (2–4)
   - **Drivers** — desired speed, per-car speed spread, time headway (following

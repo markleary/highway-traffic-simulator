@@ -1,6 +1,6 @@
 // Headless sanity check of the traffic model: runs the simulation under a few
 // parameter regimes and asserts basic physical plausibility. No browser needed.
-import { params } from '../src/params.js';
+import { params, KMH } from '../src/params.js';
 import { Simulation } from '../src/sim/simulation.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
@@ -39,7 +39,7 @@ function run(label, overrides, seconds, checks) {
 run('default regime, 120 sim-seconds', {}, 120, (sim) => {
   const s = sim.stats();
   check('cars remain on the road', s.count > 20, `(count=${s.count})`);
-  check('traffic is moving', s.avgSpeedKmh > 20, `(avg=${s.avgSpeedKmh.toFixed(1)} km/h)`);
+  check('traffic is moving', s.avgSpeed > 6, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
   check('on-ramp cars entered', s.entered > 5, `(entered=${s.entered})`);
   check('ramp cars merged onto mainline', s.merged > 3, `(merged=${s.merged})`);
   check('cars exited via off-ramps', s.exited > 2, `(exited=${s.exited})`);
@@ -51,7 +51,7 @@ run('flood: heavy inflow, no exits → jam builds', { onRampA: 35, onRampB: 35, 
   const s = sim.stats();
   check('car count grew well past seed', s.count > 160, `(count=${s.count})`);
   check('nobody exited', s.exited === 0, `(exited=${s.exited})`);
-  check('congestion slowed traffic', s.avgSpeedKmh < 95, `(avg=${s.avgSpeedKmh.toFixed(1)})`);
+  check('congestion slowed traffic', s.avgSpeed < 26.5, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
 });
 
 run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, offRampA: 45, offRampB: 45, initialCars: 120 }, 240, (sim) => {
@@ -64,7 +64,7 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
 
-run('aggressive tailgating params stay stable', { timeHeadway: 0.6, minGap: 0.5, desiredSpeedKmh: 140 }, 90, (sim) => {
+run('aggressive tailgating params stay stable', { timeHeadway: 0.6, minGap: 0.5, desiredSpeed: 140 * KMH }, 90, (sim) => {
   const s = sim.stats();
   check('cars remain on the road', s.count > 20, `(count=${s.count})`);
 });

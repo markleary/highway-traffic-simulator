@@ -1,4 +1,8 @@
+// Unit conversions — factor × display-unit = SI. All values in `params` are
+// SI (m, s, m/s, m/s²); units only exist at the display layer (panel + HUD).
 export const KMH = 1 / 3.6; // km/h → m/s
+export const MPH = 0.44704; // mph → m/s
+export const FT = 0.3048;   // ft → m (and ft/s² → m/s²)
 
 // Every live-tunable knob lives here. The GUI mutates this object directly and
 // the simulation reads it on every step, so changes take effect immediately.
@@ -7,16 +11,20 @@ export const params = {
   paused: false,
   timeScale: 1.0,
 
+  // display
+  units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
+  colorMode: 'speed', // 'speed' | 'random'
+
   // road
   lanes: 3,
 
   // driver model (IDM)
-  desiredSpeedKmh: 110,
-  speedVariation: 0.15, // per-car spread around desired speed (fraction, at spawn)
-  timeHeadway: 1.4,     // s — "following distance" in time
-  minGap: 2.0,          // m — bumper-to-bumper gap when stopped
-  maxAccel: 1.4,        // m/s²
-  comfortBrake: 2.0,    // m/s²
+  desiredSpeed: 70 * MPH, // m/s
+  speedVariation: 0.15,   // per-car spread around desired speed (fraction, at spawn)
+  timeHeadway: 1.4,       // s — "following distance" in time
+  minGap: 2.0,            // m — bumper-to-bumper gap when stopped
+  maxAccel: 1.4,          // m/s²
+  comfortBrake: 2.0,      // m/s²
 
   // lane changing (MOBIL-style)
   politeness: 0.3,          // how much a car weighs the follower it cuts off
@@ -31,8 +39,5 @@ export const params = {
   onRampB: 8,
   offRampA: 6,
   offRampB: 6,
-  rampSpeedKmh: 65,
-
-  // rendering
-  colorMode: 'speed', // 'speed' | 'random'
+  rampSpeed: 40 * MPH, // m/s
 };

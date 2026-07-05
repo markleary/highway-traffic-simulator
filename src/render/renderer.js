@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ROAD, RAMPS, pointAt, forwardAt } from '../sim/road.js';
-import { params, KMH } from '../params.js';
+import { params } from '../params.js';
 
 const MAX_CARS = 1500;
 const BG = 0x0e1512;
@@ -140,7 +140,7 @@ export class SceneRenderer {
 
   update(cars) {
     const n = Math.min(cars.length, MAX_CARS);
-    const desired = params.desiredSpeedKmh * KMH;
+    const desired = params.desiredSpeed;
     for (let i = 0; i < n; i++) {
       const car = cars[i];
       let rotY;

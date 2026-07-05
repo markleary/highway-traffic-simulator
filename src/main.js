@@ -1,4 +1,4 @@
-import { params } from './params.js';
+import { params, KMH, MPH } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
@@ -52,7 +52,10 @@ const el = {
 setInterval(() => {
   const s = sim.stats();
   el.cars.textContent = s.count;
-  el.speed.textContent = `${s.avgSpeedKmh.toFixed(0)} km/h`;
+  el.speed.textContent =
+    params.units === 'imperial'
+      ? `${(s.avgSpeed / MPH).toFixed(0)} mph`
+      : `${(s.avgSpeed / KMH).toFixed(0)} km/h`;
   el.flow.textContent = `${s.flowPerMin.toFixed(1)} cars/min`;
   el.inout.textContent = `${s.entered} / ${s.exited}`;
   const m = Math.floor(sim.time / 60);
