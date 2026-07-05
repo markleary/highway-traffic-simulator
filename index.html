@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Highway Traffic Simulator</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1512; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #app { position: fixed; inset: 0; }
+    .panel {
+      position: fixed; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
+      padding: 10px 14px; backdrop-filter: blur(6px);
+      pointer-events: none; user-select: none;
+    }
+    .hud { left: 12px; top: 12px; font-size: 13px; line-height: 1.55; min-width: 190px; }
+    .hud h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; letter-spacing: 0.02em; }
+    .hud .row { display: flex; justify-content: space-between; gap: 18px; }
+    .hud .row span:last-child { font-variant-numeric: tabular-nums; color: #fff; }
+    .legend { left: 12px; bottom: 12px; }
+    .legend .bar {
+      height: 8px; width: 180px; border-radius: 4px;
+      background: linear-gradient(to right, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%));
+    }
+    .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-top: 4px; }
+    .hint { right: 12px; bottom: 12px; font-size: 11px; color: #9fb0c0; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="panel hud">
+    <h1>Highway Traffic Simulator</h1>
+    <div class="row"><span>Cars on road</span><span id="stat-cars">–</span></div>
+    <div class="row"><span>Average speed</span><span id="stat-speed">–</span></div>
+    <div class="row"><span>Flow past start</span><span id="stat-flow">–</span></div>
+    <div class="row"><span>Entered / exited</span><span id="stat-inout">–</span></div>
+    <div class="row"><span>Sim time</span><span id="stat-time">–</span></div>
+  </div>
+
+  <div class="panel legend">
+    <div class="bar"></div>
+    <div class="labels"><span>stopped</span><span>desired speed</span></div>
+  </div>
+
+  <div class="panel hint">drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause</div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+        "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/+esm"
+      }
+    }
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

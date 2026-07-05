@@ -1,0 +1,12 @@
+{
+  "name": "traffic-simulator",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling only — the app itself is static and loads three.js from a CDN import map in index.html. Keep the three version here in sync with that import map.",
+  "scripts": {
+    "test": "node test/smoke.js"
+  },
+  "devDependencies": {
+    "three": "0.170.0"
+  }
+}
