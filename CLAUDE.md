@@ -93,9 +93,14 @@ test/smoke.js          runs the sim headless under several parameter regimes
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
+- Vehicle kinds: `car.kind` is 'car' or 'truck' (share set by the Trucks knob at
+  spawn/reset). Trucks are 16.5 m, ~20% slower with less spread, and scale the
+  global IDM knobs via per-car factors (`accelK`/`headwayK`/`brakeK` — see
+  `idm(car, …)`). They need 2.5× the lane-change incentive and never enter the
+  innermost lane on 3+ lane roads.
 
 ## Roadmap
 
 - Space-time diagram (position × time heatmap; jam waves appear as diagonal stripes)
-- Ramp metering signals; trucks (slower, longer, rarer lane changes)
+- Ramp metering signals (deprioritized: not used around Boston, foreign concept to Mark)
 - More road shapes than a circle

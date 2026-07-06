@@ -5,6 +5,7 @@ import { ROAD, RAMPS, pointAt, forwardAt } from '../sim/road.js';
 import { params } from '../params.js';
 
 const MAX_CARS = 1500;
+const MAX_TRUCKS = 400;
 const BG = 0x0e1512;
 
 export class SceneRenderer {
@@ -202,12 +203,18 @@ export class SceneRenderer {
   }
 
   buildCars() {
+    const mat = () => new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.25 });
+    // passenger cars: body + cabin
     const bodyGeo = new THREE.BoxGeometry(1.9, 1.15, 4.55).translate(0, 0.85, 0);
     const cabinGeo = new THREE.BoxGeometry(1.65, 0.72, 2.3).translate(0, 1.68, -0.25);
-    const mat = () => new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.25 });
     this.body = new THREE.InstancedMesh(bodyGeo, mat(), MAX_CARS);
     this.cabin = new THREE.InstancedMesh(cabinGeo, mat(), MAX_CARS);
-    for (const m of [this.body, this.cabin]) {
+    // semi trucks: trailer (rear-biased) + tractor cab at the front
+    const trailerGeo = new THREE.BoxGeometry(2.45, 3.1, 11.8).translate(0, 1.85, -1.85);
+    const cabGeo = new THREE.BoxGeometry(2.35, 2.7, 3.8).translate(0, 1.55, 6.3);
+    this.trailer = new THREE.InstancedMesh(trailerGeo, mat(), MAX_TRUCKS);
+    this.cab = new THREE.InstancedMesh(cabGeo, mat(), MAX_TRUCKS);
+    for (const m of [this.body, this.cabin, this.trailer, this.cab]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       this.scene.add(m);
@@ -215,19 +222,19 @@ export class SceneRenderer {
   }
 
   update(cars) {
-    const n = Math.min(cars.length, MAX_CARS);
     const desired = params.desiredSpeed;
     const blinkOn = Math.floor(performance.now() / 400) % 2 === 0; // hazard flashers
-    for (let i = 0; i < n; i++) {
-      const car = cars[i];
+    let ci = 0; // next free car instance
+    let ti = 0; // next free truck instance
+    for (const car of cars) {
+      const truck = car.kind === 'truck';
+      if (truck ? ti >= MAX_TRUCKS : ci >= MAX_CARS) continue;
       this.carPose(car, this._pos, this._tan);
       let rotY = Math.atan2(this._tan.x, this._tan.z);
       if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
       this._dummy.position.set(this._pos.x, 0, this._pos.z);
       this._dummy.rotation.set(0, rotY, 0);
       this._dummy.updateMatrix();
-      this.body.setMatrixAt(i, this._dummy.matrix);
-      this.cabin.setMatrixAt(i, this._dummy.matrix);
 
       if (car.incident) {
         this._bodyColor.set(blinkOn ? 0xffa726 : 0x5c3a12); // amber hazards
@@ -237,15 +244,30 @@ export class SceneRenderer {
       } else {
         this._bodyColor.setHSL(car.hue, 0.65, 0.55);
       }
-      this.body.setColorAt(i, this._bodyColor);
-      this.cabin.setColorAt(i, this._cabinColor.copy(this._bodyColor).multiplyScalar(0.45));
+      this._cabinColor.copy(this._bodyColor).multiplyScalar(0.45);
+
+      if (truck) {
+        this.trailer.setMatrixAt(ti, this._dummy.matrix);
+        this.cab.setMatrixAt(ti, this._dummy.matrix);
+        this.trailer.setColorAt(ti, this._bodyColor);
+        this.cab.setColorAt(ti, this._cabinColor);
+        ti++;
+      } else {
+        this.body.setMatrixAt(ci, this._dummy.matrix);
+        this.cabin.setMatrixAt(ci, this._dummy.matrix);
+        this.body.setColorAt(ci, this._bodyColor);
+        this.cabin.setColorAt(ci, this._cabinColor);
+        ci++;
+      }
     }
-    this.body.count = n;
-    this.cabin.count = n;
-    this.body.instanceMatrix.needsUpdate = true;
-    this.cabin.instanceMatrix.needsUpdate = true;
-    if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
-    if (this.cabin.instanceColor) this.cabin.instanceColor.needsUpdate = true;
+    this.body.count = ci;
+    this.cabin.count = ci;
+    this.trailer.count = ti;
+    this.cab.count = ti;
+    for (const m of [this.body, this.cabin, this.trailer, this.cab]) {
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
   }
 
   // World position and travel direction of a car, whatever it is doing.
@@ -280,8 +302,12 @@ export class SceneRenderer {
 
   chaseGoals(posOut, aimOut) {
     this.carPose(this.chaseCar, this._pos, this._tan);
-    posOut.copy(this._pos).addScaledVector(this._tan, -14);
-    posOut.y += 6;
+    // hang further back (and higher) behind long vehicles so they don't fill
+    // the whole frame
+    const back = 14 + Math.max(0, this.chaseCar.len - 4.6);
+    const up = this.chaseCar.kind === 'truck' ? 8.5 : 6;
+    posOut.copy(this._pos).addScaledVector(this._tan, -back);
+    posOut.y += up;
     aimOut.copy(this._pos).addScaledVector(this._tan, 16);
     aimOut.y += 1.5;
   }

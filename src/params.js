@@ -19,6 +19,9 @@ export const params = {
   // road
   lanes: 3,
 
+  // traffic mix
+  truckShare: 10, // % of vehicles that are semi trucks (new spawns / reset)
+
   // driver model (IDM)
   desiredSpeed: 70 * MPH, // m/s
   speedVariation: 0.15,   // per-car spread around desired speed (fraction, at spawn)

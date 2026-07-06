@@ -119,6 +119,21 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   assertSane(sim, 'breakdown scenario');
 }
 
+run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
+  const trucks = sim.cars.filter((c) => c.kind === 'truck');
+  check('trucks present', trucks.length > 3, `(${trucks.length})`);
+  check(
+    'trucks are long and speed-limited',
+    trucks.every((t) => t.len > 10 && t.v0Factor < 0.95),
+    `(worst v0Factor=${trucks.length ? Math.max(...trucks.map((t) => t.v0Factor)).toFixed(2) : '-'})`
+  );
+  check(
+    'no truck in the leftmost lane',
+    trucks.filter((t) => t.state === 'main').every((t) => t.lane < params.lanes - 1)
+  );
+  check('traffic still flows with trucks', sim.stats().avgSpeed > 4, `(${sim.stats().avgSpeed.toFixed(1)} m/s)`);
+});
+
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
 
