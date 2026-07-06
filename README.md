@@ -44,7 +44,9 @@ branch → `main` / root**. That's it — there is nothing to build.
     on-ramps show achieved vs. requested (they fall behind when the merge queue
     backs up), exits show what their share % currently amounts to in cars/min.
   - **View** — color cars by speed (red = stopped → green = at desired speed) or
-    give each car a fixed color; overhead vs. perspective camera
+    give each car a fixed color; overhead vs. perspective camera; live charts
+    toggle; and a **chase camera** that rides along behind a random car with a
+    working speedometer (Esc to exit)
 
 Try it: crank both on-ramps to 30+ cars/min with exits low and watch the jam grow
 backwards from the merge points. Or lower the time headway to 0.6 s and see how
@@ -61,5 +63,5 @@ work their way to the outer lane in time. Everything is rendered with three.js
 
 ## Roadmap
 
-- Live flow/density/speed charts and a space-time diagram
-- Chase camera, ramp metering, trucks
+- A space-time diagram (jam waves as diagonal stripes)
+- Ramp metering, trucks, more road shapes than a circle

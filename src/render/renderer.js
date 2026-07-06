@@ -66,6 +66,13 @@ export class SceneRenderer {
     this._raycaster = new THREE.Raycaster();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+    // chase camera state
+    this.chaseCar = null;
+    this._chasePos = new THREE.Vector3();
+    this._chaseAim = new THREE.Vector3();
+    this._v1 = new THREE.Vector3();
+    this._v2 = new THREE.Vector3();
+
     // Click detection (as opposed to an orbit drag): small movement, quick
     // release. main.js assigns onRoadClick to receive the ground-plane point.
     this.onRoadClick = null;
@@ -213,18 +220,9 @@ export class SceneRenderer {
     const blinkOn = Math.floor(performance.now() / 400) % 2 === 0; // hazard flashers
     for (let i = 0; i < n; i++) {
       const car = cars[i];
-      let rotY;
-      if (car.ramp) {
-        const u = THREE.MathUtils.clamp(car.rampPos / car.ramp.length, 0, 1);
-        car.ramp.curve.getPointAt(u, this._pos);
-        car.ramp.curve.getTangentAt(u, this._tan);
-        rotY = Math.atan2(this._tan.x, this._tan.z);
-      } else {
-        pointAt(car.s, -car.renderLane * ROAD.laneWidth, this._pos);
-        forwardAt(car.s, this._tan);
-        rotY = Math.atan2(this._tan.x, this._tan.z);
-        if (car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
-      }
+      this.carPose(car, this._pos, this._tan);
+      let rotY = Math.atan2(this._tan.x, this._tan.z);
+      if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
       this._dummy.position.set(this._pos.x, 0, this._pos.z);
       this._dummy.rotation.set(0, rotY, 0);
       this._dummy.updateMatrix();
@@ -250,8 +248,60 @@ export class SceneRenderer {
     if (this.cabin.instanceColor) this.cabin.instanceColor.needsUpdate = true;
   }
 
-  render() {
-    this.controls.update();
+  // World position and travel direction of a car, whatever it is doing.
+  carPose(car, pos, tan) {
+    if (car.ramp) {
+      const u = THREE.MathUtils.clamp(car.rampPos / car.ramp.length, 0, 1);
+      car.ramp.curve.getPointAt(u, pos);
+      car.ramp.curve.getTangentAt(u, tan);
+    } else {
+      pointAt(car.s, -car.renderLane * ROAD.laneWidth, pos);
+      forwardAt(car.s, tan);
+    }
+  }
+
+  startChase(car) {
+    if (!car) return;
+    const fresh = !this.chaseCar;
+    this.chaseCar = car;
+    this.controls.enabled = false;
+    if (fresh) {
+      // snap straight to the follow position instead of flying across the map
+      this.chaseGoals(this._chasePos, this._chaseAim);
+      this.camera.position.copy(this._chasePos);
+      this.camera.lookAt(this._chaseAim);
+    }
+  }
+
+  stopChase() {
+    this.chaseCar = null;
+    if (this.controls) this.controls.enabled = true;
+  }
+
+  chaseGoals(posOut, aimOut) {
+    this.carPose(this.chaseCar, this._pos, this._tan);
+    posOut.copy(this._pos).addScaledVector(this._tan, -14);
+    posOut.y += 6;
+    aimOut.copy(this._pos).addScaledVector(this._tan, 16);
+    aimOut.y += 1.5;
+  }
+
+  render(dt = 1 / 60) {
+    if (this.chaseCar) {
+      this.chaseGoals(this._v1, this._v2);
+      // Ease in *simulation* time so the camera keeps pace with the car at
+      // any time scale (the car covers dt × timeScale of world distance per
+      // real frame); fall back to wall-clock while paused so the camera can
+      // still settle onto its static target.
+      const easeDt = params.paused ? dt : dt * params.timeScale;
+      const k = 1 - Math.exp(-5 * easeDt); // exponential smoothing, framerate-safe
+      this._chasePos.lerp(this._v1, k);
+      this._chaseAim.lerp(this._v2, Math.min(1, k * 1.5));
+      this.camera.position.copy(this._chasePos);
+      this.camera.lookAt(this._chaseAim);
+    } else {
+      this.controls.update();
+    }
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
   }
@@ -274,12 +324,14 @@ export class SceneRenderer {
   // on screen, keeping interchange A and its labels clear of the control
   // panel that occupies the right edge.
   setDefaultView() {
+    this.stopChase();
     this.camera.position.set(100, 270, 405);
     this.camera.lookAt(100, 0, 0);
     if (this.controls) this.controls.target.set(100, 0, 0);
   }
 
   setTopView() {
+    this.stopChase();
     this.camera.position.set(100, 660, 0.1);
     this.camera.lookAt(100, 0, 0);
     this.controls.target.set(100, 0, 0);
