@@ -22,6 +22,14 @@ open http://localhost:8000
 
 Headless physics check (no browser needed): `npm install && npm test`
 
+## Workflow
+
+- **Never commit directly to `main`.** Every change goes on a feature branch and
+  through a PR; PRs are reviewed by Codex before merge. GitHub Pages deploys
+  from `main`, so nothing is live until the PR merges.
+- Run `npm test` before opening a PR, and note any manual browser verification
+  in the PR description.
+
 ## Review guidelines
 
 - Treat changes that add a build step, bundler, framework, or Node-only runtime
