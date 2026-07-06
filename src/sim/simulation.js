@@ -74,23 +74,40 @@ export class Simulation {
     const lanes = params.lanes;
     const perLane = Math.floor(params.initialCars / lanes);
     const extra = params.initialCars - perLane * lanes;
+    const lenOf = (k) => (k === 'truck' ? 16.5 : 4.6);
+    const need = (k) => lenOf(k) + params.minGap + 1; // slot: own length + safe gap
     for (let l = 0; l < lanes; l++) {
       const count = perLane + (l < extra ? 1 : 0);
       if (count === 0) continue;
-      const spacing = LOOP / count;
       // no trucks in the innermost lane (they avoid it, see applyLaneChanges)
-      // and none when seeding is too dense for their length
-      const truckOk = spacing > 24 && !(lanes >= 3 && l === lanes - 1);
-      for (let j = 0; j < count; j++) {
-        const kind = truckOk ? this.sampleKind() : 'car';
-        const car = new Car({
-          s: wrap(j * spacing + (Math.random() - 0.5) * spacing * 0.5),
-          lane: l,
-          v0Factor: this.sampleV0Factor(kind),
-          kind,
-        });
+      const truckOk = !(lanes >= 3 && l === lanes - 1);
+      // Choose kinds first, then pack: every vehicle gets its required slot
+      // and the leftover road is dealt out as randomized extra gaps, so seeds
+      // can never overlap at any density or mix. If the lane can't fit the
+      // mix, trucks downgrade to cars; if it can't even fit the cars, the
+      // lane seeds fewer vehicles than requested.
+      const kinds = [];
+      for (let j = 0; j < count; j++) kinds.push(truckOk ? this.sampleKind() : 'car');
+      let totalReq = kinds.reduce((sum, k) => sum + need(k), 0);
+      for (let j = 0; totalReq > LOOP && j < kinds.length; j++) {
+        if (kinds[j] === 'truck') {
+          totalReq -= need('truck') - need('car');
+          kinds[j] = 'car';
+        }
+      }
+      while (totalReq > LOOP && kinds.length) totalReq -= need(kinds.pop());
+      const slack = LOOP - totalReq;
+      const weights = kinds.map(() => 0.2 + Math.random());
+      const wSum = weights.reduce((a, b) => a + b, 0);
+      let s = Math.random() * LOOP;
+      for (let j = 0; j < kinds.length; j++) {
+        const kind = kinds[j];
+        const car = new Car({ s: wrap(s), lane: l, v0Factor: this.sampleV0Factor(kind), kind });
         car.v = this.v0(car) * 0.85;
         this.cars.push(car);
+        // advance by the NEXT vehicle's slot so its length fits behind it,
+        // plus this slot's share of the slack
+        s += need(kinds[(j + 1) % kinds.length]) + (slack * weights[j]) / wSum;
       }
     }
   }

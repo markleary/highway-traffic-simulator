@@ -2,6 +2,7 @@
 // parameter regimes and asserts basic physical plausibility. No browser needed.
 import { params, KMH } from '../src/params.js';
 import { Simulation } from '../src/sim/simulation.js';
+import { LOOP, forwardDist } from '../src/sim/road.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -117,6 +118,27 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   check('breakdown resolved', sim.incidents.length === 0);
   check('car re-merged into traffic', remerged, `(final state=${bdCar.state})`);
   assertSane(sim, 'breakdown scenario');
+}
+
+{
+  console.log('\ndense seeding never overlaps (Codex review regression)');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 300, truckShare: 40 });
+  const sim = new Simulation();
+  let worstGap = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstGap = Math.min(worstGap, forwardDist(arr[i].s, leader.s) - leader.len);
+    }
+  }
+  check(
+    'no overlapped seeds at max density + 40% trucks',
+    worstGap >= params.minGap - 1e-6,
+    `(worst gap=${worstGap.toFixed(2)} m over ${sim.cars.length} cars, LOOP=${LOOP.toFixed(0)})`
+  );
+  for (let i = 0; i < Math.round(10 / H); i++) sim.step(H);
+  assertSane(sim, 'dense seeding');
 }
 
 run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
