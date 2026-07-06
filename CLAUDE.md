@@ -55,6 +55,8 @@ src/sim/car.js         Car state record
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic
 src/render/renderer.js three.js scene; cars are two InstancedMeshes (body + cabin)
 src/ui/panel.js        lil-gui control panel
+src/ui/charts.js       rolling 5-min speed/flow charts (hand-rolled canvas 2D)
+src/ui/speedo.js       speedometer gauge shown while the chase camera is active
 test/smoke.js          runs the sim headless under several parameter regimes
 ```
 
@@ -94,7 +96,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Live charts: flow / density / speed over time, maybe a space-time diagram
-- Chase camera following a random car
+- Space-time diagram (position × time heatmap; jam waves appear as diagonal stripes)
 - Ramp metering signals; trucks (slower, longer, rarer lane changes)
 - More road shapes than a circle

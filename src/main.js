@@ -3,11 +3,13 @@ import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
 import { ChartPanel } from './ui/charts.js';
+import { Speedometer } from './ui/speedo.js';
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
 const charts = new ChartPanel();
+const speedo = new Speedometer();
 // Click a car (or the road right next to one) to crash it.
 renderer.onRoadClick = (point) => {
   const car = sim.carNear(point);
@@ -17,6 +19,7 @@ renderer.onRoadClick = (point) => {
 // console access for poking at the live simulation
 window.sim = sim;
 window.renderer = renderer;
+window.speedo = speedo;
 
 // Fixed-timestep physics: rendering runs at display rate, simulation always
 // steps in units of H seconds so behavior is identical at any frame rate.
@@ -37,8 +40,15 @@ function frame(now) {
     }
     if (steps === 30) acc = 0; // can't keep up; drop time instead of spiraling
   }
+  // if the chased car left the world (exited, or wreck cleared), follow another
+  if (renderer.chaseCar && !sim.cars.includes(renderer.chaseCar)) {
+    const next = sim.randomEligibleCar();
+    if (next) renderer.startChase(next);
+    else renderer.stopChase();
+  }
+  speedo.update(renderer.chaseCar);
   renderer.update(sim.cars);
-  renderer.render();
+  renderer.render(dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -48,6 +58,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     params.paused = !params.paused;
   }
+  if (e.code === 'Escape') renderer.stopChase();
 });
 
 const el = {

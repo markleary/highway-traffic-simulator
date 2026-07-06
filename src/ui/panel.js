@@ -188,6 +188,12 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     'By speed: red = stopped, green = at desired speed — jams pop out instantly. Per car: each car keeps a fixed random color, good for following individuals.'
   );
   tip(
+    fView
+      .add({ chase: () => renderer.startChase(sim.randomEligibleCar()) }, 'chase')
+      .name('🎥 Chase a car'),
+    'Ride along behind a random car, with a live speedometer. Press again to switch cars; Esc or either view button returns to the free camera.'
+  );
+  tip(
     fView.add({ top: () => renderer.setTopView() }, 'top').name('Overhead view'),
     'Look straight down at the whole loop.'
   );
