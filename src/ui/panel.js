@@ -178,6 +178,10 @@ function makeGui({ sim, renderer, onUnitsChange }) {
 
   const fView = gui.addFolder('View');
   tip(
+    fView.add(params, 'showCharts').name('Live charts'),
+    'Show rolling 5-minute charts of average speed and flow. Red bands mark stretches where an incident was active. Hover a chart to read off a past value.'
+  );
+  tip(
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'Per car': 'random' })
       .name('Car colors'),

@@ -14,6 +14,7 @@ export const params = {
   // display
   units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
   colorMode: 'speed', // 'speed' | 'random'
+  showCharts: true,
 
   // road
   lanes: 3,

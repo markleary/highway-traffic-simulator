@@ -2,10 +2,12 @@ import { params, KMH, MPH } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
+import { ChartPanel } from './ui/charts.js';
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
+const charts = new ChartPanel();
 // Click a car (or the road right next to one) to crash it.
 renderer.onRoadClick = (point) => {
   const car = sim.carNear(point);
@@ -58,6 +60,7 @@ const el = {
 setInterval(() => {
   const s = sim.stats();
   renderer.updateRampLabels(sim.rampFlows());
+  charts.update(sim.history);
   el.cars.textContent = s.count;
   el.speed.textContent =
     params.units === 'imperial'

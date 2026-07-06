@@ -33,6 +33,12 @@
     }
     .map-label.on { border-left: 3px solid #7ec8a0; }
     .map-label.off { border-left: 3px solid #d9b64a; }
+    .charts { left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px; }
+    .charts canvas { display: block; width: 320px; height: 56px; pointer-events: auto; }
+    .charts .chart + .chart { margin-top: 6px; }
+    .charts .chead { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-bottom: 2px; }
+    .charts .chead i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+    .charts .chead .cval { color: #fff; font-variant-numeric: tabular-nums; }
     .map-label .sub { font-size: 10px; color: #9fb0c0; font-variant-numeric: tabular-nums; }
   </style>
 </head>
