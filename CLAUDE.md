@@ -22,6 +22,19 @@ open http://localhost:8000
 
 Headless physics check (no browser needed): `npm install && npm test`
 
+## Review guidelines
+
+- Treat changes that add a build step, bundler, framework, or Node-only runtime
+  dependency in `src/` as high-priority regressions.
+- Check that CDN import-map versions in `index.html` stay in sync with
+  `package.json` when runtime dependencies change.
+- For simulation changes, verify SI-unit conventions, lane numbering, ramp
+  geometry, wrapped `s` coordinates, and no-overlap/stability behavior.
+- For rendering/UI changes, confirm the app still runs as static GitHub Pages
+  content and that controls update `params` live.
+- Expect `npm test` to pass for PRs that touch `src/sim/`, `src/params.js`, or
+  traffic-control behavior.
+
 ## Architecture
 
 ```
