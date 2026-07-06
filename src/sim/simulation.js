@@ -1,6 +1,13 @@
 import { LOOP, RAMPS, ROAD, R_REF, SHOULDER_LANE, wrap, forwardDist, pointAt } from './road.js';
 import { params } from '../params.js';
-import { Car } from './car.js';
+import { Car, VEHICLE_LEN } from './car.js';
+
+// Positions are vehicle CENTERS (that is where the meshes are drawn), so a
+// bumper-to-bumper gap must shed half of BOTH vehicles' lengths. With uniform
+// lengths subtracting one full length was equivalent; with trucks it is not.
+function halfLens(a, b) {
+  return (a.len + b.len) / 2;
+}
 
 // Intelligent Driver Model for `car` reacting to a leader. Returns m/s².
 // gap is bumper-to-bumper distance to the leader; Infinity = free road.
@@ -74,8 +81,7 @@ export class Simulation {
     const lanes = params.lanes;
     const perLane = Math.floor(params.initialCars / lanes);
     const extra = params.initialCars - perLane * lanes;
-    const lenOf = (k) => (k === 'truck' ? 16.5 : 4.6);
-    const need = (k) => lenOf(k) + params.minGap + 1; // slot: own length + safe gap
+    const need = (k) => VEHICLE_LEN[k] + params.minGap + 1; // slot: own length + safe gap
     for (let l = 0; l < lanes; l++) {
       const count = perLane + (l < extra ? 1 : 0);
       if (count === 0) continue;
@@ -105,9 +111,15 @@ export class Simulation {
         const car = new Car({ s: wrap(s), lane: l, v0Factor: this.sampleV0Factor(kind), kind });
         car.v = this.v0(car) * 0.85;
         this.cars.push(car);
-        // advance by the NEXT vehicle's slot so its length fits behind it,
-        // plus this slot's share of the slack
-        s += need(kinds[(j + 1) % kinds.length]) + (slack * weights[j]) / wSum;
+        // centers: advance by half of this vehicle plus half of the next one
+        // plus the gap, plus this slot's share of the slack (pair halves sum
+        // to the same totalReq as need() around the loop)
+        const nextKind = kinds[(j + 1) % kinds.length];
+        s +=
+          (VEHICLE_LEN[kind] + VEHICLE_LEN[nextKind]) / 2 +
+          params.minGap +
+          1 +
+          (slack * weights[j]) / wSum;
       }
     }
   }
@@ -247,7 +259,7 @@ export class Simulation {
       for (let i = 0; i < arr.length; i++) {
         const car = arr[i];
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
-        const gap = leader ? forwardDist(car.s, leader.s) - leader.len : Infinity;
+        const gap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         car.a = idm(car, leader ? leader.v : car.v, gap, this.effectiveV0(car));
       }
     }
@@ -277,13 +289,13 @@ export class Simulation {
               : Math.min(this.v0(car), Math.max(localV + 2, rampV0 * 0.5));
         }
         let acc = leader
-          ? idm(car, leader.v, leader.rampPos - car.rampPos - leader.len, v0r)
+          ? idm(car, leader.v, leader.rampPos - car.rampPos - halfLens(car, leader), v0r)
           : idm(car, car.v, Infinity, v0r);
         if (ramp.type === 'on') {
           // The ramp end is a wall, but only brake for it once physically
           // necessary — braking the IDM way the whole length of the ramp
           // would make every car crawl into the merge zone.
-          const rem = ramp.length - 3 - car.rampPos;
+          const rem = ramp.length - 3 - car.len / 2 - car.rampPos;
           if (rem < 0.5) acc = Math.min(acc, -9);
           else {
             const needed = (car.v * car.v) / (2 * rem);
@@ -314,7 +326,7 @@ export class Simulation {
 
         const v0 = this.effectiveV0(car);
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
-        const curGap = leader ? forwardDist(car.s, leader.s) - leader.len : Infinity;
+        const curGap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         const curAcc = idm(car, leader ? leader.v : car.v, curGap, v0);
 
         const exitDist = car.exitRamp ? forwardDist(car.s, car.exitRamp.sDiverge) : Infinity;
@@ -342,8 +354,8 @@ export class Simulation {
         let bestScore = p.laneChangeThreshold * (car.kind === 'truck' ? 2.5 : 1);
         for (const t of targets) {
           const { leader: nl, follower: nf } = neighborsAt(arrs[t], car.s);
-          const gapAhead = nl ? forwardDist(car.s, nl.s) - nl.len : Infinity;
-          const gapBehind = nf ? forwardDist(nf.s, car.s) - car.len : Infinity;
+          const gapAhead = nl ? forwardDist(car.s, nl.s) - halfLens(car, nl) : Infinity;
+          const gapBehind = nf ? forwardDist(nf.s, car.s) - halfLens(nf, car) : Infinity;
           if (gapAhead < p.minGap || gapBehind < p.minGap) continue;
 
           const myNew = idm(car, nl ? nl.v : car.v, gapAhead, v0);
@@ -352,7 +364,7 @@ export class Simulation {
           if (nf) {
             nfNew = idm(nf, car.v, gapBehind, this.v0(nf));
             if (nfNew < -brakeLimit) continue;
-            const nfCurGap = nl ? forwardDist(nf.s, nl.s) - nl.len : Infinity;
+            const nfCurGap = nl ? forwardDist(nf.s, nl.s) - halfLens(nf, nl) : Infinity;
             nfOld = idm(nf, nl ? nl.v : nf.v, nfCurGap, this.v0(nf));
           }
 
@@ -387,9 +399,9 @@ export class Simulation {
       for (let i = 0; i < arr.length; i++) {
         const car = arr[i];
         const leader = arr[(i + 1) % arr.length];
-        const gap = forwardDist(car.s, leader.s) - leader.len;
+        const gap = forwardDist(car.s, leader.s) - halfLens(car, leader);
         if (gap < 0.2) {
-          car.s = wrap(leader.s - leader.len - 0.25);
+          car.s = wrap(leader.s - halfLens(car, leader) - 0.25);
           car.v = Math.min(car.v, leader.v);
         }
       }
@@ -443,8 +455,8 @@ export class Simulation {
 
         const sIns = wrap(ramp.sJoin - remaining);
         const { leader, follower } = neighborsAt(lane0, sIns);
-        const gapAhead = leader ? forwardDist(sIns, leader.s) - leader.len : Infinity;
-        const gapBehind = follower ? forwardDist(follower.s, sIns) - car.len : Infinity;
+        const gapAhead = leader ? forwardDist(sIns, leader.s) - halfLens(car, leader) : Infinity;
+        const gapBehind = follower ? forwardDist(follower.s, sIns) - halfLens(follower, car) : Infinity;
         // Braking-distance-based acceptance: each party needs a half-second
         // of headway plus room to shed any speed difference at a hard-but-
         // survivable rate. Slow jammed traffic needs only small gaps (zipper
@@ -540,8 +552,8 @@ export class Simulation {
         if (this.time >= inc.parkedUntil) this.setPhase(inc, 'reenter');
       } else if (inc.phase === 'reenter') {
         const { leader, follower } = neighborsAt(arrs[0], car.s);
-        const gapAhead = leader ? forwardDist(car.s, leader.s) - leader.len : Infinity;
-        const gapBehind = follower ? forwardDist(follower.s, car.s) - car.len : Infinity;
+        const gapAhead = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
+        const gapBehind = follower ? forwardDist(follower.s, car.s) - halfLens(follower, car) : Infinity;
         const desperation = 1 + 2 * Math.min(phaseTime / 12, 1);
         const shed = 2 * p.safeBrake * 1.5 * desperation;
         const needAhead =
@@ -671,9 +683,14 @@ export class Simulation {
       st.credit = Math.min(st.credit + (params[ramp.rateKey] / 60) * h, 2);
       if (st.credit < 1) continue;
       // st.cars is sorted by rampPos; index 0 is nearest the ramp entrance.
-      if (st.cars.length && st.cars[0].rampPos < st.cars[0].len + 4) continue;
-      st.credit -= 1;
+      // The new vehicle spawns centered at 0, so clearance needs both halves.
       const kind = this.sampleKind();
+      if (
+        st.cars.length &&
+        st.cars[0].rampPos < (st.cars[0].len + VEHICLE_LEN[kind]) / 2 + 4
+      )
+        continue;
+      st.credit -= 1;
       const car = new Car({ v: 12, v0Factor: this.sampleV0Factor(kind), kind });
       car.state = 'onramp';
       car.ramp = ramp;

@@ -124,12 +124,16 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   console.log('\ndense seeding never overlaps (Codex review regression)');
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 300, truckShare: 40 });
   const sim = new Simulation();
+  // positions are vehicle centers: a bumper gap sheds half of BOTH lengths
   let worstGap = Infinity;
   for (const arr of sim.buildLaneIndex()) {
     for (let i = 0; i < arr.length; i++) {
       const leader = arr[(i + 1) % arr.length];
       if (leader === arr[i]) continue;
-      worstGap = Math.min(worstGap, forwardDist(arr[i].s, leader.s) - leader.len);
+      worstGap = Math.min(
+        worstGap,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
     }
   }
   check(
@@ -154,6 +158,19 @@ run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
     trucks.filter((t) => t.state === 'main').every((t) => t.lane < params.lanes - 1)
   );
   check('traffic still flows with trucks', sim.stats().avgSpeed > 4, `(${sim.stats().avgSpeed.toFixed(1)} m/s)`);
+  // center-based gap math: no vehicle body may interpenetrate another
+  let worstBody = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstBody = Math.min(
+        worstBody,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
+    }
+  }
+  check('no body interpenetration after 120 s', worstBody > -0.05, `(worst=${worstBody.toFixed(2)} m)`);
 });
 
 run('2 lanes', { lanes: 2 }, 60, () => {});
