@@ -40,4 +40,9 @@ export const params = {
   offRampA: 6,
   offRampB: 6,
   rampSpeed: 40 * MPH, // m/s
+
+  // events
+  incidentDuration: 90, // s — how long a breakdown stays parked / a wreck blocks
+  rubberneck: 0.5,      // 0–1: how much passing traffic slows to gawk
+  accidentLanes: 1,     // cars involved in a triggered accident (1 or 2 lanes)
 };

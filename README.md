@@ -28,6 +28,10 @@ branch → `main` / root**. That's it — there is nothing to build.
 ## Controls
 
 - **Drag** to orbit, **scroll** to zoom, **Space** to pause.
+- **Click any car to crash it** — it blocks its lane (optionally dragging a
+  neighbor into a 2-lane pileup) until cleared. The **Events** folder also has
+  random breakdowns: a car pulls onto the shoulder, parks with hazards, and
+  merges back later, while passing traffic slows down to rubberneck.
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
@@ -57,6 +61,5 @@ work their way to the outer lane in time. Everything is rendered with three.js
 
 ## Roadmap
 
-- Events: breakdowns and accidents that block lanes for a while
 - Live flow/density/speed charts and a space-time diagram
 - Chase camera, ramp metering, trucks

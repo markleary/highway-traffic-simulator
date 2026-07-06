@@ -64,6 +64,56 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   check('many cars exited', s.exited > 60, `(exited=${s.exited})`);
 });
 
+// --- incident scenarios (need mid-run triggers, so they drive stepping manually)
+
+{
+  console.log('\naccident: 2-lane pileup blocks traffic, then clears');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { incidentDuration: 30, accidentLanes: 2 });
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(15 / H); i++) sim.step(H);
+  sim.triggerRandomAccident();
+  check('incident registered', sim.incidents.length === 1);
+  const wrecks = sim.incidents[0]?.cars ?? [];
+  check('pileup involves two cars', wrecks.length === 2, `(${wrecks.length})`);
+  let minV = Infinity;
+  for (let i = 0; i < Math.round(25 / H); i++) {
+    sim.step(H);
+    for (const c of sim.cars) if (c.state === 'main' && !c.incident) minV = Math.min(minV, c.v);
+  }
+  check('wrecked cars came to a stop', wrecks.every((c) => c.v === 0));
+  check('a queue formed behind the wreck', minV < 2, `(minV=${minV.toFixed(1)})`);
+  for (let i = 0; i < Math.round(20 / H); i++) sim.step(H); // past clearAt
+  check('accident cleared after duration', sim.incidents.length === 0);
+  check('wrecks vanished on clear', wrecks.every((c) => !sim.cars.includes(c)));
+  assertSane(sim, 'accident scenario');
+}
+
+{
+  console.log('\nbreakdown: pull over, park on shoulder, re-merge');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { incidentDuration: 25 });
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(5 / H); i++) sim.step(H);
+  sim.triggerBreakdown();
+  const bdCar = sim.incidents[0]?.cars[0];
+  check('breakdown registered', sim.incidents.length === 1 && !!bdCar);
+  let sawShoulder = false;
+  let sawParked = false;
+  let remerged = false;
+  for (let i = 0; i < Math.round(115 / H); i++) {
+    sim.step(H);
+    if (bdCar.state === 'shoulder') sawShoulder = true;
+    if (sim.incidents[0]?.phase === 'parked') sawParked = true;
+    // check at the moment of resolution — afterwards the car may legitimately
+    // drive on and leave via an off-ramp
+    if (!remerged && sim.incidents.length === 0) remerged = bdCar.state === 'main';
+  }
+  check('car reached the shoulder', sawShoulder);
+  check('car parked for a while', sawParked);
+  check('breakdown resolved', sim.incidents.length === 0);
+  check('car re-merged into traffic', remerged, `(final state=${bdCar.state})`);
+  assertSane(sim, 'breakdown scenario');
+}
+
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
 

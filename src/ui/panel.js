@@ -150,6 +150,32 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     'Target speed on ramp pavement. In the merge zone, entering cars accelerate past this to match mainline traffic.'
   );
 
+  const fEvents = gui.addFolder('Events');
+  tip(
+    fEvents.add({ bd: () => sim.triggerBreakdown() }, 'bd').name('🔧 Random breakdown'),
+    'A random car pulls over to the breakdown lane, parks with hazards for the incident duration, then merges back into traffic. Passing cars slow down to look.'
+  );
+  tip(
+    fEvents.add({ ac: () => sim.triggerRandomAccident() }, 'ac').name('💥 Random accident'),
+    'A random car crashes where it is, blocking its lane until cleared. You can also click any car on the map to crash that specific one.'
+  );
+  tip(
+    fEvents.add(params, 'accidentLanes', 1, 2, 1).name('Accident size (lanes)'),
+    'How many lanes an accident blocks: 2 also drags the nearest car in the adjacent lane into the pileup.'
+  );
+  tip(
+    fEvents.add(params, 'incidentDuration', 15, 300, 5).name('Duration (s)'),
+    'How long a breakdown stays parked on the shoulder, and how long a wreck blocks its lane before being cleared away.'
+  );
+  tip(
+    fEvents.add(params, 'rubberneck', 0, 1, 0.05).name('Rubbernecking'),
+    'How much passing drivers slow down to gawk at an incident, strongest in the lanes closest to it. Even a shoulder breakdown that blocks nothing can collapse throughput.'
+  );
+  tip(
+    fEvents.add({ cl: () => sim.clearIncidents() }, 'cl').name('Clear all events'),
+    'Immediately remove every active breakdown and accident (the involved cars vanish).'
+  );
+
   const fView = gui.addFolder('View');
   tip(
     fView

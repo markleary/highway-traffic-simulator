@@ -4,8 +4,9 @@ import * as THREE from 'three';
 // adding lanes grows the road inward, so ramp geometry (attached to the
 // outside) never moves when the lane count changes.
 export const ROAD = {
-  outerR: 170,    // outer pavement edge radius (m)
-  laneWidth: 3.7, // m
+  outerR: 170,       // outer edge of the travel lanes (m)
+  laneWidth: 3.7,    // m
+  shoulderWidth: 3.0, // breakdown lane outside lane 0 (m)
   minLanes: 2,
   maxLanes: 4,
 };
@@ -29,6 +30,10 @@ export function forwardDist(from, to) {
 export function laneOffset(lane) {
   return -lane * ROAD.laneWidth;
 }
+
+// Fractional "lane" of the shoulder's centerline (negative = outside lane 0),
+// in the same units as car.renderLane. Cars park here during breakdowns.
+export const SHOULDER_LANE = -(ROAD.outerR + ROAD.shoulderWidth / 2 - R_REF) / ROAD.laneWidth;
 
 const A0 = Math.PI / 2;
 

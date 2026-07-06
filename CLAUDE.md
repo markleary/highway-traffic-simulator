@@ -72,13 +72,20 @@ test/smoke.js          runs the sim headless under several parameter regimes
   are a feature, not a bug. Exit choice is rolled per car when it crosses a
   decision marker ~220 m before each off-ramp.
 - `car.renderLane` is the smoothed lateral position used only for rendering;
-  physics switches lanes discretely.
+  physics switches lanes discretely. Negative values are outside lane 0 — used
+  by merging ramp cars and the breakdown shoulder (`SHOULDER_LANE`).
+- Incidents (`sim.incidents`): breakdowns pull over to the shoulder, park with
+  hazards, then re-merge (with growing desperation, forced after a timeout);
+  accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
+  Both project a "rubbernecking" zone ~200 m upstream that caps passing cars'
+  desired speed, strongest in adjacent lanes (see `effectiveV0`). Click a car
+  on the map to crash it (`renderer.onRoadClick` → `sim.carNear` →
+  `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
 
 ## Roadmap
 
-- Events: car breakdown / accident blocking lane(s), clearable after a timer
 - Live charts: flow / density / speed over time, maybe a space-time diagram
 - Chase camera following a random car
 - Ramp metering signals; trucks (slower, longer, rarer lane changes)

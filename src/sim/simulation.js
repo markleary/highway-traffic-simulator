@@ -1,4 +1,4 @@
-import { LOOP, RAMPS, ROAD, R_REF, wrap, forwardDist } from './road.js';
+import { LOOP, RAMPS, ROAD, R_REF, SHOULDER_LANE, wrap, forwardDist, pointAt } from './road.js';
 import { params } from '../params.js';
 import { Car } from './car.js';
 
@@ -53,6 +53,7 @@ export class Simulation {
 
   reset() {
     this.cars = [];
+    this.incidents = []; // active breakdowns / accidents
     this.time = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
@@ -89,6 +90,8 @@ export class Simulation {
   // Desired speed, reduced when the car is heading for an exit: it slows to
   // ramp speed approaching the diverge, and slows extra when it still needs
   // to get over to lane 0 — which is exactly what jams up real exits.
+  // Incidents ahead reduce it too (rubbernecking), strongest in the lanes
+  // closest to the wreck or the shoulder.
   effectiveV0(car) {
     let v0 = this.v0(car);
     if (car.exitRamp) {
@@ -98,6 +101,26 @@ export class Simulation {
         v0 = Math.min(v0, rampV0 + ((v0 - rampV0) * dist) / 130);
       } else if (car.lane > 0 && dist < 250) {
         v0 = Math.min(v0, Math.max(rampV0, (v0 * dist) / 250));
+      }
+    }
+    if (car.incident) {
+      // Pulling over for a breakdown: ease off while working over, but only
+      // slow right down once in lane 0 — crawling in an inner lane makes the
+      // gaps needed to get out of it unattainable.
+      if (car.incident.phase === 'pullover') {
+        v0 = Math.min(v0, car.lane === 0 ? Math.max(8, params.rampSpeed * 0.6) : v0 * 0.75);
+      }
+    } else if (this.incidents.length) {
+      const LANE_WEIGHT = [0.7, 0.4, 0.2, 0.1];
+      for (const inc of this.incidents) {
+        for (const other of inc.cars) {
+          const d = forwardDist(car.s, other.s); // upstream distance to the scene
+          if (d > 200) continue;
+          const laneDist = Math.abs(car.lane - (other.state === 'shoulder' ? -1 : other.lane));
+          const w = LANE_WEIGHT[Math.min(laneDist, 3)];
+          const proximity = Math.min(1, (200 - d) / 120); // full effect within 80 m
+          v0 *= 1 - params.rubberneck * w * proximity;
+        }
       }
     }
     return v0;
@@ -125,23 +148,27 @@ export class Simulation {
     if (this.applyLaneChanges(arrs)) arrs = this.buildLaneIndex();
     this.accelMainline(arrs);
     this.accelRamps(arrs[0]);
+    this.accelIncidents();
 
     for (const car of this.cars) {
       car.lcCooldown -= h;
       car.v = Math.max(0, car.v + car.a * h);
-      if (car.state === 'main') {
+      if (car.state === 'onramp' || car.state === 'offramp') {
+        car.rampPos += car.v * h;
+      } else {
+        // 'main' and 'shoulder' both live in road coordinates
         car.sPrev = car.s;
         car.s = wrap(car.s + car.v * h);
-        const dl = car.lane - car.renderLane;
+        const target = car.state === 'shoulder' ? SHOULDER_LANE : car.lane;
+        const dl = target - car.renderLane;
         const maxStep = 2.0 * h; // lanes per second, rendering only
         car.renderLane += Math.abs(dl) <= maxStep ? dl : Math.sign(dl) * maxStep;
-      } else {
-        car.rampPos += car.v * h;
       }
     }
 
     arrs = this.buildLaneIndex();
     this.preventOverlaps(arrs);
+    this.updateIncidents(arrs);
     this.handleMarkers();
     this.handleMerges(arrs[0]);
     this.despawnExited();
@@ -228,6 +255,10 @@ export class Simulation {
       for (let i = 0; i < arr.length; i++) {
         const car = arr[i];
         if (car.lcCooldown > 0) continue;
+        // Wrecked cars sit still; breakdown cars only change lanes while
+        // working their way over to the shoulder.
+        const pullover = car.incident?.phase === 'pullover';
+        if (car.incident && !pullover) continue;
 
         const v0 = this.effectiveV0(car);
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
@@ -235,7 +266,12 @@ export class Simulation {
         const curAcc = idm(car.v, leader ? leader.v : car.v, curGap, v0);
 
         const exitDist = car.exitRamp ? forwardDist(car.s, car.exitRamp.sDiverge) : Infinity;
-        const mandatory = exitDist < 400;
+        const mandatory = exitDist < 400 || pullover;
+        // A stranded car gets bolder about cutting in the longer it has waited.
+        let brakeLimit = p.safeBrake;
+        if (pullover) {
+          brakeLimit *= 1 + Math.min((this.time - car.incident.phaseStart) / 10, 1.5);
+        }
 
         let targets;
         if (mandatory) targets = l > 0 ? [l - 1] : [];
@@ -258,14 +294,15 @@ export class Simulation {
           let nfOld = 0;
           if (nf) {
             nfNew = idm(nf.v, car.v, gapBehind, this.v0(nf));
-            if (nfNew < -p.safeBrake) continue;
+            if (nfNew < -brakeLimit) continue;
             const nfCurGap = nl ? forwardDist(nf.s, nl.s) - nl.len : Infinity;
             nfOld = idm(nf.v, nl ? nl.v : nf.v, nfCurGap, this.v0(nf));
           }
 
           let score = myNew - curAcc - p.politeness * Math.max(0, nfOld - nfNew);
           score += t < l ? 0.08 : -0.08; // mild keep-right bias
-          if (mandatory) score += 1 + 3 * (1 - exitDist / 400);
+          if (pullover) score += 2.5;
+          else if (mandatory) score += 1 + 3 * (1 - exitDist / 400);
           if (score > bestScore) {
             bestScore = score;
             bestLane = t;
@@ -316,7 +353,7 @@ export class Simulation {
 
       for (const ramp of RAMPS) {
         if (ramp.type !== 'off') continue;
-        if (!car.exitRamp && forwardDist(car.sPrev, ramp.decideS) < traveled) {
+        if (!car.exitRamp && !car.incident && forwardDist(car.sPrev, ramp.decideS) < traveled) {
           if (Math.random() * 100 < params[ramp.rateKey]) car.exitRamp = ramp;
         }
         if (car.exitRamp === ramp && forwardDist(car.sPrev, ramp.sDiverge) < traveled) {
@@ -386,6 +423,172 @@ export class Simulation {
         this.counters.merged++;
       }
     }
+  }
+
+  // Acceleration overrides for cars involved in an incident. Runs after the
+  // regular car-following pass so it wins.
+  accelIncidents() {
+    for (const inc of this.incidents) {
+      for (const car of inc.cars) {
+        if (inc.kind === 'accident') {
+          car.a = -9; // emergency stop, then stays put
+        } else if (inc.phase === 'stopping') {
+          car.a = -Math.max(params.comfortBrake * 1.5, 2);
+        } else if (inc.phase === 'parked') {
+          car.a = 0;
+          car.v = 0;
+        } else if (inc.phase === 'reenter') {
+          // roll along the shoulder building speed for the merge
+          car.a = idm(car.v, car.v, Infinity, Math.min(params.rampSpeed, this.v0(car)));
+        }
+        // 'pullover' keeps its normal mainline acceleration
+      }
+    }
+  }
+
+  // Incident phase machine: breakdowns pull over → park → re-merge; accident
+  // wrecks vanish when their timer expires.
+  updateIncidents(arrs) {
+    const p = params;
+    for (let i = this.incidents.length - 1; i >= 0; i--) {
+      const inc = this.incidents[i];
+
+      if (inc.kind === 'accident') {
+        if (this.time >= inc.clearAt) {
+          for (const car of inc.cars) this.removeCar(car);
+          this.incidents.splice(i, 1);
+        }
+        continue;
+      }
+
+      // breakdown
+      const car = inc.cars[0];
+      const phaseTime = this.time - inc.phaseStart;
+      if (inc.phase === 'pullover') {
+        if (car.lane === 0 && Math.abs(car.renderLane) < 0.25) {
+          car.state = 'shoulder';
+          this.setPhase(inc, 'stopping');
+        } else if (phaseTime > 20 && car.lane > 0 && car.lcCooldown <= 0) {
+          // out of patience: force the way over, following traffic must yield
+          car.lane -= 1;
+          car.lcCooldown = 1.5;
+        }
+      } else if (inc.phase === 'stopping') {
+        if (car.v < 0.05) {
+          car.v = 0;
+          this.setPhase(inc, 'parked');
+          inc.parkedUntil = this.time + p.incidentDuration;
+        }
+      } else if (inc.phase === 'parked') {
+        if (this.time >= inc.parkedUntil) this.setPhase(inc, 'reenter');
+      } else if (inc.phase === 'reenter') {
+        const { leader, follower } = neighborsAt(arrs[0], car.s);
+        const gapAhead = leader ? forwardDist(car.s, leader.s) - leader.len : Infinity;
+        const gapBehind = follower ? forwardDist(follower.s, car.s) - car.len : Infinity;
+        const desperation = 1 + 2 * Math.min(phaseTime / 12, 1);
+        const shed = 2 * p.safeBrake * 1.5 * desperation;
+        const needAhead =
+          p.minGap +
+          (0.5 * car.v) / desperation +
+          (leader ? Math.max(0, car.v ** 2 - leader.v ** 2) / shed : 0);
+        const needBehind = follower
+          ? p.minGap +
+            (0.5 * follower.v) / desperation +
+            Math.max(0, follower.v ** 2 - car.v ** 2) / shed
+          : 0;
+        // after 25 s of waiting, force the merge — nobody idles on a shoulder forever
+        if ((gapAhead > needAhead && gapBehind > needBehind) || phaseTime > 25) {
+          car.state = 'main';
+          car.lane = 0;
+          car.incident = null;
+          car.lcCooldown = 3;
+          insertSorted(arrs[0], car);
+          this.incidents.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  setPhase(inc, phase) {
+    inc.phase = phase;
+    inc.phaseStart = this.time;
+  }
+
+  triggerBreakdown() {
+    const car = this.randomEligibleCar();
+    if (!car) return;
+    car.exitRamp = null;
+    const inc = { kind: 'breakdown', cars: [car], phase: 'pullover', phaseStart: this.time };
+    car.incident = inc;
+    this.incidents.push(inc);
+  }
+
+  triggerAccident(car) {
+    if (!car || car.state !== 'main' || car.incident) return;
+    const inc = { kind: 'accident', cars: [car], clearAt: this.time + params.incidentDuration };
+    this.wreck(car, inc);
+    if (params.accidentLanes >= 2 && params.lanes > 1) {
+      // drag the nearest neighbor in the adjacent lane into the pileup
+      const otherLane = car.lane + 1 < params.lanes ? car.lane + 1 : car.lane - 1;
+      let best = null;
+      let bestD = 25;
+      for (const c of this.cars) {
+        if (c.state !== 'main' || c.incident || c.lane !== otherLane) continue;
+        const d = Math.min(forwardDist(car.s, c.s), forwardDist(c.s, car.s));
+        if (d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+      if (best) this.wreck(best, inc);
+    }
+    this.incidents.push(inc);
+  }
+
+  wreck(car, inc) {
+    car.incident = inc;
+    car.exitRamp = null;
+    car.wreckYaw = (Math.random() - 0.5) * 0.6;
+    inc.cars.includes(car) || inc.cars.push(car);
+  }
+
+  triggerRandomAccident() {
+    this.triggerAccident(this.randomEligibleCar());
+  }
+
+  randomEligibleCar() {
+    const eligible = this.cars.filter((c) => c.state === 'main' && !c.incident);
+    return eligible.length ? eligible[Math.floor(Math.random() * eligible.length)] : null;
+  }
+
+  clearIncidents() {
+    for (const inc of this.incidents) {
+      for (const car of inc.cars) this.removeCar(car);
+    }
+    this.incidents = [];
+  }
+
+  removeCar(car) {
+    const i = this.cars.indexOf(car);
+    if (i >= 0) this.cars.splice(i, 1);
+  }
+
+  // Nearest normal mainline car to a world-space point (used by click-to-crash).
+  carNear(point, radius = 12) {
+    let best = null;
+    let bestD = radius * radius;
+    for (const car of this.cars) {
+      if (car.state !== 'main' || car.incident) continue;
+      const pos = pointAt(car.s, -car.renderLane * ROAD.laneWidth);
+      const dx = pos.x - point.x;
+      const dz = pos.z - point.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = car;
+      }
+    }
+    return best;
   }
 
   despawnExited() {

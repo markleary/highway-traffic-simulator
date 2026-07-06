@@ -63,8 +63,40 @@ export class SceneRenderer {
     this._dummy = new THREE.Object3D();
     this._bodyColor = new THREE.Color();
     this._cabinColor = new THREE.Color();
+    this._raycaster = new THREE.Raycaster();
+    this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    // Click detection (as opposed to an orbit drag): small movement, quick
+    // release. main.js assigns onRoadClick to receive the ground-plane point.
+    this.onRoadClick = null;
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('pointerdown', (e) => {
+      this._press = { x: e.clientX, y: e.clientY, t: performance.now() };
+    });
+    canvas.addEventListener('pointerup', (e) => {
+      const press = this._press;
+      this._press = null;
+      if (!press || !this.onRoadClick) return;
+      const dx = e.clientX - press.x;
+      const dy = e.clientY - press.y;
+      if (dx * dx + dy * dy > 36 || performance.now() - press.t > 500) return;
+      const pt = this.pickGround(e.clientX, e.clientY);
+      if (pt) this.onRoadClick(pt);
+    });
 
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  // Ray from a screen position onto the ground plane (y = 0).
+  pickGround(clientX, clientY) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+    this._raycaster.setFromCamera(ndc, this.camera);
+    const out = new THREE.Vector3();
+    return this._raycaster.ray.intersectPlane(this._groundPlane, out) ? out : null;
   }
 
   // The road is rebuilt whenever the lane count changes: the outer edge is
@@ -82,10 +114,17 @@ export class SceneRenderer {
     const inner = outer - params.lanes * ROAD.laneWidth;
 
     const asphalt = new THREE.Mesh(
-      new THREE.RingGeometry(inner - 1.0, outer + 1.0, 220).rotateX(-Math.PI / 2),
+      new THREE.RingGeometry(inner - 1.0, outer, 220).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0x33363b, roughness: 1 })
     );
     g.add(asphalt);
+
+    // breakdown lane: slightly darker strip outside the travel lanes
+    const shoulder = new THREE.Mesh(
+      new THREE.RingGeometry(outer, outer + ROAD.shoulderWidth, 220).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x2b2e34, roughness: 1 })
+    );
+    g.add(shoulder);
 
     const edge = (r, color) => {
       const m = new THREE.Mesh(
@@ -171,18 +210,20 @@ export class SceneRenderer {
   update(cars) {
     const n = Math.min(cars.length, MAX_CARS);
     const desired = params.desiredSpeed;
+    const blinkOn = Math.floor(performance.now() / 400) % 2 === 0; // hazard flashers
     for (let i = 0; i < n; i++) {
       const car = cars[i];
       let rotY;
-      if (car.state === 'main') {
-        pointAt(car.s, -car.renderLane * ROAD.laneWidth, this._pos);
-        forwardAt(car.s, this._tan);
-        rotY = Math.atan2(this._tan.x, this._tan.z);
-      } else {
+      if (car.ramp) {
         const u = THREE.MathUtils.clamp(car.rampPos / car.ramp.length, 0, 1);
         car.ramp.curve.getPointAt(u, this._pos);
         car.ramp.curve.getTangentAt(u, this._tan);
         rotY = Math.atan2(this._tan.x, this._tan.z);
+      } else {
+        pointAt(car.s, -car.renderLane * ROAD.laneWidth, this._pos);
+        forwardAt(car.s, this._tan);
+        rotY = Math.atan2(this._tan.x, this._tan.z);
+        if (car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
       }
       this._dummy.position.set(this._pos.x, 0, this._pos.z);
       this._dummy.rotation.set(0, rotY, 0);
@@ -190,7 +231,9 @@ export class SceneRenderer {
       this.body.setMatrixAt(i, this._dummy.matrix);
       this.cabin.setMatrixAt(i, this._dummy.matrix);
 
-      if (params.colorMode === 'speed') {
+      if (car.incident) {
+        this._bodyColor.set(blinkOn ? 0xffa726 : 0x5c3a12); // amber hazards
+      } else if (params.colorMode === 'speed') {
         const t = THREE.MathUtils.clamp(car.v / desired, 0, 1);
         this._bodyColor.setHSL(t * 0.33, 0.85, 0.5);
       } else {

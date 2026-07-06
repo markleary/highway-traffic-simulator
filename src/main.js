@@ -6,6 +6,12 @@ import { buildPanel } from './ui/panel.js';
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
+// Click a car (or the road right next to one) to crash it.
+renderer.onRoadClick = (point) => {
+  const car = sim.carNear(point);
+  if (car) sim.triggerAccident(car);
+};
+
 // console access for poking at the live simulation
 window.sim = sim;
 window.renderer = renderer;
