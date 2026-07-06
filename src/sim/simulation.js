@@ -55,6 +55,8 @@ export class Simulation {
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
     this.time = 0;
+    this.history = []; // 1 Hz samples of {t, v, f, inc} for the live charts
+    this.sampleTimer = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
     // per-ramp event timestamps (merges / exits) for measured-flow readouts
@@ -176,6 +178,15 @@ export class Simulation {
     while (this.flowTimes.length && this.flowTimes[0] < this.time - 60) this.flowTimes.shift();
     for (const st of this.rampState.values()) {
       while (st.flowTimes.length && st.flowTimes[0] < this.time - 60) st.flowTimes.shift();
+    }
+
+    // chart history: one sample per sim-second, last 5 minutes
+    this.sampleTimer += h;
+    if (this.sampleTimer >= 1) {
+      this.sampleTimer -= 1;
+      const s = this.stats();
+      this.history.push({ t: this.time, v: s.avgSpeed, f: s.flowPerMin, inc: this.incidents.length > 0 });
+      if (this.history.length > 300) this.history.shift();
     }
   }
 

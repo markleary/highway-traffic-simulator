@@ -48,6 +48,11 @@ run('default regime, 120 sim-seconds', {}, 120, (sim) => {
   const rf = sim.rampFlows();
   check('on-ramp flows measured', rf.onA > 0 && rf.onA < 40 && rf.onB > 0, `(onA=${rf.onA.toFixed(1)}, onB=${rf.onB.toFixed(1)})`);
   check('exit flows measured', rf.offA + rf.offB > 0, `(offA=${rf.offA.toFixed(1)}, offB=${rf.offB.toFixed(1)})`);
+  check(
+    'chart history sampled at 1 Hz',
+    sim.history.length === 120 && sim.history.every((p) => Number.isFinite(p.v) && Number.isFinite(p.f)),
+    `(len=${sim.history.length})`
+  );
 });
 
 run('flood: heavy inflow, no exits → jam builds', { onRampA: 35, onRampB: 35, offRampA: 0, offRampB: 0, initialCars: 120 }, 180, (sim) => {
