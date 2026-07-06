@@ -289,7 +289,12 @@ export class SceneRenderer {
   render(dt = 1 / 60) {
     if (this.chaseCar) {
       this.chaseGoals(this._v1, this._v2);
-      const k = 1 - Math.exp(-5 * dt); // exponential smoothing, framerate-safe
+      // Ease in *simulation* time so the camera keeps pace with the car at
+      // any time scale (the car covers dt × timeScale of world distance per
+      // real frame); fall back to wall-clock while paused so the camera can
+      // still settle onto its static target.
+      const easeDt = params.paused ? dt : dt * params.timeScale;
+      const k = 1 - Math.exp(-5 * easeDt); // exponential smoothing, framerate-safe
       this._chasePos.lerp(this._v1, k);
       this._chaseAim.lerp(this._v2, Math.min(1, k * 1.5));
       this.camera.position.copy(this._chasePos);
