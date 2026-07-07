@@ -193,10 +193,13 @@ export class ChartPanel {
     // incident starts: a solid dark red line per triggered incident, kin to
     // the line charts' bands. Drawn from the sim's start-time log rather than
     // the samples' any-incident flag, so an incident that begins while
-    // another is still live gets its own line.
+    // another is still live gets its own line. Clip against the displayed
+    // window start (t0), not the first sample's time — an incident triggered
+    // in the first second after a reset predates every sample but its time
+    // is still on the axis.
     ctx.fillStyle = INCIDENT_START;
     for (const tInc of this.incidentStarts) {
-      if (tInc >= history[0].t && tInc <= tNow) {
+      if (tInc >= t0 && tInc <= tNow) {
         ctx.fillRect(xs(tInc) - 0.75, 0, 1.5, DIAG_H);
       }
     }
