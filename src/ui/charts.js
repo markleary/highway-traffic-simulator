@@ -31,6 +31,8 @@ export class ChartPanel {
     this.diag = this.makeDiagram();
     document.body.appendChild(this.el);
     this.history = [];
+    this.incidentStarts = [];
+    this.onHoverS = null; // set by main.js: reports the hovered loop position (or null)
   }
 
   makeChart(title, color) {
@@ -63,10 +65,14 @@ export class ChartPanel {
     return chart;
   }
 
-  update(history) {
+  update(history, incidentStarts = []) {
     this.el.style.display = params.showCharts ? '' : 'none';
-    if (!params.showCharts) return;
+    if (!params.showCharts) {
+      if (this.onHoverS) this.onHoverS(null); // don't leave a stale road marker
+      return;
+    }
     this.history = history;
+    this.incidentStarts = incidentStarts;
     const imp = params.units === 'imperial';
     const spd = imp ? MPH : KMH;
     const unit = imp ? 'mph' : 'km/h';
@@ -119,13 +125,17 @@ export class ChartPanel {
   drawDiagram(fmt) {
     const d = this.diag;
     d.wrap.style.display = params.showDiagram ? '' : 'none';
-    if (!params.showDiagram) return;
+    if (!params.showDiagram) {
+      if (this.onHoverS) this.onHoverS(null);
+      return;
+    }
     const { ctx } = d;
     ctx.clearRect(0, 0, W, DIAG_H);
     const history = this.history;
     const last = history[history.length - 1];
     if (!last || !last.bins) {
       d.value.textContent = '';
+      if (this.onHoverS) this.onHoverS(null);
       return;
     }
     const nBins = last.bins.length;
@@ -180,11 +190,17 @@ export class ChartPanel {
       ctx.fillRect(0, y - 1, 5, 2);
     }
 
-    // incident starts: a solid dark red line, kin to the line charts' bands
+    // incident starts: a solid dark red line per triggered incident, kin to
+    // the line charts' bands. Drawn from the sim's start-time log rather than
+    // the samples' any-incident flag, so an incident that begins while
+    // another is still live gets its own line. Clip against the displayed
+    // window start (t0), not the first sample's time — an incident triggered
+    // in the first second after a reset predates every sample but its time
+    // is still on the axis.
     ctx.fillStyle = INCIDENT_START;
-    for (let i = 1; i < history.length; i++) {
-      if (history[i].inc && !history[i - 1].inc) {
-        ctx.fillRect(xs(history[i].t) - 0.75, 0, 1.5, DIAG_H);
+    for (const tInc of this.incidentStarts) {
+      if (tInc >= t0 && tInc <= tNow) {
+        ctx.fillRect(xs(tInc) - 0.75, 0, 1.5, DIAG_H);
       }
     }
 
@@ -217,8 +233,12 @@ export class ChartPanel {
         const ago = Math.round(nearest.t >= tNow ? 0 : tNow - nearest.t);
         d.value.textContent = `${fmt(nearest.bins[bin])} · ${at} · ${ago}s ago`;
       }
+      // mirror the hovered loop position onto the road itself (same s as the
+      // readout: the snapped bin, or the raw cursor over an empty column)
+      if (this.onHoverS) this.onHoverS((((bin < 0 ? cursor : bin) + 0.5) / nBins) * LOOP);
     } else {
       d.value.textContent = '';
+      if (this.onHoverS) this.onHoverS(null);
     }
   }
 

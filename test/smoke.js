@@ -145,6 +145,26 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
 }
 
 {
+  console.log('\noverlapping incidents each log a start mark');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {});
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(10 / H); i++) sim.step(H);
+  sim.triggerRandomAccident();
+  for (let i = 0; i < Math.round(5 / H); i++) sim.step(H);
+  sim.triggerBreakdown(); // starts while the accident is still live
+  check(
+    'two live incidents, two start marks',
+    sim.incidents.length === 2 && sim.incidentStarts.length === 2,
+    `(incidents=${sim.incidents.length}, starts=${sim.incidentStarts.length})`
+  );
+  check(
+    'start marks carry the trigger times',
+    Math.abs(sim.incidentStarts[0] - 10) < 0.1 && Math.abs(sim.incidentStarts[1] - 15) < 0.1,
+    `(${sim.incidentStarts.map((t) => t.toFixed(1)).join(', ')})`
+  );
+}
+
+{
   console.log('\nbreakdown: pull over, park on shoulder, re-merge');
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { incidentDuration: 25 });
   const sim = new Simulation();
