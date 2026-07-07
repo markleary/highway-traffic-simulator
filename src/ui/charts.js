@@ -172,21 +172,35 @@ export class ChartPanel {
       ctx.fillRect(0, y - 1, 5, 2);
     }
 
-    // hover: pin the readout to the (time, position) cell under the cursor
+    // hover: pin the readout to the (time, position) cell under the cursor.
+    // Empty road has no speed to read, so snap to the nearest measured bin
+    // in the column (wrapped in s, like the loop) — the same way the other
+    // charts snap the crosshair to their line; the s= readout says where it
+    // landed. Only a column with no traffic anywhere reads as a dash.
     if (d.hoverT !== null) {
       const tH = t0 + d.hoverT * span;
       let nearest = history[0];
       for (const p of history) if (Math.abs(p.t - tH) < Math.abs(nearest.t - tH)) nearest = p;
-      const bin = Math.min(nBins - 1, Math.max(0, Math.floor((1 - d.hoverY) * nBins)));
+      const cursor = Math.min(nBins - 1, Math.max(0, Math.floor((1 - d.hoverY) * nBins)));
+      let bin = -1;
+      for (let off = 0; off < nBins && bin < 0; off++) {
+        const below = (cursor - off + nBins) % nBins;
+        const above = (cursor + off) % nBins;
+        if (nearest.bins[below] >= 0) bin = below;
+        else if (nearest.bins[above] >= 0) bin = above;
+      }
       const x = xs(nearest.t);
-      const y = DIAG_H * (1 - (bin + 0.5) / nBins);
+      const y = DIAG_H * (1 - ((bin < 0 ? cursor : bin) + 0.5) / nBins);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x - 1.5, y - 1.5, 3, 3);
-      const v = nearest.bins[bin];
-      const at = `s=${Math.round(((bin + 0.5) / nBins) * LOOP)} m`;
-      const ago = Math.round(nearest.t >= tNow ? 0 : tNow - nearest.t);
-      d.value.textContent = `${v < 0 ? 'empty' : fmt(v)} · ${at} · ${ago}s ago`;
+      if (bin < 0) {
+        d.value.textContent = '—';
+      } else {
+        const at = `s=${Math.round(((bin + 0.5) / nBins) * LOOP)} m`;
+        const ago = Math.round(nearest.t >= tNow ? 0 : tNow - nearest.t);
+        d.value.textContent = `${fmt(nearest.bins[bin])} · ${at} · ${ago}s ago`;
+      }
     } else {
       d.value.textContent = '';
     }
