@@ -200,6 +200,10 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     'Show rolling 5-minute charts of average speed and flow. Red bands mark stretches where an incident was active. Hover a chart to read off a past value.'
   );
   tip(
+    fView.add(params, 'showDiagram').name('Space-time diagram'),
+    'Position × time heatmap of speeds: each column is one second, bottom to top is one lap of the loop (ticks mark the ramps). Jams appear as red bands drifting down-right — the wave rolls upstream even though every car in it drives forward.'
+  );
+  tip(
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'Per car': 'random' })
       .name('Car colors'),

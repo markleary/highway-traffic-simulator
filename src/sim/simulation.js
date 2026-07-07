@@ -2,6 +2,9 @@ import { LOOP, RAMPS, ROAD, SHOULDER_LANE, wrap, forwardDist, pointAt, lateralOf
 import { params } from '../params.js';
 import { Car, VEHICLE_LEN } from './car.js';
 
+// Spatial resolution of the space-time diagram's speed sampling (m of s).
+export const BIN_M = 10;
+
 // Positions are vehicle CENTERS (that is where the meshes are drawn), so a
 // bumper-to-bumper gap must shed half of BOTH vehicles' lengths. With uniform
 // lengths subtracting one full length was equivalent; with trucks it is not.
@@ -75,7 +78,8 @@ export class Simulation {
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
     this.time = 0;
-    this.history = []; // 1 Hz samples of {t, v, f, inc} for the live charts
+    this.history = []; // 1 Hz samples of {t, v, f, inc, bins} for the live charts
+    this.binCount = Math.ceil(LOOP / BIN_M); // space-time diagram resolution
     this.sampleTimer = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
@@ -255,9 +259,32 @@ export class Simulation {
     if (this.sampleTimer >= 1) {
       this.sampleTimer -= 1;
       const s = this.stats();
-      this.history.push({ t: this.time, v: s.avgSpeed, f: s.flowPerMin, inc: this.incidents.length > 0 });
+      this.history.push({
+        t: this.time,
+        v: s.avgSpeed,
+        f: s.flowPerMin,
+        inc: this.incidents.length > 0,
+        bins: this.speedBins(),
+      });
       if (this.history.length > 300) this.history.shift();
     }
+  }
+
+  // Mean mainline speed for each BIN_M meters of s — one column of the
+  // space-time diagram. -1 marks a bin with no vehicle in it.
+  speedBins() {
+    const n = this.binCount;
+    const sums = new Float32Array(n);
+    const counts = new Uint16Array(n);
+    for (const car of this.cars) {
+      if (car.state !== 'main') continue;
+      const b = Math.min(n - 1, Math.floor(car.s / BIN_M));
+      sums[b] += car.v;
+      counts[b]++;
+    }
+    const bins = new Float32Array(n);
+    for (let i = 0; i < n; i++) bins[i] = counts[i] ? sums[i] / counts[i] : -1;
+    return bins;
   }
 
   // Measured throughput of each ramp (cars/min over the last minute).
