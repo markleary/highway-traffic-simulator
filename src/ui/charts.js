@@ -122,15 +122,20 @@ export class ChartPanel {
     }
     const nBins = last.bins.length;
 
-    // (re)create the ring on first use, on sim reset (time went backwards),
-    // or when the road shape changed the bin count
-    if (!d.off || d.off.height !== nBins || last.t < d.lastT) {
+    // (re)create the ring on first use, on sim reset, or when the road shape
+    // changed the bin count. Resets are detected by history's array identity —
+    // sim.reset() replaces the array — because the time-went-backwards check
+    // alone goes blind if the reset happens while this panel is hidden and the
+    // new run's clock overtakes the old lastT before it is shown again (the
+    // ring would then blit stale columns from the previous run as if current).
+    if (!d.off || d.off.height !== nBins || d.histRef !== history || last.t < d.lastT) {
       d.off = document.createElement('canvas');
       d.off.width = WINDOW;
       d.off.height = nBins;
       d.offCtx = d.off.getContext('2d');
       d.cursor = 0;
       d.lastT = -1;
+      d.histRef = history;
     }
     // paint columns for samples not yet drawn (also catches up after the
     // panel was hidden; history never outlives the ring's WINDOW columns)
