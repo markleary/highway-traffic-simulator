@@ -10,6 +10,10 @@ const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
 const charts = new ChartPanel();
 const speedo = new Speedometer();
+// hovering the space-time diagram highlights the matching spot on the road
+charts.onHoverS = (s) => renderer.setRoadCursor(s);
+// re-fit the camera now that both side panels exist and can be measured
+renderer.setDefaultView();
 // Click a car (or the road right next to one) to crash it.
 renderer.onRoadClick = (point) => {
   const car = sim.carNear(point);
@@ -71,7 +75,7 @@ const el = {
 setInterval(() => {
   const s = sim.stats();
   renderer.updateRampLabels(sim.rampFlows());
-  charts.update(sim.history);
+  charts.update(sim.history, sim.incidentStarts);
   el.cars.textContent = s.count;
   el.speed.textContent =
     params.units === 'imperial'

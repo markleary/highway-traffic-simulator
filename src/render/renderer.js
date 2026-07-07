@@ -60,6 +60,16 @@ export class SceneRenderer {
     this.buildRamps();
     this.buildCars();
 
+    // faint cross-road marker mirroring the space-time diagram's hovered
+    // position (see setRoadCursor); lives outside roadGroup so it survives
+    // lane-count and shape rebuilds
+    this.roadCursor = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false })
+    );
+    this.roadCursor.visible = false;
+    this.scene.add(this.roadCursor);
+
     this._pos = new THREE.Vector3();
     this._tan = new THREE.Vector3();
     this._dummy = new THREE.Object3D();
@@ -368,28 +378,53 @@ export class SceneRenderer {
     }
   }
 
-  // Camera framing derived from the current shape's bounding box: `h` is the
-  // overhead height that fits the whole loop (plus ramps and labels), `shift`
-  // moves the view target east so the scene sits left of the control panel
-  // that occupies the right edge of the screen.
+  // Show (or hide, with null) a faint line across the road at loop position
+  // s — the counterpart of the space-time diagram's hover readout.
+  setRoadCursor(s) {
+    if (s === null || s === undefined) {
+      this.roadCursor.visible = false;
+      return;
+    }
+    const outer = ROAD.laneWidth / 2 + ROAD.shoulderWidth; // shoulder's outer edge
+    const inner = ROAD.laneWidth / 2 - params.lanes * ROAD.laneWidth - 1.0; // incl. apron
+    pointAt(s, (outer + inner) / 2, this._pos);
+    forwardAt(s, this._tan);
+    this.roadCursor.position.set(this._pos.x, 0.06, this._pos.z);
+    this.roadCursor.rotation.y = Math.atan2(this._tan.x, this._tan.z);
+    this.roadCursor.scale.set(outer - inner, 1, 1.4);
+    this.roadCursor.visible = true;
+  }
+
+  // Camera framing: fit the loop (plus ramps and labels) into the free
+  // horizontal region between the charts panel (left) and the control panel
+  // (right), and aim the camera at that region's center. Measured from the
+  // live DOM so it adapts to hidden panels; main.js re-fits once the panels
+  // exist, and view buttons / shape changes re-measure on every call.
   viewFit() {
     const b = bounds();
     const m = 120; // pavement, ramps (tips reach ~105 m out), and their labels
     const hx = b.halfX + m;
     const hz = b.halfZ + m;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const h = Math.max(hz / t, hx / (t * this.camera.aspect)) * 1.04;
-    return { h, shift: 0.27 * h * t * this.camera.aspect };
+    const tH = t * this.camera.aspect;
+    const w = window.innerWidth;
+    const charts = document.querySelector('.panel.charts');
+    const gui = document.querySelector('.lil-gui.root');
+    const left = charts && charts.style.display !== 'none' ? charts.getBoundingClientRect().right : 0;
+    const right = gui ? gui.getBoundingClientRect().left : w;
+    const frac = Math.max(0.3, (right - left) / w); // usable width fraction
+    const centerFrac = (left + right - w) / w; // free-region center, -1..1 of half-width
+    const h = Math.max(hz / t, hx / (tH * frac)) * 1.04;
+    return { h, hx, tH, frac, centerFrac };
   }
 
   setDefaultView() {
     this.stopChase();
-    const { h, shift } = this.viewFit();
+    const { h, hx, tH, frac, centerFrac } = this.viewFit();
     // Pull back far enough for both the overhead fit and the horizontal
-    // frustum — wide shapes (Speedway) hit the left/right edges first.
-    const b = bounds();
-    const tH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
-    const dist = Math.max(h * 0.8, ((b.halfX + 120) / tH) * 1.1);
+    // frustum — wide shapes (Speedway) hit the panels first.
+    const dist = Math.max(h * 0.8, (hx / (tH * frac)) * 1.1);
+    const shift = -centerFrac * dist * tH;
     this.camera.position.set(shift, dist * 0.554, dist * 0.831); // ≈34° elevation
     this.camera.lookAt(shift, 0, 0);
     if (this.controls) this.controls.target.set(shift, 0, 0);
@@ -397,7 +432,8 @@ export class SceneRenderer {
 
   setTopView() {
     this.stopChase();
-    const { h, shift } = this.viewFit();
+    const { h, tH, centerFrac } = this.viewFit();
+    const shift = -centerFrac * h * tH;
     this.camera.position.set(shift, h, 0.1);
     this.camera.lookAt(shift, 0, 0);
     this.controls.target.set(shift, 0, 0);

@@ -53,7 +53,8 @@ branch → `main` / root**. That's it — there is nothing to build.
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
   drift *down-right* — the wave rolls upstream even though every car in it
-  drives forward. Ticks on the left edge mark the ramps.
+  drives forward. Ticks on the left edge mark the ramps, dark red lines mark
+  each incident's start, and hovering highlights the matching spot on the road.
 
 Try it: crank both on-ramps to 30+ cars/min with exits low and watch the jam grow
 backwards from the merge points. Or lower the time headway to 0.6 s and see how
