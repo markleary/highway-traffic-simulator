@@ -15,6 +15,7 @@ export const params = {
   units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
   colorMode: 'speed', // 'speed' | 'random'
   showCharts: true,
+  showDiagram: true, // space-time heatmap section of the charts panel
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()

@@ -47,8 +47,13 @@ branch → `main` / root**. That's it — there is nothing to build.
     backs up), exits show what their share % currently amounts to in cars/min.
   - **View** — color cars by speed (red = stopped → green = at desired speed) or
     give each car a fixed color; overhead vs. perspective camera; live charts
-    toggle; and a **chase camera** that rides along behind a random car with a
-    working speedometer (Esc to exit)
+    and **space-time diagram** toggles; and a **chase camera** that rides along
+    behind a random car with a working speedometer (Esc to exit)
+- The space-time diagram (bottom left) is the classic traffic-flow plot: each
+  column is one second, bottom-to-top is one lap of the loop, color is speed.
+  Individual cars trace bright diagonal lines; jams appear as red bands that
+  drift *down-right* — the wave rolls upstream even though every car in it
+  drives forward. Ticks on the left edge mark the ramps.
 
 Try it: crank both on-ramps to 30+ cars/min with exits low and watch the jam grow
 backwards from the merge points. Or lower the time headway to 0.6 s and see how
@@ -65,5 +70,4 @@ work their way to the outer lane in time. Everything is rendered with three.js
 
 ## Roadmap
 
-- A space-time diagram (jam waves as diagonal stripes)
 - Ramp metering

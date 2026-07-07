@@ -1,15 +1,21 @@
 import { params, KMH, MPH } from '../params.js';
+import { LOOP, RAMPS } from '../sim/road.js';
 
-// Live rolling charts of average speed and flow over the last 5 minutes.
-// Two separate mini-charts (never a dual axis); series hues come from the
-// validated dark-surface categorical palette. Sim-time based: pausing the
-// simulation pauses the charts.
+// Live rolling charts of average speed and flow over the last 5 minutes,
+// plus a space-time diagram (position × time speed heatmap) on the same
+// time axis. Two separate mini-charts (never a dual axis); series hues come
+// from the validated dark-surface categorical palette. Sim-time based:
+// pausing the simulation pauses the charts.
 const WINDOW = 300; // seconds shown
 const W = 320; // logical canvas size (CSS px)
 const H = 56;
+const DIAG_H = 120;
 const SPEED_COLOR = '#3987e5';
 const FLOW_COLOR = '#199e70';
 const INCIDENT_SHADE = 'rgba(230, 103, 103, 0.16)';
+// Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
+// shows as bright trajectories against it and jams as red bands.
+const EMPTY_COLOR = 'hsl(120, 25%, 24%)';
 
 export class ChartPanel {
   constructor() {
@@ -17,6 +23,7 @@ export class ChartPanel {
     this.el.className = 'panel charts';
     this.speed = this.makeChart('Average speed', SPEED_COLOR);
     this.flow = this.makeChart('Flow past start', FLOW_COLOR);
+    this.diag = this.makeDiagram();
     document.body.appendChild(this.el);
     this.history = [];
   }
@@ -60,6 +67,142 @@ export class ChartPanel {
     const unit = imp ? 'mph' : 'km/h';
     this.draw(this.speed, (p) => p.v / spd, (x) => `${x.toFixed(0)} ${unit}`);
     this.draw(this.flow, (p) => p.f, (x) => `${x.toFixed(1)}/min`);
+    this.drawDiagram((x) => `${(x / spd).toFixed(0)} ${unit}`);
+  }
+
+  // Space-time diagram: each column is one second, bottom→top is one lap of
+  // the loop (s = 0 at the bottom), color = mean speed of the vehicles in
+  // each 10 m stretch. Jam waves show up as red bands crawling upstream —
+  // sloping down-right — while the cars carrying them drive up-right.
+  makeDiagram() {
+    const wrap = document.createElement('div');
+    wrap.className = 'chart';
+    const head = document.createElement('div');
+    head.className = 'chead';
+    const name = document.createElement('span');
+    name.innerHTML =
+      '<i style="background:linear-gradient(90deg, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%))"></i>Space–time (position × time)';
+    const value = document.createElement('span');
+    value.className = 'cval';
+    value.textContent = '';
+    head.append(name, value);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'diagram';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr;
+    canvas.height = DIAG_H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    wrap.append(head, canvas);
+    this.el.appendChild(wrap);
+
+    // heat columns accumulate in an offscreen ring buffer (1 px per sample,
+    // 1 px per bin); the visible canvas just blits + annotates it
+    const d = { wrap, canvas, ctx, value, hoverT: null, hoverY: null, off: null, offCtx: null, cursor: 0, lastT: -1 };
+    canvas.addEventListener('pointermove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      d.hoverT = (e.clientX - r.left) / r.width;
+      d.hoverY = (e.clientY - r.top) / r.height;
+    });
+    canvas.addEventListener('pointerleave', () => (d.hoverT = null));
+    return d;
+  }
+
+  drawDiagram(fmt) {
+    const d = this.diag;
+    d.wrap.style.display = params.showDiagram ? '' : 'none';
+    if (!params.showDiagram) return;
+    const { ctx } = d;
+    ctx.clearRect(0, 0, W, DIAG_H);
+    const history = this.history;
+    const last = history[history.length - 1];
+    if (!last || !last.bins) {
+      d.value.textContent = '';
+      return;
+    }
+    const nBins = last.bins.length;
+
+    // (re)create the ring on first use, on sim reset (time went backwards),
+    // or when the road shape changed the bin count
+    if (!d.off || d.off.height !== nBins || last.t < d.lastT) {
+      d.off = document.createElement('canvas');
+      d.off.width = WINDOW;
+      d.off.height = nBins;
+      d.offCtx = d.off.getContext('2d');
+      d.cursor = 0;
+      d.lastT = -1;
+    }
+    // paint columns for samples not yet drawn (also catches up after the
+    // panel was hidden; history never outlives the ring's WINDOW columns)
+    for (const p of history) {
+      if (p.t <= d.lastT) continue;
+      this.paintColumn(d, p, nBins);
+      d.lastT = p.t;
+    }
+
+    // blit the ring so columns line up with the other charts' time axis
+    const tNow = last.t;
+    const t0 = Math.max(0, tNow - WINDOW);
+    const span = Math.max(tNow - t0, 30);
+    const xs = (t) => ((t - t0) / span) * W;
+    const n = history.length; // the last n ring columns are history[0..n-1]
+    const x0 = xs(history[0].t);
+    const colW = (xs(tNow) + W / span - x0) / n; // newest column stays visible
+    let start = (d.cursor - n) % WINDOW;
+    if (start < 0) start += WINDOW;
+    ctx.imageSmoothingEnabled = false;
+    if (start + n <= WINDOW) {
+      ctx.drawImage(d.off, start, 0, n, nBins, x0, 0, n * colW, DIAG_H);
+    } else {
+      const n1 = WINDOW - start;
+      ctx.drawImage(d.off, start, 0, n1, nBins, x0, 0, n1 * colW, DIAG_H);
+      ctx.drawImage(d.off, 0, 0, n - n1, nBins, x0 + n1 * colW, 0, (n - n1) * colW, DIAG_H);
+    }
+
+    // ramp positions as ticks on the left edge (colors match the map labels)
+    for (const ramp of RAMPS) {
+      const s = ramp.type === 'on' ? ramp.sJoin : ramp.sDiverge;
+      const y = DIAG_H * (1 - s / LOOP);
+      ctx.fillStyle = ramp.type === 'on' ? '#7ec8a0' : '#d9b64a';
+      ctx.fillRect(0, y - 1, 5, 2);
+    }
+
+    // hover: pin the readout to the (time, position) cell under the cursor
+    if (d.hoverT !== null) {
+      const tH = t0 + d.hoverT * span;
+      let nearest = history[0];
+      for (const p of history) if (Math.abs(p.t - tH) < Math.abs(nearest.t - tH)) nearest = p;
+      const bin = Math.min(nBins - 1, Math.max(0, Math.floor((1 - d.hoverY) * nBins)));
+      const x = xs(nearest.t);
+      const y = DIAG_H * (1 - (bin + 0.5) / nBins);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 1.5, y - 1.5, 3, 3);
+      const v = nearest.bins[bin];
+      const at = `s=${Math.round(((bin + 0.5) / nBins) * LOOP)} m`;
+      const ago = Math.round(nearest.t >= tNow ? 0 : tNow - nearest.t);
+      d.value.textContent = `${v < 0 ? 'empty' : fmt(v)} · ${at} · ${ago}s ago`;
+    } else {
+      d.value.textContent = '';
+    }
+  }
+
+  paintColumn(d, p, nBins) {
+    const ctx = d.offCtx;
+    const x = d.cursor % WINDOW;
+    const v0 = Math.max(params.desiredSpeed, 0.1);
+    ctx.clearRect(x, 0, 1, nBins);
+    for (let b = 0; b < nBins; b++) {
+      const v = p.bins[b];
+      if (v < 0) {
+        ctx.fillStyle = EMPTY_COLOR;
+      } else {
+        const t = Math.min(Math.max(v / v0, 0), 1);
+        ctx.fillStyle = `hsl(${t * 120}, 85%, 50%)`; // matches the car colors
+      }
+      ctx.fillRect(x, nBins - 1 - b, 1, 1); // s = 0 at the bottom
+    }
+    d.cursor++;
   }
 
   draw(chart, get, fmt) {
