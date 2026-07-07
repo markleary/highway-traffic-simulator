@@ -12,10 +12,14 @@ const H = 56;
 const DIAG_H = 120;
 const SPEED_COLOR = '#3987e5';
 const FLOW_COLOR = '#199e70';
+const CARS_COLOR = '#d98e32';
 const INCIDENT_SHADE = 'rgba(230, 103, 103, 0.16)';
 // Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
 // shows as bright trajectories against it and jams as red bands.
 const EMPTY_COLOR = 'hsl(120, 25%, 24%)';
+// Incident-start marker on the diagram: dark solid red, kin to the line
+// charts' incident bands but distinct from the bright jam-red of the heatmap.
+const INCIDENT_START = '#8f2b2b';
 
 export class ChartPanel {
   constructor() {
@@ -23,6 +27,7 @@ export class ChartPanel {
     this.el.className = 'panel charts';
     this.speed = this.makeChart('Average speed', SPEED_COLOR);
     this.flow = this.makeChart('Flow past start', FLOW_COLOR);
+    this.cars = this.makeChart('Cars on road', CARS_COLOR);
     this.diag = this.makeDiagram();
     document.body.appendChild(this.el);
     this.history = [];
@@ -67,6 +72,7 @@ export class ChartPanel {
     const unit = imp ? 'mph' : 'km/h';
     this.draw(this.speed, (p) => p.v / spd, (x) => `${x.toFixed(0)} ${unit}`);
     this.draw(this.flow, (p) => p.f, (x) => `${x.toFixed(1)}/min`);
+    this.draw(this.cars, (p) => p.n, (x) => `${Math.round(x)}`);
     this.drawDiagram((x) => `${(x / spd).toFixed(0)} ${unit}`);
   }
 
@@ -78,7 +84,9 @@ export class ChartPanel {
     const wrap = document.createElement('div');
     wrap.className = 'chart';
     const head = document.createElement('div');
-    head.className = 'chead';
+    // 'tall' reserves two text lines: the hover readout is long enough to
+    // wrap, and without the reservation the whole panel above would jump
+    head.className = 'chead tall';
     const name = document.createElement('span');
     name.innerHTML =
       '<i style="background:linear-gradient(90deg, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%))"></i>Space–time (position × time)';
@@ -170,6 +178,14 @@ export class ChartPanel {
       const y = DIAG_H * (1 - s / LOOP);
       ctx.fillStyle = ramp.type === 'on' ? '#7ec8a0' : '#d9b64a';
       ctx.fillRect(0, y - 1, 5, 2);
+    }
+
+    // incident starts: a solid dark red line, kin to the line charts' bands
+    ctx.fillStyle = INCIDENT_START;
+    for (let i = 1; i < history.length; i++) {
+      if (history[i].inc && !history[i - 1].inc) {
+        ctx.fillRect(xs(history[i].t) - 0.75, 0, 1.5, DIAG_H);
+      }
     }
 
     // hover: pin the readout to the (time, position) cell under the cursor.

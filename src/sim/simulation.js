@@ -263,6 +263,7 @@ export class Simulation {
         t: this.time,
         v: s.avgSpeed,
         f: s.flowPerMin,
+        n: s.count, // every vehicle, ramps included — matches the HUD
         inc: this.incidents.length > 0,
         bins: this.speedBins(),
       });

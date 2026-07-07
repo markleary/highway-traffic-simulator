@@ -54,7 +54,8 @@ run('baseline regime (no trucks), 120 sim-seconds', { truckShare: 0 }, 120, (sim
   check('exit flows measured', rf.offA + rf.offB > 0, `(offA=${rf.offA.toFixed(1)}, offB=${rf.offB.toFixed(1)})`);
   check(
     'chart history sampled at 1 Hz',
-    sim.history.length === 120 && sim.history.every((p) => Number.isFinite(p.v) && Number.isFinite(p.f)),
+    sim.history.length === 120 &&
+      sim.history.every((p) => Number.isFinite(p.v) && Number.isFinite(p.f) && Number.isFinite(p.n)),
     `(len=${sim.history.length})`
   );
   // space-time diagram samples: one speed bin per BIN_M of loop, -1 = empty
@@ -78,6 +79,13 @@ run('flood: heavy inflow, no exits → jam builds', { onRampA: 35, onRampB: 35, 
   check('car count grew well past seed', s.count > 160, `(count=${s.count})`);
   check('nobody exited', s.exited === 0, `(exited=${s.exited})`);
   check('congestion slowed traffic', s.avgSpeed < 26.5, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
+  // the cars-on-road chart series should show the growth
+  const hist = sim.history;
+  check(
+    'history tracks the growing car count',
+    hist[hist.length - 1].n > hist[0].n && hist[hist.length - 1].n === s.count,
+    `(${hist[0].n} → ${hist[hist.length - 1].n})`
+  );
 });
 
 run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, offRampA: 45, offRampB: 45, initialCars: 120 }, 240, (sim) => {
