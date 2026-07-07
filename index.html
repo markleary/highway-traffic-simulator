@@ -38,6 +38,7 @@
     .charts canvas.diagram { height: 120px; }
     .charts .chart + .chart { margin-top: 6px; }
     .charts .chead { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-bottom: 2px; }
+    .charts .chead.tall { min-height: 27px; align-items: flex-start; } /* two lines: a wrapping hover readout must not resize the panel */
     .charts .chead i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
     .charts .chead .cval { color: #fff; font-variant-numeric: tabular-nums; }
     .map-label .sub { font-size: 10px; color: #9fb0c0; font-variant-numeric: tabular-nums; }
