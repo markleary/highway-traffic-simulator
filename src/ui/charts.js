@@ -12,6 +12,7 @@ const H = 56;
 const DIAG_H = 120;
 const SPEED_COLOR = '#3987e5';
 const FLOW_COLOR = '#199e70';
+const CARS_COLOR = '#d98e32';
 const INCIDENT_SHADE = 'rgba(230, 103, 103, 0.16)';
 // Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
 // shows as bright trajectories against it and jams as red bands.
@@ -23,6 +24,7 @@ export class ChartPanel {
     this.el.className = 'panel charts';
     this.speed = this.makeChart('Average speed', SPEED_COLOR);
     this.flow = this.makeChart('Flow past start', FLOW_COLOR);
+    this.cars = this.makeChart('Cars on road', CARS_COLOR);
     this.diag = this.makeDiagram();
     document.body.appendChild(this.el);
     this.history = [];
@@ -67,6 +69,7 @@ export class ChartPanel {
     const unit = imp ? 'mph' : 'km/h';
     this.draw(this.speed, (p) => p.v / spd, (x) => `${x.toFixed(0)} ${unit}`);
     this.draw(this.flow, (p) => p.f, (x) => `${x.toFixed(1)}/min`);
+    this.draw(this.cars, (p) => p.n, (x) => `${Math.round(x)}`);
     this.drawDiagram((x) => `${(x / spd).toFixed(0)} ${unit}`);
   }
 

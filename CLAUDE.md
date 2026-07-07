@@ -56,7 +56,7 @@ src/sim/car.js         Car state record
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic
 src/render/renderer.js three.js scene; cars are two InstancedMeshes (body + cabin)
 src/ui/panel.js        lil-gui control panel
-src/ui/charts.js       rolling 5-min speed/flow charts + space-time diagram
+src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hand-rolled canvas 2D; heatmap columns come from the
                        per-10 m speed bins sampled into sim.history at 1 Hz)
 src/ui/speedo.js       speedometer gauge shown while the chase camera is active
