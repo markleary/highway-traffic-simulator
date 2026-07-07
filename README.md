@@ -35,7 +35,8 @@ branch → `main` / root**. That's it — there is nothing to build.
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
-  - **Road** — number of lanes (2–4)
+  - **Road** — loop shape (circle, speedway oval, beltway square, or a pinched
+    grand-prix circuit) and number of lanes (2–4)
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
     keep right), desired speed, per-car speed spread, time headway (following
     distance), minimum gap, acceleration, comfortable braking
@@ -65,4 +66,4 @@ work their way to the outer lane in time. Everything is rendered with three.js
 ## Roadmap
 
 - A space-time diagram (jam waves as diagonal stripes)
-- Ramp metering, more road shapes than a circle
+- Ramp metering

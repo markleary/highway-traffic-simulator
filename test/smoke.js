@@ -2,7 +2,7 @@
 // parameter regimes and asserts basic physical plausibility. No browser needed.
 import { params, KMH } from '../src/params.js';
 import { Simulation } from '../src/sim/simulation.js';
-import { LOOP, forwardDist } from '../src/sim/road.js';
+import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt } from '../src/sim/road.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -80,7 +80,22 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { incidentDuration: 30, accidentLanes: 2 });
   const sim = new Simulation();
   for (let i = 0; i < Math.round(15 / H); i++) sim.step(H);
-  sim.triggerRandomAccident();
+  // Pick a victim that has an adjacent-lane neighbor inside the 25 m drag-in
+  // radius, so the pileup is reliably 2 cars (a random victim occasionally has
+  // an empty stretch beside it and wrecks alone).
+  const victim = sim.cars.find(
+    (a) =>
+      a.state === 'main' &&
+      !a.incident &&
+      sim.cars.some(
+        (b) =>
+          b.state === 'main' &&
+          !b.incident &&
+          Math.abs(b.lane - a.lane) === 1 &&
+          Math.min(forwardDist(a.s, b.s), forwardDist(b.s, a.s)) < 20
+      )
+  );
+  sim.triggerAccident(victim);
   check('incident registered', sim.incidents.length === 1);
   const wrecks = sim.incidents[0]?.cars ?? [];
   check('pileup involves two cars', wrecks.length === 2, `(${wrecks.length})`);
@@ -212,6 +227,54 @@ run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
   }
   check('no body interpenetration after 120 s', worstBody > -0.05, `(worst=${worstBody.toFixed(2)} m)`);
 });
+
+// --- road shapes: exact geometry on every shape, then a full traffic run.
+// LOOP/RAMPS are live bindings that follow the active shape. Trucks are
+// pinned off so ramp-flow behavior stays deterministic (a semi heading a
+// ramp queue can legitimately stall it for a minute).
+
+for (const [id, shape] of Object.entries(SHAPES)) {
+  console.log(`\nroad shape: ${shape.label}`);
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { roadShape: id, truckShare: 0 });
+  const sim = new Simulation(); // reset() applies the shape
+  check(`${id}: loop length sane`, LOOP > 800 && LOOP < 1600, `(LOOP=${LOOP.toFixed(0)} m)`);
+  check(`${id}: path closes at the wrap seam`, pointAt(0).distanceTo(pointAt(LOOP - 1e-9)) < 1e-3);
+
+  // s is exact arc length: 0.5 m of s moves ~0.5 m of world, along forwardAt
+  let worstLen = 0;
+  let worstTan = 1;
+  for (let i = 0; i < 500; i++) {
+    const s = (i / 500) * LOOP;
+    const a = pointAt(s);
+    const b = pointAt(s + 0.5);
+    worstLen = Math.max(worstLen, Math.abs(a.distanceTo(b) - 0.5));
+    worstTan = Math.min(worstTan, b.sub(a).normalize().dot(forwardAt(s + 0.25)));
+  }
+  check(`${id}: s is exact arc length`, worstLen < 2e-3, `(err=${worstLen.toExponential(1)})`);
+  check(`${id}: tangents match the path`, worstTan > 0.9999, `(dot=${worstTan.toFixed(5)})`);
+
+  // stretches of road far apart in s must be far apart in space, or the
+  // pavement (up to ~15 m each side of the centerline) would overlap itself
+  const N = Math.ceil(LOOP / 3);
+  const pts = [];
+  for (let i = 0; i < N; i++) pts.push(pointAt((i / N) * LOOP));
+  let minD = Infinity;
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const ds = Math.min(j - i, N - (j - i)) * (LOOP / N);
+      if (ds > 60) minD = Math.min(minD, pts[i].distanceTo(pts[j]));
+    }
+  }
+  check(`${id}: road never overlaps itself`, minD >= 40, `(min far-pair dist=${minD.toFixed(1)} m)`);
+  check(`${id}: four ramps placed`, RAMPS.length === 4 && RAMPS.every((r) => r.length > 80));
+
+  for (let i = 0; i < Math.round(120 / H); i++) sim.step(H);
+  assertSane(sim, id);
+  const st = sim.stats();
+  check(`${id}: traffic flows`, st.avgSpeed > 6, `(avg=${st.avgSpeed.toFixed(1)} m/s)`);
+  check(`${id}: ramp cars merged`, st.merged > 3, `(merged=${st.merged})`);
+  check(`${id}: cars exited`, st.exited > 2, `(exited=${st.exited})`);
+}
 
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
