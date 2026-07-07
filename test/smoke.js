@@ -37,7 +37,10 @@ function run(label, overrides, seconds, checks) {
   return sim;
 }
 
-run('default regime, 120 sim-seconds', {}, 120, (sim) => {
+// truckShare 0: pure-cars baseline — a truck heading a ramp queue can
+// legitimately stall that ramp's measured flow for a minute (see the trucks
+// scenario for mixed-traffic checks)
+run('baseline regime (no trucks), 120 sim-seconds', { truckShare: 0 }, 120, (sim) => {
   const s = sim.stats();
   check('cars remain on the road', s.count > 20, `(count=${s.count})`);
   check('traffic is moving', s.avgSpeed > 6, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
@@ -143,6 +146,22 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   );
   for (let i = 0; i < Math.round(10 / H); i++) sim.step(H);
   assertSane(sim, 'dense seeding');
+}
+
+{
+  console.log('\nreset honors the trucks knob road-wide (Codex review regression)');
+  // trucks are excluded from the innermost lane, so the eligible lanes must be
+  // sampled at a boosted rate; average over resets to keep statistics tight
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { truckShare: 30, initialCars: 150 });
+  let shareSum = 0;
+  const RESETS = 10;
+  for (let r = 0; r < RESETS; r++) {
+    const sim = new Simulation();
+    shareSum += sim.cars.filter((c) => c.kind === 'truck').length / sim.cars.length;
+  }
+  const avgShare = (shareSum / RESETS) * 100;
+  // unboosted sampling would average ~20% here (2/3 of the knob)
+  check('average seeded truck share ≈ 30%', avgShare > 26 && avgShare < 34, `(avg=${avgShare.toFixed(1)}%)`);
 }
 
 run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {

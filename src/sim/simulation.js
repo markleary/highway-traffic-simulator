@@ -82,8 +82,17 @@ export class Simulation {
     const perLane = Math.floor(params.initialCars / lanes);
     const extra = params.initialCars - perLane * lanes;
     const need = (k) => VEHICLE_LEN[k] + params.minGap + 1; // slot: own length + safe gap
+    // The innermost lane carries no trucks (on 3+ lanes), so sample trucks in
+    // the eligible lanes at a boosted rate to keep the ROAD-WIDE mix at the
+    // requested truckShare (capped at 100% when the knob asks for more than
+    // the eligible lanes can express).
+    const laneCounts = Array.from({ length: lanes }, (_, l) => perLane + (l < extra ? 1 : 0));
+    const total = laneCounts.reduce((a, b) => a + b, 0);
+    const eligibleTotal = lanes >= 3 ? total - laneCounts[lanes - 1] : total;
+    const boostedShare =
+      eligibleTotal > 0 ? Math.min(100, (params.truckShare * total) / eligibleTotal) : 0;
     for (let l = 0; l < lanes; l++) {
-      const count = perLane + (l < extra ? 1 : 0);
+      const count = laneCounts[l];
       if (count === 0) continue;
       // no trucks in the innermost lane (they avoid it, see applyLaneChanges)
       const truckOk = !(lanes >= 3 && l === lanes - 1);
@@ -93,7 +102,9 @@ export class Simulation {
       // mix, trucks downgrade to cars; if it can't even fit the cars, the
       // lane seeds fewer vehicles than requested.
       const kinds = [];
-      for (let j = 0; j < count; j++) kinds.push(truckOk ? this.sampleKind() : 'car');
+      for (let j = 0; j < count; j++) {
+        kinds.push(truckOk && Math.random() * 100 < boostedShare ? 'truck' : 'car');
+      }
       let totalReq = kinds.reduce((sum, k) => sum + need(k), 0);
       for (let j = 0; totalReq > LOOP && j < kinds.length; j++) {
         if (kinds[j] === 'truck') {
