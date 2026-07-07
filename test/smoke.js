@@ -149,6 +149,27 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
 }
 
 {
+  console.log('\nfeasible reset counts are seeded in full (Codex review regression)');
+  // 2 lanes × 150 cars needs 150 × (4.6 + 2.0) = 990 m per lane — it fits the
+  // ~1056 m loop at minGap spacing, so no car may be silently dropped
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { lanes: 2, initialCars: 300, truckShare: 0 });
+  const sim = new Simulation();
+  check('all 300 requested cars seeded', sim.cars.length === 300, `(seeded=${sim.cars.length})`);
+  let worstGap = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstGap = Math.min(
+        worstGap,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
+    }
+  }
+  check('full-count seeds still respect minGap', worstGap >= params.minGap - 1e-6, `(worst=${worstGap.toFixed(2)} m)`);
+}
+
+{
   console.log('\nreset honors the trucks knob road-wide (Codex review regression)');
   // trucks are excluded from the innermost lane, so the eligible lanes must be
   // sampled at a boosted rate; average over resets to keep statistics tight

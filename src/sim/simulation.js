@@ -81,7 +81,10 @@ export class Simulation {
     const lanes = params.lanes;
     const perLane = Math.floor(params.initialCars / lanes);
     const extra = params.initialCars - perLane * lanes;
-    const need = (k) => VEHICLE_LEN[k] + params.minGap + 1; // slot: own length + safe gap
+    // slot: own length + min gap — the exact feasibility requirement; any
+    // extra breathing room comes out of the randomized slack below, so a
+    // layout that fits at minGap spacing is never rejected
+    const need = (k) => VEHICLE_LEN[k] + params.minGap;
     // The innermost lane carries no trucks (on 3+ lanes), so sample trucks in
     // the eligible lanes at a boosted rate to keep the ROAD-WIDE mix at the
     // requested truckShare (capped at 100% when the knob asks for more than
@@ -129,7 +132,6 @@ export class Simulation {
         s +=
           (VEHICLE_LEN[kind] + VEHICLE_LEN[nextKind]) / 2 +
           params.minGap +
-          1 +
           (slack * weights[j]) / wSum;
       }
     }
