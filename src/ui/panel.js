@@ -94,6 +94,10 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     'Share of vehicles that are semi trucks: long, ~20% slower, lazy acceleration, bigger following gaps, rare lane changes, and they stay out of the leftmost lane. Applies to newly entering vehicles and on reset.'
   );
   tip(
+    fDrv.add(params, 'accShare', 0, 100, 5).name('Adaptive cruise (%)'),
+    'Share of cars (never trucks) driving on adaptive cruise control — the angular wedge-shaped ones. They never brake harder than physics actually requires, so they absorb stop-and-go waves instead of amplifying them: crank the on-ramps until the space-time diagram striping appears, then raise this and watch the stripes dissolve. Applies to new spawns and on reset.'
+  );
+  tip(
     fDrv
       .add(ui, 'desiredSpeed', ...(imp ? [25, 90, 1] : [40, 145, 1]))
       .name(`Desired speed (${spdU})`)

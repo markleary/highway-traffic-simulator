@@ -1,11 +1,14 @@
 let nextId = 1;
 
-export const VEHICLE_LEN = { car: 4.6, truck: 16.5 }; // m
+// 'acc' is an adaptive-cruise-control car: same size and speed habits as a
+// human-driven car, but it follows with the constant-acceleration heuristic
+// (see simulation.js) so it absorbs jam waves instead of amplifying them.
+export const VEHICLE_LEN = { car: 4.6, truck: 16.5, acc: 4.6 }; // m
 
 export class Car {
   constructor({ s = 0, lane = 0, v = 0, v0Factor = 1, kind = 'car' } = {}) {
     this.id = nextId++;
-    this.kind = kind; // 'car' | 'truck'
+    this.kind = kind; // 'car' | 'truck' | 'acc'
     this.len = VEHICLE_LEN[kind];
     if (kind === 'truck') {
       // Loaded semi: accelerates lazily, brakes gently, follows at a bigger

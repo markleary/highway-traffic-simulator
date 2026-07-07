@@ -100,7 +100,8 @@ export class Speedometer {
     ctx.fillText(imp ? 'mph' : 'km/h', CX, CY + 40);
     ctx.textAlign = 'left';
 
-    this.cap.textContent = `following ${car.kind} #${car.id}${statusOf(car)}`;
+    const kind = car.kind === 'acc' ? 'ACC car' : car.kind;
+    this.cap.textContent = `following ${kind} #${car.id}${statusOf(car)}`;
   }
 }
 

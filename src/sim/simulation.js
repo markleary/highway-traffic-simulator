@@ -37,6 +37,41 @@ function idm(car, vLead, gap, v0) {
   return Math.max(acc, hardBrake);
 }
 
+// Adaptive cruise control: IDM tempered by the Constant-Acceleration
+// Heuristic (Treiber & Kesting, "Traffic Flow Dynamics", ch. 11). Plain IDM
+// panics when the gap falls below its desired s* — it brakes far harder than
+// physics requires, and that overreaction is exactly what amplifies a small
+// slowdown into a stop-and-go wave. The CAH computes the deceleration a
+// constant-acceleration prediction of the leader actually demands, and when
+// IDM wants to brake much harder than that, the blend below overrides the
+// panic. ACC cars therefore absorb perturbations instead of magnifying them.
+const ACC_COOL = 0.99; // "coolness factor": how strongly CAH tempers IDM
+
+function accACC(car, leader, gap, aIDM) {
+  const p = params;
+  const v = car.v;
+  const vL = leader.v;
+  // Leader's acceleration for the prediction, capped at our own maximum —
+  // assuming the leader will out-accelerate physics would license tailgating.
+  const aL = Math.min(leader.a, p.maxAccel);
+  const denom = vL * vL - 2 * gap * aL;
+  let aCAH;
+  if (vL * (v - vL) <= -2 * gap * aL && denom > 1e-6) {
+    // gap is opening: the constant-acceleration prediction never collides
+    aCAH = (v * v * aL) / denom;
+  } else {
+    // closing on the leader: kinematically required deceleration
+    const dv = Math.max(v - vL, 0);
+    aCAH = aL - (dv * dv) / (2 * gap);
+  }
+  if (aIDM >= aCAH) return aIDM; // IDM isn't panicking; keep it
+  const b = p.comfortBrake;
+  return Math.max(
+    (1 - ACC_COOL) * aIDM + ACC_COOL * (aCAH + b * Math.tanh((aIDM - aCAH) / b)),
+    -9
+  );
+}
+
 // arr is sorted by s ascending. Returns the cars just ahead of / behind s,
 // with wraparound; both may be the same car if the lane holds only one.
 function neighborsAt(arr, s) {
@@ -115,7 +150,9 @@ export class Simulation {
       // lane seeds fewer vehicles than requested.
       const kinds = [];
       for (let j = 0; j < count; j++) {
-        kinds.push(truckOk && Math.random() * 100 < boostedShare ? 'truck' : 'car');
+        kinds.push(
+          truckOk && Math.random() * 100 < boostedShare ? 'truck' : this.sampleCarKind()
+        );
       }
       let totalReq = kinds.reduce((sum, k) => sum + need(k), 0);
       for (let j = 0; totalReq > LOOP && j < kinds.length; j++) {
@@ -147,11 +184,18 @@ export class Simulation {
   }
 
   sampleKind() {
-    return Math.random() * 100 < params.truckShare ? 'truck' : 'car';
+    return Math.random() * 100 < params.truckShare ? 'truck' : this.sampleCarKind();
+  }
+
+  // Trucks never get ACC; the knob is the share of CARS driving on it.
+  sampleCarKind() {
+    return Math.random() * 100 < params.accShare ? 'acc' : 'car';
   }
 
   sampleV0Factor(kind = 'car') {
-    // trucks: slower (speed-limited / loaded) with less driver-to-driver spread
+    // trucks: slower (speed-limited / loaded) with less driver-to-driver spread.
+    // ACC cars keep the full human spread — the driver still picks the set
+    // speed; only the *following* behavior differs (see accACC).
     const base = kind === 'truck' ? 0.8 : 1;
     const spread = params.speedVariation * (kind === 'truck' ? 0.5 : 1);
     return base * (1 + spread * (Math.random() * 2 - 1));
@@ -310,7 +354,13 @@ export class Simulation {
         const car = arr[i];
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
         const gap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
-        car.a = idm(car, leader ? leader.v : car.v, gap, this.effectiveV0(car));
+        const aIDM = idm(car, leader ? leader.v : car.v, gap, this.effectiveV0(car));
+        // ACC only tempers real following situations; ramp queues and
+        // blocked-gap cases (gap <= 0) keep the plain IDM/hard-brake result.
+        car.a =
+          car.kind === 'acc' && leader && Number.isFinite(gap) && gap > 0
+            ? accACC(car, leader, gap, aIDM)
+            : aIDM;
       }
     }
   }

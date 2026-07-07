@@ -246,7 +246,13 @@ export class SceneRenderer {
     const cabGeo = new THREE.BoxGeometry(2.35, 2.7, 3.8).translate(0, 1.55, 6.3);
     this.trailer = new THREE.InstancedMesh(trailerGeo, mat(), MAX_TRUCKS);
     this.cab = new THREE.InstancedMesh(cabGeo, mat(), MAX_TRUCKS);
-    for (const m of [this.body, this.cabin, this.trailer, this.cab]) {
+    // ACC cars: an angular stainless wedge — unmistakable from above
+    this.cyber = new THREE.InstancedMesh(
+      cybertruckGeo(),
+      new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide }),
+      MAX_CARS
+    );
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       this.scene.add(m);
@@ -258,9 +264,11 @@ export class SceneRenderer {
     const blinkOn = Math.floor(performance.now() / 400) % 2 === 0; // hazard flashers
     let ci = 0; // next free car instance
     let ti = 0; // next free truck instance
+    let ai = 0; // next free ACC-car instance
     for (const car of cars) {
       const truck = car.kind === 'truck';
-      if (truck ? ti >= MAX_TRUCKS : ci >= MAX_CARS) continue;
+      const acc = car.kind === 'acc';
+      if (truck ? ti >= MAX_TRUCKS : (acc ? ai : ci) >= MAX_CARS) continue;
       this.carPose(car, this._pos, this._tan);
       let rotY = Math.atan2(this._tan.x, this._tan.z);
       if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
@@ -284,6 +292,10 @@ export class SceneRenderer {
         this.trailer.setColorAt(ti, this._bodyColor);
         this.cab.setColorAt(ti, this._cabinColor);
         ti++;
+      } else if (acc) {
+        this.cyber.setMatrixAt(ai, this._dummy.matrix);
+        this.cyber.setColorAt(ai, this._bodyColor);
+        ai++;
       } else {
         this.body.setMatrixAt(ci, this._dummy.matrix);
         this.cabin.setMatrixAt(ci, this._dummy.matrix);
@@ -296,7 +308,8 @@ export class SceneRenderer {
     this.cabin.count = ci;
     this.trailer.count = ti;
     this.cab.count = ti;
-    for (const m of [this.body, this.cabin, this.trailer, this.cab]) {
+    this.cyber.count = ai;
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber]) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
@@ -445,6 +458,35 @@ export class SceneRenderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
   }
+}
+
+// ACC cars: a low-poly angular pickup wedge — one unbroken line from the
+// nose up to a roof peak, then straight down to the tail. Same 4.6 m
+// footprint as a regular car (+z = front, matching the box geometries).
+// Non-indexed triangles so computeVertexNormals yields the flat facets.
+function cybertruckGeo() {
+  const y0 = 0.35; // ground clearance
+  const zF = 2.3;  // nose
+  const zT = -2.3; // tail
+  const zP = -0.25; // roof peak, just behind the midpoint
+  const A = (s) => [s * 1.0, y0, zF];    // nose, beltline width
+  const B = (s) => [s * 1.0, y0, zT];    // tail bottom
+  const F = (s) => [s * 0.95, 0.98, zF]; // hood leading edge
+  const P = (s) => [s * 0.8, 1.62, zP];  // roof peak (sides taper inward)
+  const T = (s) => [s * 0.9, 1.18, zT];  // tail top
+  const tris = [
+    [F(-1), F(1), P(1)], [F(-1), P(1), P(-1)], // hood + windshield plane
+    [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)], // bed cover
+    [A(-1), A(1), F(1)], [A(-1), F(1), F(-1)], // nose face
+    [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)], // tail face
+    [A(1), B(1), T(1)], [A(1), T(1), P(1)], [A(1), P(1), F(1)], // right side
+    [A(-1), T(-1), B(-1)], [A(-1), P(-1), T(-1)], [A(-1), F(-1), P(-1)], // left side
+    [A(1), A(-1), B(-1)], [A(1), B(-1), B(1)], // underside
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
+  geo.computeVertexNormals(); // DoubleSide material corrects any face parity
+  return geo;
 }
 
 // Flat triangle strip swept around the whole loop between two lateral offsets

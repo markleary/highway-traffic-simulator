@@ -38,8 +38,11 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **Road** — loop shape (circle, speedway oval, beltway square, or a pinched
     grand-prix circuit) and number of lanes (2–4)
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
-    keep right), desired speed, per-car speed spread, time headway (following
-    distance), minimum gap, acceleration, comfortable braking
+    keep right), percentage of cars on **adaptive cruise control** (the angular
+    wedge-shaped ones — they never brake harder than physics requires, so they
+    absorb stop-and-go waves instead of amplifying them), desired speed, per-car
+    speed spread, time headway (following distance), minimum gap, acceleration,
+    comfortable braking
   - **Lane changing** — politeness, incentive threshold, safety braking limit
   - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each exit.
     The map label at each ramp shows its *measured* flow over the last minute:
@@ -58,7 +61,9 @@ branch → `main` / root**. That's it — there is nothing to build.
 
 Try it: crank both on-ramps to 30+ cars/min with exits low and watch the jam grow
 backwards from the merge points. Or lower the time headway to 0.6 s and see how
-dense-but-fragile the flow becomes.
+dense-but-fragile the flow becomes. Then, once the space-time diagram is full of
+jam stripes, raise the adaptive-cruise share and watch the stripes dissolve —
+the 2018 Stern experiment, reproducible from your couch.
 
 ## How it works
 

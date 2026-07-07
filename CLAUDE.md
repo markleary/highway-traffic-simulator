@@ -108,11 +108,19 @@ test/smoke.js          runs the sim headless under several parameter regimes
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
-- Vehicle kinds: `car.kind` is 'car' or 'truck' (share set by the Trucks knob at
-  spawn/reset). Trucks are 16.5 m, ~20% slower with less spread, and scale the
-  global IDM knobs via per-car factors (`accelK`/`headwayK`/`brakeK` — see
-  `idm(car, …)`). They need 2.5× the lane-change incentive and never enter the
-  innermost lane on 3+ lane roads.
+- Vehicle kinds: `car.kind` is 'car', 'truck', or 'acc' (shares set by the
+  Trucks and Adaptive-cruise knobs at spawn/reset). Trucks are 16.5 m, ~20%
+  slower with less spread, and scale the global IDM knobs via per-car factors
+  (`accelK`/`headwayK`/`brakeK` — see `idm(car, …)`). They need 2.5× the
+  lane-change incentive and never enter the innermost lane on 3+ lane roads.
+- 'acc' cars (adaptive cruise control; never trucks — the knob is a share of
+  cars) are car-sized and keep the human speed spread, but follow with IDM
+  tempered by the Constant-Acceleration Heuristic (`accACC`, Treiber & Kesting):
+  they refuse to brake much harder than a constant-acceleration prediction of
+  the leader actually requires, so they absorb stop-and-go waves instead of
+  amplifying them (mainline only; ramp queues keep plain IDM). Rendered as an
+  angular stainless wedge. The wave-damping is regression-tested by comparing
+  stop-and-go exposure at 0% vs 100% ACC in a flood regime.
 
 ## Roadmap
 
