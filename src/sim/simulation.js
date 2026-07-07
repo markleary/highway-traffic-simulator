@@ -1,4 +1,4 @@
-import { LOOP, RAMPS, ROAD, R_REF, SHOULDER_LANE, wrap, forwardDist, pointAt } from './road.js';
+import { LOOP, RAMPS, ROAD, SHOULDER_LANE, wrap, forwardDist, pointAt, lateralOf, setShape } from './road.js';
 import { params } from '../params.js';
 import { Car, VEHICLE_LEN } from './car.js';
 
@@ -68,6 +68,10 @@ export class Simulation {
   }
 
   reset() {
+    // Apply the road-shape knob (no-op unless it changed). Doing this here
+    // keeps the "GUI writes params, sim reads them" contract; a shape change
+    // just requires a reset, since car s-coordinates don't map across shapes.
+    setShape(params.roadShape);
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
     this.time = 0;
@@ -495,7 +499,7 @@ export class Simulation {
         // Start rendering from the car's actual lateral spot on the ramp so
         // it slides into the lane instead of teleporting.
         const pt = ramp.curve.getPointAt(Math.min(car.rampPos / ramp.length, 1));
-        car.renderLane = -(Math.hypot(pt.x, pt.z) - R_REF) / ROAD.laneWidth;
+        car.renderLane = -lateralOf(sIns, pt) / ROAD.laneWidth;
         car.s = sIns;
         car.sPrev = wrap(sIns - 0.01);
         car.ramp = null;

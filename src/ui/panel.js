@@ -1,5 +1,6 @@
 import GUI from 'lil-gui';
 import { params, KMH, MPH, FT } from '../params.js';
+import { SHAPES } from '../sim/road.js';
 
 // params holds SI values only. Sliders with units bind to a proxy object in
 // display units and write converted SI back on change; toggling units tears
@@ -63,6 +64,19 @@ function makeGui({ sim, renderer, onUnitsChange }) {
   );
 
   const fRoad = gui.addFolder('Road');
+  const shapeOptions = Object.fromEntries(
+    Object.entries(SHAPES).map(([id, shape]) => [shape.label, id])
+  );
+  tip(
+    fRoad
+      .add(params, 'roadShape', shapeOptions)
+      .name('Shape')
+      .onChange(() => {
+        sim.reset(); // reads params.roadShape; car positions don't map across shapes
+        renderer.onRoadChanged();
+      }),
+    'Shape of the highway loop. Changing it rebuilds the road and reseeds traffic — the physics is identical on every shape; only the scenery bends.'
+  );
   tip(
     fRoad
       .add(params, 'lanes', 2, 4, 1)

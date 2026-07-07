@@ -17,6 +17,7 @@ export const params = {
   showCharts: true,
 
   // road
+  roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()
   lanes: 3,
 
   // traffic mix

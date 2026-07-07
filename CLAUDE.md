@@ -50,7 +50,8 @@ index.html             import map, HUD overlay (stats, legend), CSS
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time)
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live
-src/sim/road.js        loop + ramp geometry, s-coordinate helpers (uses three math)
+src/sim/road.js        loop shapes (SHAPES catalog) + ramp geometry, s-coordinate
+                       helpers; LOOP/RAMPS are live bindings updated by setShape()
 src/sim/car.js         Car state record
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic
 src/render/renderer.js three.js scene; cars are two InstancedMeshes (body + cabin)
@@ -70,12 +71,24 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Longitudinal control: **IDM** (Intelligent Driver Model). Lane changes:
   simplified **MOBIL** (incentive + safety criterion, mild keep-right bias, forced
   drift toward lane 0 when the car has chosen an upcoming exit).
-- `s` = arc length along lane 0's centerline; wraps at `LOOP` (~1057 m). All lanes
-  share `s` — the model treats the loop as a straight road that wraps; curvature is
-  purely cosmetic.
+- `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape-dependent,
+  ~1050–1350 m). All lanes share `s` — the model treats the loop as a straight road
+  that wraps; curvature is purely cosmetic.
+- The loop's centerline is a closed path of straight + circular-arc segments
+  (`road.js` SHAPES: circle, speedway, beltway, gp), so arc length, tangents and
+  lateral offsets are exact. Every closed shape must turn a net −2π (left-handed);
+  `setShape()` throws if a shape doesn't close. `params.roadShape` is applied by
+  `Simulation.reset()` (a shape change requires a reset — `s` doesn't map across
+  shapes); the panel then calls `renderer.onRoadChanged()`. Cameras frame the
+  road from `bounds()`, never from hardcoded positions.
 - Lane 0 = **outermost** lane (ramps attach to it); higher index = further inside.
-  Traffic flows clockwise seen from above. The outer pavement edge is fixed;
-  changing the lane count grows the road *inward*, so ramp geometry never moves.
+  Outward = driver's right = `cross(forward, up)`: positive lateral offsets are
+  outside the centerline, `laneOffset()` is negative. The outer pavement edge is
+  fixed; changing the lane count grows the road *inward*, so ramp geometry never
+  moves. Ramp anchors must sit on straights (or the circle) — and an off-ramp tip
+  and on-ramp tip on the *same* straight point at each other, so interchanges on
+  straight-sided shapes straddle a corner/cap instead (exit before the bend,
+  entrance after).
 - Two diamond interchanges (A and B) on opposite sides of the loop, each an
   off-ramp followed by an on-ramp. On-ramp cars queue on the ramp and merge into
   gaps in lane 0; with no gap they wait at the ramp end — ramp queues backing up
@@ -103,4 +116,3 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 - Space-time diagram (position × time heatmap; jam waves appear as diagonal stripes)
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept to Mark)
-- More road shapes than a circle

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { ROAD, RAMPS, pointAt, forwardAt } from '../sim/road.js';
+import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt } from '../sim/road.js';
 import { params } from '../params.js';
 
 const MAX_CARS = 1500;
@@ -54,6 +54,7 @@ export class SceneRenderer {
     this.scene.add(ground);
 
     this.roadGroup = null;
+    this.rampGroup = null;
     this.rampFlowEls = {};
     this.buildRoad();
     this.buildRamps();
@@ -107,8 +108,10 @@ export class SceneRenderer {
     return this._raycaster.ray.intersectPlane(this._groundPlane, out) ? out : null;
   }
 
-  // The road is rebuilt whenever the lane count changes: the outer edge is
-  // fixed and lanes grow inward, so ramps and cars' lane-0 geometry hold still.
+  // The road is rebuilt whenever the lane count or the loop shape changes.
+  // Everything is swept along the lane-0 centerline in signed lateral offsets
+  // (positive = outward): the outer edge is fixed and lanes grow inward, so
+  // ramps and cars' lane-0 geometry hold still when the lane count changes.
   buildRoad() {
     if (this.roadGroup) {
       this.roadGroup.traverse((o) => {
@@ -118,40 +121,33 @@ export class SceneRenderer {
       this.scene.remove(this.roadGroup);
     }
     const g = new THREE.Group();
-    const outer = ROAD.outerR;
+    const outer = ROAD.laneWidth / 2; // outer edge of lane 0
     const inner = outer - params.lanes * ROAD.laneWidth;
 
-    const asphalt = new THREE.Mesh(
-      new THREE.RingGeometry(inner - 1.0, outer, 220).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x33363b, roughness: 1 })
-    );
-    g.add(asphalt);
-
-    // breakdown lane: slightly darker strip outside the travel lanes
-    const shoulder = new THREE.Mesh(
-      new THREE.RingGeometry(outer, outer + ROAD.shoulderWidth, 220).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x2b2e34, roughness: 1 })
-    );
-    g.add(shoulder);
-
-    const edge = (r, color) => {
-      const m = new THREE.Mesh(
-        new THREE.RingGeometry(r - 0.15, r + 0.15, 220).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color })
+    const paving = (offOut, offIn, color) =>
+      new THREE.Mesh(
+        loopStrip(offOut, offIn, 0),
+        new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide })
       );
-      m.position.y = 0.02;
-      return m;
-    };
+    g.add(paving(outer, inner - 1.0, 0x33363b)); // travel lanes + inner apron
+    // breakdown lane: slightly darker strip outside the travel lanes
+    g.add(paving(outer + ROAD.shoulderWidth, outer, 0x2b2e34));
+
+    const edge = (off, color) =>
+      new THREE.Mesh(
+        loopStrip(off + 0.15, off - 0.15, 0.02),
+        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+      );
     g.add(edge(outer - 0.2, 0xc8cfd6)); // white outer edge line
     g.add(edge(inner + 0.2, 0xd9b64a)); // yellow inner edge line
 
     for (let l = 1; l < params.lanes; l++) {
-      const r = outer - l * ROAD.laneWidth;
+      const off = outer - l * ROAD.laneWidth;
       const pts = [];
-      const SEG = 256;
+      const SEG = Math.ceil(LOOP / 2);
       for (let i = 0; i <= SEG; i++) {
-        const a = (i / SEG) * Math.PI * 2;
-        pts.push(new THREE.Vector3(r * Math.cos(a), 0.04, r * Math.sin(a)));
+        const p = pointAt(((i % SEG) / SEG) * LOOP, off);
+        pts.push(new THREE.Vector3(p.x, 0.04, p.z));
       }
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
@@ -163,9 +159,25 @@ export class SceneRenderer {
 
     this.roadGroup = g;
     this.scene.add(g);
+
+    // haze distances scale with how far the fitted cameras sit from the road
+    const { h } = this.viewFit();
+    this.scene.fog.near = h * 1.35;
+    this.scene.fog.far = h * 3.2;
   }
 
+  // Rebuilt on shape changes; ramp curves live in road.js and are already new.
   buildRamps() {
+    if (this.rampGroup) {
+      this.rampGroup.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+        if (o.isCSS2DObject) o.element.remove(); // CSS2DRenderer never GCs the div itself
+      });
+      this.scene.remove(this.rampGroup);
+    }
+    const g = new THREE.Group();
+    this.rampFlowEls = {};
     const mat = new THREE.MeshStandardMaterial({
       color: 0x3a3d44,
       roughness: 1,
@@ -173,12 +185,12 @@ export class SceneRenderer {
     });
     const lineMat = new THREE.LineBasicMaterial({ color: 0xc8cfd6 });
     for (const ramp of RAMPS) {
-      this.scene.add(new THREE.Mesh(rampRibbon(ramp.curve, 6.0), mat));
+      g.add(new THREE.Mesh(rampRibbon(ramp.curve, 6.0), mat));
       // Outer (right-hand) edge line runs the full ramp; the inner one stops
       // short of the merge/diverge area so it doesn't scribble on the road.
-      this.scene.add(rampEdgeLine(ramp.curve, 2.7, lineMat, 0, 1));
-      if (ramp.type === 'on') this.scene.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0, 0.55));
-      else this.scene.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0.45, 1));
+      g.add(rampEdgeLine(ramp.curve, 2.7, lineMat, 0, 1));
+      if (ramp.type === 'on') g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0, 0.55));
+      else g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0.45, 1));
 
       // Label at the ramp's outer end, nudged past the pavement.
       const el = document.createElement('div');
@@ -198,8 +210,18 @@ export class SceneRenderer {
       anchor.y = 2;
       const labelObj = new CSS2DObject(el);
       labelObj.position.copy(anchor);
-      this.scene.add(labelObj);
+      g.add(labelObj);
     }
+    this.rampGroup = g;
+    this.scene.add(g);
+  }
+
+  // Everything that depends on the loop geometry, after a shape change.
+  // (The sim must have been reset first so road.js holds the new shape.)
+  onRoadChanged() {
+    this.buildRoad();
+    this.buildRamps();
+    this.setDefaultView();
   }
 
   buildCars() {
@@ -346,21 +368,39 @@ export class SceneRenderer {
     }
   }
 
-  // The view target sits east of the loop's center so the scene shifts left
-  // on screen, keeping interchange A and its labels clear of the control
-  // panel that occupies the right edge.
+  // Camera framing derived from the current shape's bounding box: `h` is the
+  // overhead height that fits the whole loop (plus ramps and labels), `shift`
+  // moves the view target east so the scene sits left of the control panel
+  // that occupies the right edge of the screen.
+  viewFit() {
+    const b = bounds();
+    const m = 120; // pavement, ramps (tips reach ~105 m out), and their labels
+    const hx = b.halfX + m;
+    const hz = b.halfZ + m;
+    const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const h = Math.max(hz / t, hx / (t * this.camera.aspect)) * 1.04;
+    return { h, shift: 0.27 * h * t * this.camera.aspect };
+  }
+
   setDefaultView() {
     this.stopChase();
-    this.camera.position.set(100, 270, 405);
-    this.camera.lookAt(100, 0, 0);
-    if (this.controls) this.controls.target.set(100, 0, 0);
+    const { h, shift } = this.viewFit();
+    // Pull back far enough for both the overhead fit and the horizontal
+    // frustum — wide shapes (Speedway) hit the left/right edges first.
+    const b = bounds();
+    const tH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+    const dist = Math.max(h * 0.8, ((b.halfX + 120) / tH) * 1.1);
+    this.camera.position.set(shift, dist * 0.554, dist * 0.831); // ≈34° elevation
+    this.camera.lookAt(shift, 0, 0);
+    if (this.controls) this.controls.target.set(shift, 0, 0);
   }
 
   setTopView() {
     this.stopChase();
-    this.camera.position.set(100, 660, 0.1);
-    this.camera.lookAt(100, 0, 0);
-    this.controls.target.set(100, 0, 0);
+    const { h, shift } = this.viewFit();
+    this.camera.position.set(shift, h, 0.1);
+    this.camera.lookAt(shift, 0, 0);
+    this.controls.target.set(shift, 0, 0);
   }
 
   onResize() {
@@ -369,6 +409,40 @@ export class SceneRenderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
   }
+}
+
+// Flat triangle strip swept around the whole loop between two lateral offsets
+// (positive = outward of lane 0's centerline). Used for pavement and the
+// solid edge lines; same vertex layout and winding as rampRibbon below.
+function loopStrip(offOut, offIn, y) {
+  const N = Math.ceil(LOOP / 2); // ~2 m samples: chord error is sub-mm at our radii
+  const positions = new Float32Array((N + 1) * 2 * 3);
+  const normals = new Float32Array((N + 1) * 2 * 3);
+  const indices = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  for (let i = 0; i <= N; i++) {
+    const s = ((i % N) / N) * LOOP; // i = N wraps to s = 0: the seam is exact
+    pointAt(s, offOut, a);
+    pointAt(s, offIn, b);
+    const o = i * 6;
+    positions[o] = a.x;
+    positions[o + 1] = y;
+    positions[o + 2] = a.z;
+    positions[o + 3] = b.x;
+    positions[o + 4] = y;
+    positions[o + 5] = b.z;
+    normals.set([0, 1, 0, 0, 1, 0], o);
+    if (i < N) {
+      const v = i * 2;
+      indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geo.setIndex(indices);
+  return geo;
 }
 
 // Edge line following a curve at a lateral offset (+ = right of travel),
