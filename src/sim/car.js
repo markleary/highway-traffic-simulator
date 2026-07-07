@@ -1,9 +1,23 @@
 let nextId = 1;
 
+export const VEHICLE_LEN = { car: 4.6, truck: 16.5 }; // m
+
 export class Car {
-  constructor({ s = 0, lane = 0, v = 0, v0Factor = 1 } = {}) {
+  constructor({ s = 0, lane = 0, v = 0, v0Factor = 1, kind = 'car' } = {}) {
     this.id = nextId++;
-    this.len = 4.6; // m
+    this.kind = kind; // 'car' | 'truck'
+    this.len = VEHICLE_LEN[kind];
+    if (kind === 'truck') {
+      // Loaded semi: accelerates lazily, brakes gently, follows at a bigger
+      // time gap. These scale the global IDM knobs per vehicle.
+      this.accelK = 0.35;
+      this.headwayK = 1.6;
+      this.brakeK = 0.8;
+    } else {
+      this.accelK = 1;
+      this.headwayK = 1;
+      this.brakeK = 1;
+    }
 
     // mainline state (valid when state === 'main')
     this.s = s;

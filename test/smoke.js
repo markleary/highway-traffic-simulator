@@ -2,6 +2,7 @@
 // parameter regimes and asserts basic physical plausibility. No browser needed.
 import { params, KMH } from '../src/params.js';
 import { Simulation } from '../src/sim/simulation.js';
+import { LOOP, forwardDist } from '../src/sim/road.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -36,7 +37,10 @@ function run(label, overrides, seconds, checks) {
   return sim;
 }
 
-run('default regime, 120 sim-seconds', {}, 120, (sim) => {
+// truckShare 0: pure-cars baseline — a truck heading a ramp queue can
+// legitimately stall that ramp's measured flow for a minute (see the trucks
+// scenario for mixed-traffic checks)
+run('baseline regime (no trucks), 120 sim-seconds', { truckShare: 0 }, 120, (sim) => {
   const s = sim.stats();
   check('cars remain on the road', s.count > 20, `(count=${s.count})`);
   check('traffic is moving', s.avgSpeed > 6, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
@@ -118,6 +122,96 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   check('car re-merged into traffic', remerged, `(final state=${bdCar.state})`);
   assertSane(sim, 'breakdown scenario');
 }
+
+{
+  console.log('\ndense seeding never overlaps (Codex review regression)');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 300, truckShare: 40 });
+  const sim = new Simulation();
+  // positions are vehicle centers: a bumper gap sheds half of BOTH lengths
+  let worstGap = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstGap = Math.min(
+        worstGap,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
+    }
+  }
+  check(
+    'no overlapped seeds at max density + 40% trucks',
+    worstGap >= params.minGap - 1e-6,
+    `(worst gap=${worstGap.toFixed(2)} m over ${sim.cars.length} cars, LOOP=${LOOP.toFixed(0)})`
+  );
+  for (let i = 0; i < Math.round(10 / H); i++) sim.step(H);
+  assertSane(sim, 'dense seeding');
+}
+
+{
+  console.log('\nfeasible reset counts are seeded in full (Codex review regression)');
+  // 2 lanes × 150 cars needs 150 × (4.6 + 2.0) = 990 m per lane — it fits the
+  // ~1056 m loop at minGap spacing, so no car may be silently dropped
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { lanes: 2, initialCars: 300, truckShare: 0 });
+  const sim = new Simulation();
+  check('all 300 requested cars seeded', sim.cars.length === 300, `(seeded=${sim.cars.length})`);
+  let worstGap = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstGap = Math.min(
+        worstGap,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
+    }
+  }
+  check('full-count seeds still respect minGap', worstGap >= params.minGap - 1e-6, `(worst=${worstGap.toFixed(2)} m)`);
+}
+
+{
+  console.log('\nreset honors the trucks knob road-wide (Codex review regression)');
+  // trucks are excluded from the innermost lane, so the eligible lanes must be
+  // sampled at a boosted rate; average over resets to keep statistics tight
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { truckShare: 30, initialCars: 150 });
+  let shareSum = 0;
+  const RESETS = 10;
+  for (let r = 0; r < RESETS; r++) {
+    const sim = new Simulation();
+    shareSum += sim.cars.filter((c) => c.kind === 'truck').length / sim.cars.length;
+  }
+  const avgShare = (shareSum / RESETS) * 100;
+  // unboosted sampling would average ~20% here (2/3 of the knob)
+  check('average seeded truck share ≈ 30%', avgShare > 26 && avgShare < 34, `(avg=${avgShare.toFixed(1)}%)`);
+}
+
+run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
+  const trucks = sim.cars.filter((c) => c.kind === 'truck');
+  check('trucks present', trucks.length > 3, `(${trucks.length})`);
+  check(
+    'trucks are long and speed-limited',
+    trucks.every((t) => t.len > 10 && t.v0Factor < 0.95),
+    `(worst v0Factor=${trucks.length ? Math.max(...trucks.map((t) => t.v0Factor)).toFixed(2) : '-'})`
+  );
+  check(
+    'no truck in the leftmost lane',
+    trucks.filter((t) => t.state === 'main').every((t) => t.lane < params.lanes - 1)
+  );
+  check('traffic still flows with trucks', sim.stats().avgSpeed > 4, `(${sim.stats().avgSpeed.toFixed(1)} m/s)`);
+  // center-based gap math: no vehicle body may interpenetrate another
+  let worstBody = Infinity;
+  for (const arr of sim.buildLaneIndex()) {
+    for (let i = 0; i < arr.length; i++) {
+      const leader = arr[(i + 1) % arr.length];
+      if (leader === arr[i]) continue;
+      worstBody = Math.min(
+        worstBody,
+        forwardDist(arr[i].s, leader.s) - (arr[i].len + leader.len) / 2
+      );
+    }
+  }
+  check('no body interpenetration after 120 s', worstBody > -0.05, `(worst=${worstBody.toFixed(2)} m)`);
+});
 
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});

@@ -36,7 +36,8 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
   - **Road** — number of lanes (2–4)
-  - **Drivers** — desired speed, per-car speed spread, time headway (following
+  - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
+    keep right), desired speed, per-car speed spread, time headway (following
     distance), minimum gap, acceleration, comfortable braking
   - **Lane changing** — politeness, incentive threshold, safety braking limit
   - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each exit.
@@ -64,4 +65,4 @@ work their way to the outer lane in time. Everything is rendered with three.js
 ## Roadmap
 
 - A space-time diagram (jam waves as diagonal stripes)
-- Ramp metering, trucks, more road shapes than a circle
+- Ramp metering, more road shapes than a circle

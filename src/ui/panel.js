@@ -76,6 +76,10 @@ function makeGui({ sim, renderer, onUnitsChange }) {
 
   const fDrv = gui.addFolder('Drivers');
   tip(
+    fDrv.add(params, 'truckShare', 0, 40, 1).name('Trucks (%)'),
+    'Share of vehicles that are semi trucks: long, ~20% slower, lazy acceleration, bigger following gaps, rare lane changes, and they stay out of the leftmost lane. Applies to newly entering vehicles and on reset.'
+  );
+  tip(
     fDrv
       .add(ui, 'desiredSpeed', ...(imp ? [25, 90, 1] : [40, 145, 1]))
       .name(`Desired speed (${spdU})`)
