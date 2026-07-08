@@ -36,15 +36,18 @@ const S = (len) => ({ kind: 'straight', len });
 const L = (r, deg) => ({ kind: 'arc', r, dir: -1, len: r * deg * DEG }); // left turn
 const Rt = (r, deg) => ({ kind: 'arc', r, dir: +1, len: r * deg * DEG }); // right turn
 
-// Each shape builds its segment ops plus the four ramp anchor positions
-// (s along the loop). Anchors sit on straights (or the circle) so ramps
-// attach to road that isn't bending through them; Beltway splits each
-// interchange across a corner — exit before the bend, entrance after —
-// which is how real beltways do it.
+// Each shape builds its segment ops plus an `interchanges(len, count)`
+// function returning up to `count` {off, on} anchor pairs (s along the loop),
+// CLAMPED to what physically fits — each interchange needs room for its ramp
+// tips (~105 m out from the anchors), and two tips on a shared straight point
+// at each other, so mid-straight diamonds only fit on long straights. Anchors
+// sit on straights (or the circle) so ramps attach to road that isn't bending
+// through them; corner/cap interchanges split across the bend — exit before,
+// entrance after — like real beltways do.
 // Builders take the road-scale multiplier: radii and straights scale, while
 // ramp anchors stay a fixed physical distance from their segment ends (the
-// ramp footprint itself — bezier tips ~105 m out — never scales), so bigger
-// roads mean longer open stretches between the same interchanges.
+// ramp footprint never scales), so bigger roads mean longer open stretches
+// between interchanges — and unlock more of them.
 export const SHAPES = {
   circle: {
     label: 'Circle',
@@ -52,7 +55,15 @@ export const SHAPES = {
       const r = 168.15 * k; // k=1 preserves the original loop (LOOP ≈ 1056.5)
       return {
         ops: [L(r, 360)],
-        ramps: (len) => ({ offA: 0.04 * len, onA: 0.24 * len, offB: 0.54 * len, onB: 0.74 * len }),
+        // evenly spaced diamonds; each takes ~300 m of arc. The N=2 layout
+        // reproduces the original (off at 0.04·LOOP, on at 0.24·LOOP).
+        interchanges(len, count) {
+          const n = Math.min(count, Math.max(2, Math.floor(len / 300)));
+          return Array.from({ length: n }, (_, i) => ({
+            off: (i / n) * len + 42,
+            on: (i / n) * len + 254,
+          }));
+        },
       };
     },
   },
@@ -62,13 +73,10 @@ export const SHAPES = {
       const straight = 300 * k;
       const r = 85 * k;
       const half = straight + Math.PI * r;
-      // Each interchange straddles a cap: exit at the end of one straight,
-      // entrance at the start of the next. Two ramp tips on a shared straight
-      // would point at each other and collide (the circle's curvature used to
-      // splay them apart for free).
       return {
         ops: [S(straight), L(r, 180), S(straight), L(r, 180)],
-        ramps: () => ({ offA: straight - 15, onA: half + 15, offB: half + straight - 15, onB: 15 }),
+        interchanges: (len, count) =>
+          strideInterchanges(count, half, straight, [0, half]),
       };
     },
   },
@@ -83,12 +91,16 @@ export const SHAPES = {
           S(straight), L(r, 90), S(straight), L(r, 90),
           S(straight), L(r, 90), S(straight), L(r, 90),
         ],
-        ramps: () => ({
-          offA: straight - 40,               // late on side 1: the exit runs straight on where the road bends
-          onA: quarter + 45,                 // early on side 2: entering just after the corner
-          offB: straight - 40 + 2 * quarter, // same interchange mirrored to sides 3 / 4
-          onB: 3 * quarter + 45,
-        }),
+        // one interchange per corner: exit runs straight on where the road
+        // bends, entrance joins just after the corner. N=2 uses opposite
+        // corners (the original layout); 3-4 fill in the rest.
+        interchanges(len, count) {
+          const corners = { 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] }[Math.min(count, 4)];
+          return corners.map((c) => ({
+            off: c * quarter + straight - 40,
+            on: ((c + 1) % 4) * quarter + 45,
+          }));
+        },
       };
     },
   },
@@ -101,14 +113,35 @@ export const SHAPES = {
       const straight = 300 * k;
       const halfOps = [S(straight), L(75 * k, 100), Rt(55 * k, 40), L(75 * k, 120)];
       const half = halfOps.reduce((a, op) => a + op.len, 0);
-      // Interchanges straddle the S-sections, same reasoning as the Speedway.
       return {
         ops: [...halfOps, ...halfOps.map((op) => ({ ...op }))],
-        ramps: () => ({ offA: straight - 15, onA: half + 15, offB: half + straight - 15, onB: 15 }),
+        interchanges: (len, count) =>
+          strideInterchanges(count, half, straight, [0, half]),
       };
     },
   },
 };
+
+// Two-straight shapes (Speedway, Grand Prix): the base pair of interchanges
+// straddles the bends — exit at the end of one straight, entrance at the
+// start of the next. Extra interchanges are full diamonds mid-straight, which
+// need the straight long enough (≥ 570 m, i.e. road scale ≥ 1.9) that the
+// facing ramp tips — and their constant-screen-size labels, which crowd
+// together as the camera pulls back on big roads — stay clear of each other
+// and of the straddling ramps at the ends.
+function strideInterchanges(count, half, straight, starts) {
+  const pairs = [
+    { off: starts[0] + straight - 15, on: half + 15 },
+    { off: starts[1] + straight - 15, on: 15 },
+  ];
+  if (straight >= 570) {
+    const c = straight / 2;
+    for (let i = 0; i < Math.min(count, 4) - 2; i++) {
+      pairs.push({ off: starts[i] + c - 220, on: starts[i] + c + 220 });
+    }
+  }
+  return pairs.sort((a, b) => a.off - b.off);
+}
 
 // Current shape state. LOOP and RAMPS are live bindings: setShape() updates
 // them and every importer sees the new values. RAMPS keeps its array identity
@@ -117,6 +150,7 @@ export let LOOP = 0;
 export const RAMPS = [];
 let currentShape = null;
 let currentScale = 0;
+let currentCount = 0;
 let segs = [];
 let extent = { halfX: 0, halfZ: 0 };
 
@@ -135,14 +169,16 @@ export function bounds() {
   return { halfX: extent.halfX, halfZ: extent.halfZ };
 }
 
-export function setShape(id, scale = 1) {
+export function setShape(id, scale = 1, interchanges = 2) {
   const shape = SHAPES[id] ?? SHAPES.circle;
   const k = Math.min(Math.max(scale, 0.5), 4); // sanity clamp, knob offers 1-3
-  if (currentShape === shape && currentScale === k) return;
+  const n = Math.round(Math.min(Math.max(interchanges, 2), 4));
+  if (currentShape === shape && currentScale === k && currentCount === n) return;
   currentShape = shape;
   currentScale = k;
+  currentCount = n;
 
-  const { ops, ramps } = shape.build(k);
+  const { ops, interchanges: placeInterchanges } = shape.build(k);
 
   // Walk the turtle: precompute each segment's entry pose, and for arcs the
   // rotation center and entry radial vector.
@@ -214,14 +250,18 @@ export function setShape(id, scale = 1) {
   }
   extent = { halfX: (maxX - minX) / 2, halfZ: (maxZ - minZ) / 2 };
 
-  const anchor = ramps(LOOP);
+  // Letters follow the loop: pairs come back sorted by position, so A..D
+  // read in driving order. The shape may return fewer pairs than requested
+  // when its geometry can't fit them (see each shape's `interchanges`).
+  const pairs = placeInterchanges(LOOP, n);
   RAMPS.length = 0;
-  RAMPS.push(
-    makeOffRamp('offA', 'offRampA', 'Exit A', anchor.offA),
-    makeOnRamp('onA', 'onRampA', 'On-ramp A', anchor.onA),
-    makeOffRamp('offB', 'offRampB', 'Exit B', anchor.offB),
-    makeOnRamp('onB', 'onRampB', 'On-ramp B', anchor.onB)
-  );
+  pairs.forEach((p, i) => {
+    const letter = 'ABCD'[i];
+    RAMPS.push(
+      makeOffRamp(`off${letter}`, `offRamp${letter}`, `Exit ${letter}`, wrap(p.off)),
+      makeOnRamp(`on${letter}`, `onRamp${letter}`, `On-ramp ${letter}`, wrap(p.on))
+    );
+  });
 }
 
 // Pose along the centerline; shared scratch keeps the hot path allocation-free.
