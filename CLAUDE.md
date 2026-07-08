@@ -145,5 +145,23 @@ test/smoke.js          runs the sim headless under several parameter regimes
     ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
     ACC share and reset to watch them dissolve (calibrated during the ACC PR;
     denser regimes saturate orange and hide the effect).
+- Hover a car for a readout: current speed with desired speed in parens (same
+  raycast path as click-to-crash, on pointermove); the chase speedometer
+  caption gains the chased car's desired speed too.
+- Blinkers + brake lights. Blinkers signal that MOBIL *wants* a lane change
+  (desire, not the discrete switch) — exposes hidden model state. Brake lights
+  activate past a deceleration threshold, EV-regen-style; a jam wave would
+  read as a red pulse running upstream.
+- Emergency vehicle button: spawn an ambulance that runs well above desired
+  speed while traffic biases lane changes away from its lane and slows —
+  an emergent "move over" corridor.
+- Weather events: a rain storm lowers desired speeds and grip (longer
+  headways, gentler comfortable braking) road-wide, with a visual mood shift;
+  watch a stable regime tip into jams as the rain starts.
+- Improve the vehicle visual models (still low-poly: wheels, beveled bodies,
+  maybe a couple of car body varieties).
+- Mobile view optimizations: hide the space-time diagram by default on small
+  screens, audit the panel/charts layout for phones.
+- 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept
   to Mark — though with 2–4 meterable on-ramps it now has a stage)
