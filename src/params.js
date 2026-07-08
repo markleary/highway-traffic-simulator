@@ -19,6 +19,7 @@ export const params = {
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()
+  roadScale: 1,        // multiplies the shape's radii and straights; applied on reset
   lanes: 3,
 
   // traffic mix

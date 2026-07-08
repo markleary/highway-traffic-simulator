@@ -73,16 +73,19 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Longitudinal control: **IDM** (Intelligent Driver Model). Lane changes:
   simplified **MOBIL** (incentive + safety criterion, mild keep-right bias, forced
   drift toward lane 0 when the car has chosen an upcoming exit).
-- `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape-dependent,
-  ~1050–1350 m). All lanes share `s` — the model treats the loop as a straight road
-  that wraps; curvature is purely cosmetic.
+- `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape- and
+  scale-dependent, ~1050–4000 m). All lanes share `s` — the model treats the loop
+  as a straight road that wraps; curvature is purely cosmetic.
 - The loop's centerline is a closed path of straight + circular-arc segments
   (`road.js` SHAPES: circle, speedway, beltway, gp), so arc length, tangents and
   lateral offsets are exact. Every closed shape must turn a net −2π (left-handed);
-  `setShape()` throws if a shape doesn't close. `params.roadShape` is applied by
-  `Simulation.reset()` (a shape change requires a reset — `s` doesn't map across
-  shapes); the panel then calls `renderer.onRoadChanged()`. Cameras frame the
-  road from `bounds()`, never from hardcoded positions.
+  `setShape()` throws if a shape doesn't close. `params.roadShape` and
+  `params.roadScale` (1–3×; builders scale radii and straights, while ramp
+  anchors stay a fixed distance from their segment ends) are applied by
+  `Simulation.reset()` (a geometry change requires a reset — `s` doesn't map
+  across shapes or sizes); the panel then calls `renderer.onRoadChanged()`.
+  Cameras frame the road from `bounds()`, never from hardcoded positions; fog,
+  zoom range, and the far clip plane follow the fitted height in `buildRoad()`.
 - Lane 0 = **outermost** lane (ramps attach to it); higher index = further inside.
   Outward = driver's right = `cross(forward, up)`: positive lateral offsets are
   outside the centerline, `laneOffset()` is negative. The outer pavement edge is

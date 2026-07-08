@@ -173,7 +173,9 @@ export class ChartPanel {
     const colW = (xs(tNow) + W / span - x0) / n; // newest column stays visible
     let start = (d.cursor - n) % WINDOW;
     if (start < 0) start += WINDOW;
-    ctx.imageSmoothingEnabled = false;
+    // crisp pixels when bins map up to display rows; smooth when a big road
+    // scale packs more bins than rows, so nearest-neighbor can't drop stripes
+    ctx.imageSmoothingEnabled = nBins > DIAG_H;
     if (start + n <= WINDOW) {
       ctx.drawImage(d.off, start, 0, n, nBins, x0, 0, n * colW, DIAG_H);
     } else {

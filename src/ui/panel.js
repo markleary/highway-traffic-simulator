@@ -55,8 +55,8 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     'Simulation speed multiplier: 2 runs at twice real time, 0.5 at half.'
   );
   tip(
-    fSim.add(params, 'initialCars', 0, 300, 5).name('Cars on reset'),
-    'How many cars are seeded around the loop when you press Reset.'
+    fSim.add(params, 'initialCars', 0, 600, 5).name('Cars on reset'),
+    'How many cars are seeded around the loop when you press Reset. If they can\'t all fit (small road, many cars), as many as physically fit are seeded.'
   );
   tip(
     fSim.add({ reset: () => sim.reset() }, 'reset').name('↻ Reset simulation'),
@@ -76,6 +76,16 @@ function makeGui({ sim, renderer, onUnitsChange }) {
         renderer.onRoadChanged();
       }),
     'Shape of the highway loop. Changing it rebuilds the road and reseeds traffic — the physics is identical on every shape; only the scenery bends.'
+  );
+  tip(
+    fRoad
+      .add(params, 'roadScale', 1, 3, 0.5)
+      .name('Road scale (×)')
+      .onChange(() => {
+        sim.reset(); // reads params.roadScale; s-coordinates don't map across sizes
+        renderer.onRoadChanged();
+      }),
+    'Multiplies the loop\'s size: 3× the circle is ~2 miles around. Longer stretches between interchanges give jam waves room to develop, travel, and dissolve on their own — watch the space-time diagram grow parallel stripes. Changing it rebuilds the road and reseeds traffic.'
   );
   tip(
     fRoad

@@ -400,6 +400,38 @@ for (const [id, shape] of Object.entries(SHAPES)) {
   check(`${id}: cars exited`, st.exited > 0, `(exited=${st.exited})`);
 }
 
+// --- road scale: scaled geometry stays exact and traffic still runs on it
+
+for (const [id, scale] of [['circle', 3], ['gp', 2]]) {
+  console.log(`\nroad scale: ${scale}x ${id}`);
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { roadShape: id, roadScale: 1, truckShare: 0 });
+  new Simulation();
+  const baseLoop = LOOP;
+  Object.assign(params, { roadScale: scale, initialCars: 150 });
+  const sim = new Simulation();
+  check(
+    `${id}@${scale}x: LOOP scales linearly`,
+    Math.abs(LOOP - baseLoop * scale) < 0.01,
+    `(${baseLoop.toFixed(1)} → ${LOOP.toFixed(1)})`
+  );
+  check(`${id}@${scale}x: path closes at the wrap seam`, pointAt(0).distanceTo(pointAt(LOOP - 1e-9)) < 1e-3);
+  let worstLen = 0;
+  for (let i = 0; i < 500; i++) {
+    const s = (i / 500) * LOOP;
+    worstLen = Math.max(worstLen, Math.abs(pointAt(s).distanceTo(pointAt(s + 0.5)) - 0.5));
+  }
+  check(`${id}@${scale}x: s is exact arc length`, worstLen < 2e-3, `(err=${worstLen.toExponential(1)})`);
+  check(`${id}@${scale}x: four ramps placed`, RAMPS.length === 4 && RAMPS.every((r) => r.length > 80));
+  check(`${id}@${scale}x: speed bins sized to this loop`, sim.binCount === Math.ceil(LOOP / BIN_M), `(${sim.binCount})`);
+
+  for (let i = 0; i < Math.round(120 / H); i++) sim.step(H);
+  assertSane(sim, `${id}@${scale}x`);
+  const st = sim.stats();
+  check(`${id}@${scale}x: traffic flows`, st.avgSpeed > 6, `(avg=${st.avgSpeed.toFixed(1)} m/s)`);
+  check(`${id}@${scale}x: ramp cars merged`, st.merged > 3, `(merged=${st.merged})`);
+  check(`${id}@${scale}x: cars exited`, st.exited > 0, `(exited=${st.exited})`);
+}
+
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
 
