@@ -133,4 +133,50 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Ramp metering signals (deprioritized: not used around Boston, foreign concept to Mark)
+- Scenario presets: one-click parameter setups that stage the good demos and
+  reset. The parameter space (shape × scale × interchanges × lanes × traffic
+  knobs) is now big enough that reaching an interesting regime takes slider
+  archaeology. Candidates:
+  - "Rush hour" — heavy flood (both ramps 30+/min, exits low); jams grow
+    backwards from the merges.
+  - "Accident storm" — short headways (~0.9 s) plus a couple of triggered
+    wrecks; fragile flow collapsing.
+  - "ACC demo" — the jam-prone edge-of-instability regime (~130 cars, ramps
+    ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
+    ACC share and reset to watch them dissolve (calibrated during the ACC PR;
+    denser regimes saturate orange and hide the effect).
+- Hover a car for a readout: current speed with desired speed in parens (same
+  raycast path as click-to-crash, on pointermove); the chase speedometer
+  caption gains the chased car's desired speed too.
+- Blinkers + brake lights. Blinkers signal that MOBIL *wants* a lane change
+  (desire, not the discrete switch) — exposes hidden model state. Brake lights
+  activate past a deceleration threshold, EV-regen-style; a jam wave would
+  read as a red pulse running upstream.
+- Emergency vehicle button: spawn an ambulance that runs well above desired
+  speed while traffic biases lane changes away from its lane and slows —
+  an emergent "move over" corridor.
+- Weather events: a rain storm lowers desired speeds and grip (longer
+  headways, gentler comfortable braking) road-wide, with a visual mood shift;
+  watch a stable regime tip into jams as the rain starts.
+- Improve the vehicle visual models (still low-poly: wheels, beveled bodies,
+  maybe a couple of car body varieties).
+- Mobile view optimizations: hide the space-time diagram by default on small
+  screens, audit the panel/charts layout for phones.
+- 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
+- Fundamental diagram: live flow-vs-density scatter in the charts panel — the
+  other canonical traffic plot. Both series are already sampled at 1 Hz in
+  sim.history; the point cloud traces the inverted-U live, and a jam collapse
+  reads as points dropping from the free-flow branch to the congested branch.
+- Work zone / lane closure: cone off one lane over a chosen stretch. The
+  merge-behavior generator — zipper merging, early-vs-late merge dynamics, and
+  capacity drop all emerge. Likely mechanism: a zone that caps the usable lane
+  count, with MOBIL treating the closed lane like the exit-drift logic treats
+  lane 0.
+- Figure-eight road shape: needs an overpass, but elevation can be cosmetic
+  exactly like curvature is (the model still drives a straight wrapped line) —
+  give pointAt a y component from a per-segment elevation profile and render
+  the crossing as a bridge; no intersection logic needed since it's
+  grade-separated. The self-intersection guard in the smoke test would need a
+  crossing-aware exemption.
+- Ramp metering signals (deprioritized: not used around Boston, foreign concept
+  to Mark — though with 2–4 meterable on-ramps it now has a stage)

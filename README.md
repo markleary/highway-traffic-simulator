@@ -79,4 +79,22 @@ work their way to the outer lane in time. Everything is rendered with three.js
 
 ## Roadmap
 
+- Scenario presets — one-click setups that stage the good demos: "rush hour"
+  (heavy inflow, watch jams grow from the merges), "accident storm" (tailgating
+  plus wrecks), and "ACC demo" (a jam-striped diagram, then raise the
+  adaptive-cruise share and watch the stripes dissolve)
+- Hover a car to read its current speed (and desired speed); chase view shows
+  the chased car's desired speed
+- Blinkers (a car *wants* to change lanes) and brake lights (deceleration past
+  a threshold, EV-regen-style — jam waves as red pulses running upstream)
+- Emergency vehicle button — spawn an ambulance and watch traffic make room
+- Weather — rain slows everyone down and tips fragile flow into jams
+- Better-looking vehicle models
+- Mobile view optimizations (e.g. no space-time diagram by default on phones)
+- A "By type" car-color mode (human / adaptive cruise / truck)
+- Fundamental diagram — a live flow-vs-density scatter tracing the classic
+  inverted-U as traffic builds and collapses
+- Work zone / lane closure — cone off a lane and watch zipper merges and the
+  capacity drop emerge
+- Figure-eight road shape with an overpass
 - Ramp metering
