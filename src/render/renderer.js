@@ -6,7 +6,16 @@ import { params } from '../params.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
+const MAX_LIGHTS = MAX_CARS + MAX_TRUCKS;
 const BG = 0x0e1512;
+
+// Light mount points per vehicle kind, in the car's local frame (+z = front,
+// +x = driver's left = inward). y/rear/front from the body geometries below.
+const LIGHT_DIMS = {
+  car: { rear: -2.29, front: 2.29, halfW: 0.78, y: 0.95, brakeW: 1.5 },
+  acc: { rear: -2.31, front: 2.31, halfW: 0.78, y: 1.0, brakeW: 1.7 }, // full-width light bar
+  truck: { rear: -7.77, front: 8.21, halfW: 1.05, y: 0.95, brakeW: 2.1 },
+};
 
 export class SceneRenderer {
   constructor(container) {
@@ -257,7 +266,21 @@ export class SceneRenderer {
       new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide }),
       MAX_CARS
     );
-    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber]) {
+    // driver-communication lights: red brake bars and amber blinkers, placed
+    // per frame at per-kind mount points (unlit materials so they read as
+    // light sources); a unit cube scaled per instance
+    const lightGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.brakeLights = new THREE.InstancedMesh(
+      lightGeo,
+      new THREE.MeshBasicMaterial({ color: 0xff3030 }),
+      MAX_LIGHTS
+    );
+    this.blinkers = new THREE.InstancedMesh(
+      lightGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffb226 }),
+      MAX_LIGHTS
+    );
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.brakeLights, this.blinkers]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       // three.js culls an InstancedMesh by its BASE geometry's bounding
@@ -267,6 +290,19 @@ export class SceneRenderer {
       m.frustumCulled = false;
       this.scene.add(m);
     }
+    this._lightDummy = new THREE.Object3D();
+  }
+
+  // Place one light: the car's local-frame offset rotated into the world.
+  placeLight(mesh, idx, rotY, ox, oy, oz, sx, sy, sz) {
+    const d = this._lightDummy;
+    const cos = Math.cos(rotY);
+    const sin = Math.sin(rotY);
+    d.position.set(this._pos.x + ox * cos + oz * sin, oy, this._pos.z - ox * sin + oz * cos);
+    d.rotation.set(0, rotY, 0);
+    d.scale.set(sx, sy, sz);
+    d.updateMatrix();
+    mesh.setMatrixAt(idx, d.matrix);
   }
 
   update(cars) {
@@ -275,6 +311,8 @@ export class SceneRenderer {
     let ci = 0; // next free car instance
     let ti = 0; // next free truck instance
     let ai = 0; // next free ACC-car instance
+    let li = 0; // next free brake-light instance
+    let ki = 0; // next free blinker instance
     for (const car of cars) {
       const truck = car.kind === 'truck';
       const acc = car.kind === 'acc';
@@ -313,13 +351,28 @@ export class SceneRenderer {
         this.cabin.setColorAt(ci, this._cabinColor);
         ci++;
       }
+
+      // brake lights + blinkers (incident cars blink their whole body amber)
+      if (!car.incident) {
+        const L = LIGHT_DIMS[car.kind];
+        if (car.brakeLit && li < MAX_LIGHTS) {
+          this.placeLight(this.brakeLights, li++, rotY, 0, L.y, L.rear, L.brakeW, 0.16, 0.1);
+        }
+        if (car.signal !== 0 && blinkOn && ki + 1 < MAX_LIGHTS) {
+          const sx = car.signal > 0 ? L.halfW : -L.halfW; // +x local = driver's left
+          this.placeLight(this.blinkers, ki++, rotY, sx, L.y, L.rear, 0.22, 0.2, 0.14);
+          this.placeLight(this.blinkers, ki++, rotY, sx, L.y, L.front, 0.22, 0.2, 0.14);
+        }
+      }
     }
     this.body.count = ci;
     this.cabin.count = ci;
     this.trailer.count = ti;
     this.cab.count = ti;
     this.cyber.count = ai;
-    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber]) {
+    this.brakeLights.count = li;
+    this.blinkers.count = ki;
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.brakeLights, this.blinkers]) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }

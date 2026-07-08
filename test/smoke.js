@@ -254,6 +254,48 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   check('average seeded truck share ≈ 30%', avgShare > 26 && avgShare < 34, `(avg=${avgShare.toFixed(1)}%)`);
 }
 
+{
+  console.log('\nvehicle lights: brake waves, exit + merge blinkers, blocked desire');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { truckShare: 0 });
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(30 / H); i++) sim.step(H);
+  const mains = sim.cars.filter((c) => c.state === 'main');
+  const litShare = mains.filter((c) => c.brakeLit).length / mains.length;
+  check('free flow: brake lights are rare', litShare < 0.4, `(${(litShare * 100).toFixed(0)}% lit)`);
+
+  // then wreck a car and watch for each light cause while the queue builds
+  sim.triggerRandomAccident();
+  const wreck = sim.incidents[0].cars[0];
+  let sawExitSignal = false;
+  let sawMergeSignal = false;
+  let sawDesire = false;
+  let peakLit = 0;
+  for (let i = 0; i < Math.round(30 / H); i++) {
+    sim.step(H);
+    for (const c of sim.cars) {
+      if (c.incident) continue;
+      if (c.state === 'main' && c.exitRamp && c.lane > 0 && c.signal === -1) sawExitSignal = true;
+      if (c.state === 'onramp' && c.signal === 1) sawMergeSignal = true;
+      // blinking while NOT moving laterally and with no exit reason = pure
+      // blocked MOBIL desire
+      if (
+        c.state === 'main' &&
+        !c.exitRamp &&
+        Math.abs(c.renderLane - c.lane) < 0.1 &&
+        c.signal !== 0
+      ) {
+        sawDesire = true;
+      }
+    }
+    peakLit = Math.max(peakLit, sim.cars.filter((c) => c.brakeLit && !c.incident).length);
+  }
+  check('a brake wave lit up behind the wreck', peakLit >= 5, `(peak ${peakLit} lit)`);
+  check('exit-bound cars blink toward the exit', sawExitSignal);
+  check('merging ramp cars blink into traffic', sawMergeSignal);
+  check('blocked lane-change desire blinks in place', sawDesire);
+  check('hazards own incident cars', wreck.signal === 0 && !wreck.brakeLit);
+}
+
 run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
   const trucks = sim.cars.filter((c) => c.kind === 'truck');
   check('trucks present', trucks.length > 3, `(${trucks.length})`);
