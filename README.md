@@ -92,4 +92,9 @@ work their way to the outer lane in time. Everything is rendered with three.js
 - Better-looking vehicle models
 - Mobile view optimizations (e.g. no space-time diagram by default on phones)
 - A "By type" car-color mode (human / adaptive cruise / truck)
+- Fundamental diagram — a live flow-vs-density scatter tracing the classic
+  inverted-U as traffic builds and collapses
+- Work zone / lane closure — cone off a lane and watch zipper merges and the
+  capacity drop emerge
+- Figure-eight road shape with an overpass
 - Ramp metering

@@ -163,5 +163,20 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
 - 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
+- Fundamental diagram: live flow-vs-density scatter in the charts panel — the
+  other canonical traffic plot. Both series are already sampled at 1 Hz in
+  sim.history; the point cloud traces the inverted-U live, and a jam collapse
+  reads as points dropping from the free-flow branch to the congested branch.
+- Work zone / lane closure: cone off one lane over a chosen stretch. The
+  merge-behavior generator — zipper merging, early-vs-late merge dynamics, and
+  capacity drop all emerge. Likely mechanism: a zone that caps the usable lane
+  count, with MOBIL treating the closed lane like the exit-drift logic treats
+  lane 0.
+- Figure-eight road shape: needs an overpass, but elevation can be cosmetic
+  exactly like curvature is (the model still drives a straight wrapped line) —
+  give pointAt a y component from a per-segment elevation profile and render
+  the crossing as a bridge; no intersection logic needed since it's
+  grade-separated. The self-intersection guard in the smoke test would need a
+  crossing-aware exemption.
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept
   to Mark — though with 2–4 meterable on-ramps it now has a stage)
