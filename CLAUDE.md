@@ -108,6 +108,15 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - `car.renderLane` is the smoothed lateral position used only for rendering;
   physics switches lanes discretely. Negative values are outside lane 0 — used
   by merging ramp cars and the breakdown shoulder (`SHOULDER_LANE`).
+- Vehicle lights (`sim.updateLights`, cosmetic): brake lights are EV-regen
+  style — lit past a deceleration threshold with hysteresis, plus held when
+  stopped — so jam waves read as red pulses running upstream. Blinkers
+  (`car.signal`, +1 = inward/driver's left) show *desire*: a maneuver in
+  progress, a ramp merge, drifting toward a chosen exit, or a MOBIL lane
+  change that passed the incentive test but was blocked by the gap/safety
+  gates (`signalWant`, expires ~1 s unless re-affirmed). Hazards (incident
+  amber body-blink) take precedence over both. Rendered as two extra
+  InstancedMeshes with per-kind mount points (`LIGHT_DIMS`).
 - Incidents (`sim.incidents`): breakdowns pull over to the shoulder, park with
   hazards, then re-merge (with growing desperation, forced after a timeout);
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
@@ -148,10 +157,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Hover a car for a readout: current speed with desired speed in parens (same
   raycast path as click-to-crash, on pointermove); the chase speedometer
   caption gains the chased car's desired speed too.
-- Blinkers + brake lights. Blinkers signal that MOBIL *wants* a lane change
-  (desire, not the discrete switch) — exposes hidden model state. Brake lights
-  activate past a deceleration threshold, EV-regen-style; a jam wave would
-  read as a red pulse running upstream.
 - Emergency vehicle button: spawn an ambulance that runs well above desired
   speed while traffic biases lane changes away from its lane and slows —
   an emergent "move over" corridor.

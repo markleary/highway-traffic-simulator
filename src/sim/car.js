@@ -40,5 +40,11 @@ export class Car {
     this.exitRamp = null;     // off-ramp this car has decided to take
     this.lcCooldown = Math.random(); // staggers lane-change decisions
     this.hue = Math.random(); // for the 'random' color mode
+
+    // driver-communication lights, resolved each step (see sim.updateLights)
+    this.brakeLit = false;
+    this.signal = 0;      // +1 = blinking inward (driver's left), -1 = outward
+    this.signalWant = 0;  // MOBIL desire that was blocked (applyLaneChanges)
+    this.signalUntil = 0; // sim time the blocked desire expires
   }
 }

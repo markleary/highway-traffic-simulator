@@ -295,6 +295,7 @@ export class Simulation {
     this.handleMerges(arrs[0]);
     this.despawnExited();
     this.spawnFromRamps(h);
+    this.updateLights();
     while (this.flowTimes.length && this.flowTimes[0] < this.time - 60) this.flowTimes.shift();
     // keep incident-start marks just past the charts' 5-minute window
     while (this.incidentStarts.length && this.incidentStarts[0] < this.time - 310) {
@@ -336,6 +337,46 @@ export class Simulation {
     const bins = new Float32Array(n);
     for (let i = 0; i < n; i++) bins[i] = counts[i] ? sums[i] / counts[i] : -1;
     return bins;
+  }
+
+  // Driver-communication lights, resolved every step. Brake lights are
+  // EV-regen style — on past a deceleration threshold, with hysteresis so
+  // hovering at the threshold doesn't flicker — plus "holding the pedal"
+  // when stopped. A jam wave reads as a red pulse running upstream. Turn
+  // signals (+1 = inward/driver's left, -1 = outward/right) resolve by
+  // priority: a maneuver in progress, merging in from a ramp, working over
+  // toward a chosen exit, then blocked MOBIL desire (signalWant) — a car
+  // that wants a gap it can't safely take blinks without moving. Incident
+  // cars show hazards instead (renderer blinks the whole body amber).
+  updateLights() {
+    for (const car of this.cars) {
+      if (car.incident) {
+        car.signal = 0;
+        car.brakeLit = false;
+        continue;
+      }
+      const holding = car.v < 0.5 && car.a <= 0.3; // stopped in queue: pedal held
+      car.brakeLit = car.brakeLit
+        ? car.a < -0.7 || holding
+        : car.a < -1.1 || holding;
+
+      if (car.state === 'onramp') {
+        car.signal = car.ramp.length - car.rampPos < car.ramp.mergeZone + 40 ? 1 : 0;
+      } else if (car.state === 'offramp') {
+        car.signal = 0;
+      } else if (Math.abs(car.renderLane - car.lane) > 0.15) {
+        car.signal = car.lane > car.renderLane ? 1 : -1; // mid-maneuver
+      } else if (
+        car.exitRamp &&
+        (car.lane > 0 || forwardDist(car.s, car.exitRamp.sDiverge) < 250)
+      ) {
+        car.signal = -1;
+      } else if (car.signalWant && this.time < car.signalUntil) {
+        car.signal = car.signalWant;
+      } else {
+        car.signal = 0;
+      }
+    }
   }
 
   // Measured throughput of each ramp (cars/min over the last minute).
@@ -453,13 +494,29 @@ export class Simulation {
         let bestLane = -1;
         // trucks rarely bother changing lanes
         let bestScore = p.laneChangeThreshold * (car.kind === 'truck' ? 2.5 : 1);
+        let wantLane = -1;
+        // Blinker-worthy desire needs a clearly better lane, not a marginal
+        // preference — without this margin nearly half of dense traffic blinks.
+        let wantScore = bestScore + 0.3;
         for (const t of targets) {
           const { leader: nl, follower: nf } = neighborsAt(arrs[t], car.s);
           const gapAhead = nl ? forwardDist(car.s, nl.s) - halfLens(car, nl) : Infinity;
           const gapBehind = nf ? forwardDist(nf.s, car.s) - halfLens(nf, car) : Infinity;
-          if (gapAhead < p.minGap || gapBehind < p.minGap) continue;
 
           const myNew = idm(car, nl ? nl.v : car.v, gapAhead, v0);
+          // Desire, gauged before the gap/safety gates below: the gain the
+          // driver sees in the target lane, whether or not the move is safe.
+          // A passing desire lights the blinker (see updateLights) — a car
+          // that wants a gap it can't take blinks without moving.
+          let want = myNew - curAcc + (t < l ? 0.08 : -0.08);
+          if (pullover) want += 2.5;
+          else if (mandatory) want += 1 + 3 * (1 - exitDist / 400);
+          if (want > wantScore) {
+            wantScore = want;
+            wantLane = t;
+          }
+
+          if (gapAhead < p.minGap || gapBehind < p.minGap) continue;
           let nfNew = 0;
           let nfOld = 0;
           if (nf) {
@@ -486,6 +543,11 @@ export class Simulation {
           changed = true;
         } else {
           car.lcCooldown = 0.2 + Math.random() * 0.2;
+          if (wantLane >= 0) {
+            // wanted a lane but couldn't take it: blink until re-evaluated
+            car.signalWant = wantLane > l ? 1 : -1;
+            car.signalUntil = this.time + 1.0;
+          }
         }
       }
     }

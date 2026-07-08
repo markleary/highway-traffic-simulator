@@ -32,6 +32,11 @@ branch → `main` / root**. That's it — there is nothing to build.
   neighbor into a 2-lane pileup) until cleared. The **Events** folder also has
   random breakdowns: a car pulls onto the shoulder, parks with hazards, and
   merges back later, while passing traffic slows down to rubberneck.
+- Cars talk with their lights: **brake lights** come on past an EV-regen-style
+  deceleration threshold (or while held stopped), so a jam wave reads as a red
+  pulse sweeping upstream; **blinkers** show intent — merging in from a ramp,
+  working over toward an exit, or wanting a lane change that isn't safe yet
+  (that car blinks without moving until a gap opens).
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
@@ -85,8 +90,6 @@ work their way to the outer lane in time. Everything is rendered with three.js
   adaptive-cruise share and watch the stripes dissolve)
 - Hover a car to read its current speed (and desired speed); chase view shows
   the chased car's desired speed
-- Blinkers (a car *wants* to change lanes) and brake lights (deceleration past
-  a threshold, EV-regen-style — jam waves as red pulses running upstream)
 - Emergency vehicle button — spawn an ambulance and watch traffic make room
 - Weather — rain slows everyone down and tips fragile flow into jams
 - Better-looking vehicle models
