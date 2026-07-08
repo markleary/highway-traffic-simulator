@@ -106,11 +106,11 @@ export class Simulation {
   }
 
   reset() {
-    // Apply the road-shape and road-scale knobs (no-op unless one changed).
-    // Doing this here keeps the "GUI writes params, sim reads them" contract;
-    // a geometry change just requires a reset, since car s-coordinates don't
-    // map across shapes or sizes.
-    setShape(params.roadShape, params.roadScale);
+    // Apply the road geometry knobs (no-op unless one changed). Doing this
+    // here keeps the "GUI writes params, sim reads them" contract; a geometry
+    // change just requires a reset, since car s-coordinates don't map across
+    // shapes or sizes.
+    setShape(params.roadShape, params.roadScale, params.interchanges);
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
     this.time = 0;

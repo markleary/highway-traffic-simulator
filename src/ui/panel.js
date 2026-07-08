@@ -1,16 +1,18 @@
 import GUI from 'lil-gui';
 import { params, KMH, MPH, FT } from '../params.js';
-import { SHAPES } from '../sim/road.js';
+import { SHAPES, RAMPS } from '../sim/road.js';
 
 // params holds SI values only. Sliders with units bind to a proxy object in
 // display units and write converted SI back on change; toggling units tears
-// the panel down and rebuilds it with new labels, ranges and proxy values.
+// the panel down and rebuilds it with new labels, ranges and proxy values
+// (changing the interchange count rebuilds it too, so the Ramps folder shows
+// exactly the ramps that exist).
 export function buildPanel({ sim, renderer }) {
   let gui = null;
   const rebuild = () => {
     if (gui) gui.destroy();
     // defer: destroying the GUI from inside its own onChange handler
-    gui = makeGui({ sim, renderer, onUnitsChange: () => setTimeout(rebuild, 0) });
+    gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
   };
   rebuild();
 }
@@ -21,7 +23,7 @@ function tip(ctrl, text) {
   return ctrl;
 }
 
-function makeGui({ sim, renderer, onUnitsChange }) {
+function makeGui({ sim, renderer, onRebuild }) {
   const imp = params.units === 'imperial';
   const spd = imp ? MPH : KMH; // speed display unit → m/s
   const spdU = imp ? 'mph' : 'km/h';
@@ -44,7 +46,7 @@ function makeGui({ sim, renderer, onUnitsChange }) {
     gui
       .add(params, 'units', { 'Imperial (mph)': 'imperial', 'Metric (km/h)': 'metric' })
       .name('Units')
-      .onChange(onUnitsChange),
+      .onChange(onRebuild),
     'Display units for speeds, gaps and accelerations. The simulation itself always runs in SI internally.'
   );
 
@@ -86,6 +88,17 @@ function makeGui({ sim, renderer, onUnitsChange }) {
         renderer.onRoadChanged();
       }),
     'Multiplies the loop\'s size: 3× the circle is ~2 miles around. Longer stretches between interchanges give jam waves room to develop, travel, and dissolve on their own — watch the space-time diagram grow parallel stripes. Changing it rebuilds the road and reseeds traffic.'
+  );
+  tip(
+    fRoad
+      .add(params, 'interchanges', 2, 4, 1)
+      .name('Interchanges')
+      .onChange(() => {
+        sim.reset(); // reads params.interchanges; the shape builds what fits
+        renderer.onRoadChanged();
+        onRebuild(); // the Ramps folder shows exactly the ramps that exist
+      }),
+    'How many exit + on-ramp interchanges the loop gets (each has its own sliders below). Shapes fit what their geometry allows: the circle and beltway take 4 at any size; the speedway and grand prix need Road scale 2× or more before mid-straight interchanges fit.'
   );
   tip(
     fRoad
@@ -165,15 +178,19 @@ function makeGui({ sim, renderer, onUnitsChange }) {
   );
   fLc.close();
 
+  // One slider per ramp that actually exists (RAMPS follows the interchange
+  // knob); changing the count rebuilds the panel so this list stays true.
   const fRamps = gui.addFolder('Ramps');
   const onTip = (which) =>
     `Cars per minute trying to enter at on-ramp ${which}. The map label shows how many actually merge — throughput drops when the ramp queue backs up.`;
   const offTip = (which) =>
     `Percentage of passing cars that choose exit ${which}. Each car decides about ${imp ? '700 ft' : '220 m'} upstream, then works its way to the outer lane.`;
-  tip(fRamps.add(params, 'onRampA', 0, 40, 0.5).name('On-ramp A (cars/min)'), onTip('A'));
-  tip(fRamps.add(params, 'onRampB', 0, 40, 0.5).name('On-ramp B (cars/min)'), onTip('B'));
-  tip(fRamps.add(params, 'offRampA', 0, 50, 1).name('Exit A share (%)'), offTip('A'));
-  tip(fRamps.add(params, 'offRampB', 0, 50, 1).name('Exit B share (%)'), offTip('B'));
+  for (const ramp of RAMPS.filter((r) => r.type === 'on')) {
+    tip(fRamps.add(params, ramp.rateKey, 0, 40, 0.5).name(`${ramp.label} (cars/min)`), onTip(ramp.label.slice(-1)));
+  }
+  for (const ramp of RAMPS.filter((r) => r.type === 'off')) {
+    tip(fRamps.add(params, ramp.rateKey, 0, 50, 1).name(`${ramp.label} share (%)`), offTip(ramp.label.slice(-1)));
+  }
   tip(
     fRamps
       .add(ui, 'rampSpeed', ...(imp ? [20, 60, 5] : [30, 100, 5]))

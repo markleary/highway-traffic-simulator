@@ -432,6 +432,61 @@ for (const [id, scale] of [['circle', 3], ['gp', 2]]) {
   check(`${id}@${scale}x: cars exited`, st.exited > 0, `(exited=${st.exited})`);
 }
 
+// --- interchanges: shapes build what their geometry fits, and every built
+// ramp is fully wired (params key, spacing, live traffic)
+
+{
+  console.log('\ninterchange count follows geometry');
+  const cases = [
+    ['circle', 1, 4, 3],   // 1x circle only has arc for 3
+    ['circle', 1.5, 4, 4],
+    ['beltway', 1, 4, 4],  // one per corner at any size
+    ['beltway', 1, 3, 3],
+    ['speedway', 1, 4, 2], // straights too short for mid-straight diamonds
+    ['speedway', 2, 4, 4],
+    ['gp', 2, 3, 3],
+  ];
+  for (const [id, scale, want, expect] of cases) {
+    Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+      roadShape: id, roadScale: scale, interchanges: want, truckShare: 0,
+    });
+    new Simulation();
+    check(
+      `${id}@${scale}x wants ${want}, builds ${expect}`,
+      RAMPS.length === expect * 2,
+      `(built ${RAMPS.length / 2})`
+    );
+    check(
+      `${id}@${scale}x ramps are wired to params`,
+      RAMPS.every((r) => Number.isFinite(params[r.rateKey])),
+      `(${RAMPS.map((r) => r.rateKey).join(',')})`
+    );
+    const anchors = RAMPS.map((r) => (r.type === 'on' ? r.sJoin : r.sDiverge)).sort((a, b) => a - b);
+    let gapS = Infinity;
+    for (let i = 0; i < anchors.length; i++) {
+      const next = i + 1 < anchors.length ? anchors[i + 1] : anchors[0] + LOOP;
+      gapS = Math.min(gapS, next - anchors[i]);
+    }
+    check(`${id}@${scale}x anchors keep their distance`, gapS >= 40, `(min ${gapS.toFixed(0)} m)`);
+  }
+}
+
+run(
+  'four interchanges carry traffic (circle@1.5x)',
+  { roadShape: 'circle', roadScale: 1.5, interchanges: 4, initialCars: 150, truckShare: 0 },
+  120,
+  (sim) => {
+    const rf = sim.rampFlows();
+    check(
+      'all four on-ramps flowed',
+      rf.onA > 0 && rf.onB > 0 && rf.onC > 0 && rf.onD > 0,
+      `(${['onA', 'onB', 'onC', 'onD'].map((k) => rf[k].toFixed(1)).join('/')})`
+    );
+    check('cars exited somewhere', sim.stats().exited > 0, `(${sim.stats().exited})`);
+    check('ramp cars merged', sim.stats().merged > 3, `(${sim.stats().merged})`);
+  }
+);
+
 run('2 lanes', { lanes: 2 }, 60, () => {});
 run('4 lanes', { lanes: 4, initialCars: 160 }, 60, () => {});
 

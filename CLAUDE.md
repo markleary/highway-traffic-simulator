@@ -94,11 +94,17 @@ test/smoke.js          runs the sim headless under several parameter regimes
   and on-ramp tip on the *same* straight point at each other, so interchanges on
   straight-sided shapes straddle a corner/cap instead (exit before the bend,
   entrance after).
-- Two diamond interchanges (A and B) on opposite sides of the loop, each an
-  off-ramp followed by an on-ramp. On-ramp cars queue on the ramp and merge into
-  gaps in lane 0; with no gap they wait at the ramp end — ramp queues backing up
-  are a feature, not a bug. Exit choice is rolled per car when it crosses a
-  decision marker ~220 m before each off-ramp.
+- 2–4 diamond interchanges (lettered A–D in driving order), each an off-ramp
+  followed by an on-ramp with its own params sliders (`onRampA`–`D`,
+  `offRampA`–`D`). `params.interchanges` is the *requested* count; each shape's
+  `interchanges(len, count)` clamps to what its geometry fits (circle: 3 at 1×,
+  4 from ~1.15×; beltway: one per corner, always 4; speedway/gp: 2 until the
+  straights reach 480 m ≈ scale 1.6, then mid-straight diamonds fit). Changing
+  the count rebuilds the panel so the Ramps folder lists exactly the ramps that
+  exist. On-ramp cars queue on the ramp and merge into gaps in lane 0; with no
+  gap they wait at the ramp end — ramp queues backing up are a feature, not a
+  bug. Exit choice is rolled per car when it crosses a decision marker ~220 m
+  before each off-ramp.
 - `car.renderLane` is the smoothed lateral position used only for rendering;
   physics switches lanes discretely. Negative values are outside lane 0 — used
   by merging ramp cars and the breakdown shoulder (`SHOULDER_LANE`).

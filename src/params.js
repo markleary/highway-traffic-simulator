@@ -20,6 +20,7 @@ export const params = {
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()
   roadScale: 1,        // multiplies the shape's radii and straights; applied on reset
+  interchanges: 2,     // requested interchange count (2-4); shapes build what fits
   lanes: 3,
 
   // traffic mix
@@ -42,11 +43,16 @@ export const params = {
   // traffic
   initialCars: 80, // seeded on reset
 
-  // ramps — on-ramps in cars/min, off-ramps in % of passing traffic that exits
+  // ramps — on-ramps in cars/min, off-ramps in % of passing traffic that
+  // exits. C/D exist for the 3rd/4th interchange and are ignored below that.
   onRampA: 8,
   onRampB: 8,
+  onRampC: 8,
+  onRampD: 8,
   offRampA: 6,
   offRampB: 6,
+  offRampC: 6,
+  offRampD: 6,
   rampSpeed: 40 * MPH, // m/s
 
   // events
