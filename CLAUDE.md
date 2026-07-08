@@ -133,4 +133,17 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Ramp metering signals (deprioritized: not used around Boston, foreign concept to Mark)
+- Scenario presets: one-click parameter setups that stage the good demos and
+  reset. The parameter space (shape × scale × interchanges × lanes × traffic
+  knobs) is now big enough that reaching an interesting regime takes slider
+  archaeology. Candidates:
+  - "Rush hour" — heavy flood (both ramps 30+/min, exits low); jams grow
+    backwards from the merges.
+  - "Accident storm" — short headways (~0.9 s) plus a couple of triggered
+    wrecks; fragile flow collapsing.
+  - "ACC demo" — the jam-prone edge-of-instability regime (~130 cars, ramps
+    ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
+    ACC share and reset to watch them dissolve (calibrated during the ACC PR;
+    denser regimes saturate orange and hide the effect).
+- Ramp metering signals (deprioritized: not used around Boston, foreign concept
+  to Mark — though with 2–4 meterable on-ramps it now has a stage)

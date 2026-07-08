@@ -79,4 +79,8 @@ work their way to the outer lane in time. Everything is rendered with three.js
 
 ## Roadmap
 
+- Scenario presets — one-click setups that stage the good demos: "rush hour"
+  (heavy inflow, watch jams grow from the merges), "accident storm" (tailgating
+  plus wrecks), and "ACC demo" (a jam-striped diagram, then raise the
+  adaptive-cruise share and watch the stripes dissolve)
 - Ramp metering
