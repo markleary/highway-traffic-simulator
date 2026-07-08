@@ -260,6 +260,11 @@ export class SceneRenderer {
     for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
+      // three.js culls an InstancedMesh by its BASE geometry's bounding
+      // sphere — one car-sized blob at the world origin, ignoring where the
+      // instances are. Any camera pose that doesn't contain the loop's center
+      // (easy in chase view on big roads) would cull every vehicle at once.
+      m.frustumCulled = false;
       this.scene.add(m);
     }
   }
