@@ -94,7 +94,7 @@ function makeGui({ sim, renderer, onRebuild }) {
       .add(params, 'interchanges', 2, 4, 1)
       .name('Interchanges')
       .onFinishChange(geometryChanged),
-    'How many exit + on-ramp interchanges the loop gets (each has its own sliders below). Shapes fit what their geometry allows: the circle and beltway take 4 at any size; the speedway and grand prix need Road scale 2× or more before mid-straight interchanges fit.'
+    'How many exit + on-ramp interchanges the loop gets (each has its own sliders below). Shapes fit what their geometry allows: the beltway takes 4 at any size, the 1× circle fits 3 (scale it to 1.5× for the 4th), and the speedway and grand prix need Road scale 2× before mid-straight interchanges fit.'
   );
   tip(
     fRoad
