@@ -69,35 +69,31 @@ function makeGui({ sim, renderer, onRebuild }) {
   const shapeOptions = Object.fromEntries(
     Object.entries(SHAPES).map(([id, shape]) => [shape.label, id])
   );
+  // Any geometry knob can change how many interchanges FIT (shape and scale
+  // included, not just the count knob), so they all reset the sim and rebuild
+  // the panel — the Ramps folder is generated from the ramps that exist.
+  // onFinishChange: one reset per adjustment, not one per slider drag step.
+  const geometryChanged = () => {
+    sim.reset(); // reads roadShape/roadScale/interchanges; s doesn't map across geometries
+    renderer.onRoadChanged();
+    onRebuild();
+  };
   tip(
-    fRoad
-      .add(params, 'roadShape', shapeOptions)
-      .name('Shape')
-      .onChange(() => {
-        sim.reset(); // reads params.roadShape; car positions don't map across shapes
-        renderer.onRoadChanged();
-      }),
+    fRoad.add(params, 'roadShape', shapeOptions).name('Shape').onFinishChange(geometryChanged),
     'Shape of the highway loop. Changing it rebuilds the road and reseeds traffic — the physics is identical on every shape; only the scenery bends.'
   );
   tip(
     fRoad
       .add(params, 'roadScale', 1, 3, 0.5)
       .name('Road scale (×)')
-      .onChange(() => {
-        sim.reset(); // reads params.roadScale; s-coordinates don't map across sizes
-        renderer.onRoadChanged();
-      }),
+      .onFinishChange(geometryChanged),
     'Multiplies the loop\'s size: 3× the circle is ~2 miles around. Longer stretches between interchanges give jam waves room to develop, travel, and dissolve on their own — watch the space-time diagram grow parallel stripes. Changing it rebuilds the road and reseeds traffic.'
   );
   tip(
     fRoad
       .add(params, 'interchanges', 2, 4, 1)
       .name('Interchanges')
-      .onChange(() => {
-        sim.reset(); // reads params.interchanges; the shape builds what fits
-        renderer.onRoadChanged();
-        onRebuild(); // the Ramps folder shows exactly the ramps that exist
-      }),
+      .onFinishChange(geometryChanged),
     'How many exit + on-ramp interchanges the loop gets (each has its own sliders below). Shapes fit what their geometry allows: the circle and beltway take 4 at any size; the speedway and grand prix need Road scale 2× or more before mid-straight interchanges fit.'
   );
   tip(
