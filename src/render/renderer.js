@@ -47,7 +47,7 @@ export class SceneRenderer {
     this.scene.add(sun);
 
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(1200, 64).rotateX(-Math.PI / 2),
+      new THREE.CircleGeometry(2400, 64).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0x2c3a2e, roughness: 1 })
     );
     ground.position.y = -0.15;
@@ -170,10 +170,15 @@ export class SceneRenderer {
     this.roadGroup = g;
     this.scene.add(g);
 
-    // haze distances scale with how far the fitted cameras sit from the road
+    // haze, zoom range, and clip plane all scale with how far the fitted
+    // cameras sit from the road — big road scales push the overhead view
+    // past the defaults tuned for the 1x loop
     const { h } = this.viewFit();
     this.scene.fog.near = h * 1.35;
     this.scene.fog.far = h * 3.2;
+    this.controls.maxDistance = Math.max(1400, h * 1.5);
+    this.camera.far = Math.max(3000, h * 4);
+    this.camera.updateProjectionMatrix();
   }
 
   // Rebuilt on shape changes; ramp curves live in road.js and are already new.

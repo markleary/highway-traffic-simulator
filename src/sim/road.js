@@ -41,11 +41,15 @@ const Rt = (r, deg) => ({ kind: 'arc', r, dir: +1, len: r * deg * DEG }); // rig
 // attach to road that isn't bending through them; Beltway splits each
 // interchange across a corner — exit before the bend, entrance after —
 // which is how real beltways do it.
+// Builders take the road-scale multiplier: radii and straights scale, while
+// ramp anchors stay a fixed physical distance from their segment ends (the
+// ramp footprint itself — bezier tips ~105 m out — never scales), so bigger
+// roads mean longer open stretches between the same interchanges.
 export const SHAPES = {
   circle: {
     label: 'Circle',
-    build() {
-      const r = 168.15; // preserves the original loop exactly (LOOP ≈ 1056.5)
+    build(k) {
+      const r = 168.15 * k; // k=1 preserves the original loop (LOOP ≈ 1056.5)
       return {
         ops: [L(r, 360)],
         ramps: (len) => ({ offA: 0.04 * len, onA: 0.24 * len, offB: 0.54 * len, onB: 0.74 * len }),
@@ -54,9 +58,9 @@ export const SHAPES = {
   },
   speedway: {
     label: 'Speedway',
-    build() {
-      const straight = 300;
-      const r = 85;
+    build(k) {
+      const straight = 300 * k;
+      const r = 85 * k;
       const half = straight + Math.PI * r;
       // Each interchange straddles a cap: exit at the end of one straight,
       // entrance at the start of the next. Two ramp tips on a shared straight
@@ -70,9 +74,9 @@ export const SHAPES = {
   },
   beltway: {
     label: 'Beltway',
-    build() {
-      const straight = 160;
-      const r = 70;
+    build(k) {
+      const straight = 160 * k;
+      const r = 70 * k;
       const quarter = straight + (Math.PI / 2) * r; // one side + one corner
       return {
         ops: [
@@ -80,9 +84,9 @@ export const SHAPES = {
           S(straight), L(r, 90), S(straight), L(r, 90),
         ],
         ramps: () => ({
-          offA: 120,               // late on side 1: the exit runs straight on where the road bends
-          onA: quarter + 45,       // early on side 2: entering just after the corner
-          offB: 120 + 2 * quarter, // same interchange mirrored to sides 3 / 4
+          offA: straight - 40,               // late on side 1: the exit runs straight on where the road bends
+          onA: quarter + 45,                 // early on side 2: entering just after the corner
+          offB: straight - 40 + 2 * quarter, // same interchange mirrored to sides 3 / 4
           onB: 3 * quarter + 45,
         }),
       };
@@ -90,12 +94,12 @@ export const SHAPES = {
   },
   gp: {
     label: 'Grand Prix',
-    build() {
+    build(k) {
       // A stadium pinched by an S-kink on each side. Each half turns exactly
       // −180°, so repeating it twice closes the loop by symmetry. The Rt()
       // section is the one stretch of road anywhere that curves right.
-      const straight = 300;
-      const halfOps = [S(straight), L(75, 100), Rt(55, 40), L(75, 120)];
+      const straight = 300 * k;
+      const halfOps = [S(straight), L(75 * k, 100), Rt(55 * k, 40), L(75 * k, 120)];
       const half = halfOps.reduce((a, op) => a + op.len, 0);
       // Interchanges straddle the S-sections, same reasoning as the Speedway.
       return {
@@ -112,6 +116,7 @@ export const SHAPES = {
 export let LOOP = 0;
 export const RAMPS = [];
 let currentShape = null;
+let currentScale = 0;
 let segs = [];
 let extent = { halfX: 0, halfZ: 0 };
 
@@ -130,12 +135,14 @@ export function bounds() {
   return { halfX: extent.halfX, halfZ: extent.halfZ };
 }
 
-export function setShape(id) {
+export function setShape(id, scale = 1) {
   const shape = SHAPES[id] ?? SHAPES.circle;
-  if (currentShape === shape) return;
+  const k = Math.min(Math.max(scale, 0.5), 4); // sanity clamp, knob offers 1-3
+  if (currentShape === shape && currentScale === k) return;
   currentShape = shape;
+  currentScale = k;
 
-  const { ops, ramps } = shape.build();
+  const { ops, ramps } = shape.build(k);
 
   // Walk the turtle: precompute each segment's entry pose, and for arcs the
   // rotation center and entry radial vector.

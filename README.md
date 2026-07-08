@@ -36,7 +36,8 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
   - **Road** — loop shape (circle, speedway oval, beltway square, or a pinched
-    grand-prix circuit) and number of lanes (2–4)
+    grand-prix circuit), road scale (1–3×: longer stretches between interchanges
+    give jam waves room to develop and travel), and number of lanes (2–4)
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
     keep right), percentage of cars on **adaptive cruise control** (the angular
     wedge-shaped ones — they never brake harder than physics requires, so they
