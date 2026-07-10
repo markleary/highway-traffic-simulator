@@ -6,7 +6,7 @@ import { params, KMH, MPH } from '../params.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
-const MAX_AMB = 8;
+const MAX_AMB = 8; // sim.spawnAmbulance caps at the same count (MAX_AMBULANCES)
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
 const MAX_LIGHTS = MAX_CARS + MAX_TRUCKS;

@@ -285,6 +285,39 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
 }
 
 {
+  console.log('\nambulance spawn edge cases (Codex review regressions)');
+  // one car per lane: the widest-gap scan must treat a lone car's gap as the
+  // whole loop, not forwardDist(s, s) = 0 (which spawned onto the car)
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 3,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const sim = new Simulation();
+  const amb = sim.spawnAmbulance();
+  const lone = sim.cars.find((c) => c !== amb && c.lane === amb.lane);
+  const gap = Math.min(forwardDist(amb.s, lone.s), forwardDist(lone.s, amb.s));
+  check(
+    'lone-car lane: ambulance spawns into the open half-loop',
+    gap > LOOP / 4,
+    `(gap=${gap.toFixed(0)} m)`
+  );
+  // spawns cap at the renderer's instanced capacity — past it the vehicle
+  // would drive physics invisibly
+  let spawned = 1;
+  for (let i = 0; i < 12; i++) if (sim.spawnAmbulance()) spawned++;
+  check(
+    'concurrent ambulances cap at the renderable count',
+    spawned === 8 && sim.cars.filter((c) => c.kind === 'ambulance').length === 8,
+    `(${spawned} spawned)`
+  );
+  for (let i = 0; i < Math.round(5 / H); i++) sim.step(H);
+  assertSane(sim, 'ambulance spawn edges');
+}
+
+{
   console.log('\nwork zone: inner lane closes, traffic zippers past');
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
     initialCars: 100,

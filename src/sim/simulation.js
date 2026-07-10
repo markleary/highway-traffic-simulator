@@ -8,6 +8,10 @@ export const BIN_M = 10;
 // How far ahead of a work zone's cones the closed lane starts merging out.
 const WZ_WARN = 250;
 
+// Concurrent ambulance cap — matches the renderer's instanced-mesh capacity
+// (MAX_AMB in renderer.js): a spawn past it would drive physics invisibly.
+const MAX_AMBULANCES = 8;
+
 // Positions are vehicle CENTERS (that is where the meshes are drawn), so a
 // bumper-to-bumper gap must shed half of BOTH vehicles' lengths. With uniform
 // lengths subtracting one full length was equivalent; with trucks it is not.
@@ -951,6 +955,7 @@ export class Simulation {
   // after ~1.6 laps. Traffic ahead reacts through ambBehind (slowing and
   // vacating its lane) — the move-over corridor is emergent, not scripted.
   spawnAmbulance() {
+    if (this.cars.filter((c) => c.kind === 'ambulance').length >= MAX_AMBULANCES) return null;
     const lane = params.lanes - 1;
     const arr = this.buildLaneIndex()[lane];
     let s = 0;
@@ -959,7 +964,9 @@ export class Simulation {
       let lead = arr[0];
       let bestGap = -1;
       for (let i = 0; i < arr.length; i++) {
-        const gap = forwardDist(arr[i].s, arr[(i + 1) % arr.length].s);
+        // a lone car's gap to itself is the whole loop, not forwardDist's 0
+        const gap =
+          arr.length === 1 ? LOOP : forwardDist(arr[i].s, arr[(i + 1) % arr.length].s);
         if (gap > bestGap) {
           bestGap = gap;
           lead = arr[i];

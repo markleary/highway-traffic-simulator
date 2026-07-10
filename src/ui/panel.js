@@ -104,6 +104,9 @@ function makeGui({ sim, renderer, onRebuild }) {
       .onChange(() => {
         sim.onLaneCountChanged();
         renderer.buildRoad();
+        // the work zone closes whichever lane is innermost NOW — the cones
+        // must move to it with the physics (Codex review)
+        renderer.onWorkZoneChanged();
       }),
     'Number of lanes. The outer edge stays fixed and lanes grow inward; cars in a removed lane move to the innermost remaining one.'
   );
