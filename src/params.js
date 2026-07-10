@@ -66,4 +66,10 @@ export const params = {
   incidentDuration: 90, // s — how long a breakdown stays parked / a wreck blocks
   rubberneck: 0.5,      // 0–1: how much passing traffic slows to gawk
   accidentLanes: 1,     // cars involved in a triggered accident (1 or 2 lanes)
+
+  // work zone: cones close the innermost lane over a stretch (sim.workZone).
+  // Applies live — no reset; cars caught inside work their way out.
+  workZone: false,
+  workZonePos: 50, // where the cones start, % of the way around the loop
+  workZoneLen: 300, // coned length, m
 };
