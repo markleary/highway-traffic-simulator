@@ -1,10 +1,10 @@
 # Highway Traffic Simulator
 
 A real-time, browser-based highway traffic simulator. Cars drive around a closed
-loop of freeway with two interchanges (off-ramp + on-ramp each). You control the
+loop of freeway with 2–4 interchanges (off-ramp + on-ramp each). You control the
 knobs — inflow at each on-ramp, share of cars taking each exit, desired speed,
-following distance, driver aggressiveness — and watch traffic flow respond live:
-merge friction, stop-and-go waves, and full-blown phantom jams.
+following distance, driver aggressiveness, even the weather — and watch traffic
+flow respond live: merge friction, stop-and-go waves, and full-blown phantom jams.
 
 Based on an idea from childhood: *what actually causes highway traffic?* Now
 answerable by turning a slider instead of writing Pascal.
@@ -27,16 +27,36 @@ branch → `main` / root**. That's it — there is nothing to build.
 
 ## Controls
 
-- **Drag** to orbit, **scroll** to zoom, **Space** to pause.
-- **Click any car to crash it** — it blocks its lane (optionally dragging a
-  neighbor into a 2-lane pileup) until cleared. The **Events** folder also has
-  random breakdowns: a car pulls onto the shoulder, parks with hazards, and
-  merges back later, while passing traffic slows down to rubberneck.
+- **Scenario dropdown** (top of the panel) — one-click demo setups that stage
+  the good regimes and reset: Rush hour, Accident storm, ACC wave lab,
+  Fundamental diagram, Lane closure crunch, Sudden downpour, Ambulance run,
+  and Factory defaults. Each tooltip explains what to watch for.
+- **Drag** to orbit, **scroll** to zoom, **Space** to pause. Keyboard: **C**
+  enters the chase camera (again to switch cars), **V** cycles perspective →
+  overhead → chase, **F** toggles an FPS readout, **Esc** exits the chase.
+- **Hover any car** for a nameplate readout: its kind and id, current speed,
+  and desired speed in parens. **Click any car to crash it** — it blocks its
+  lane (optionally dragging a neighbor into a 2-lane pileup) until cleared.
+- The **Events** folder stages everything else:
+  - **Random breakdown** — a car pulls onto the shoulder, parks with hazards,
+    and merges back later, while passing traffic slows down to rubberneck.
+  - **Random accident** — a wreck blocks its lane until cleared.
+  - **Emergency vehicle** — an ambulance runs the loop well above the speed
+    limit while traffic ahead of the siren slows and pulls out of its lane:
+    the "move over" corridor is emergent, not scripted.
+  - **Rain storm** — a three-minute storm rolls in, pours, and clears. Wet
+    roads mean slower targets, longer following distances, and less grip;
+    watch a busy regime tip into stop-and-go as it peaks. A steady **Rain**
+    slider sets a permanent climate under the storms.
+  - **Work zone** — cone off the innermost lane over a chosen stretch and
+    watch zipper merging at the taper, the queue behind it, and the capacity
+    drop in the flow chart.
 - Cars talk with their lights: **brake lights** come on past an EV-regen-style
-  deceleration threshold (or while held stopped), so a jam wave reads as a red
-  pulse sweeping upstream; **blinkers** show intent — merging in from a ramp,
-  working over toward an exit, or wanting a lane change that isn't safe yet
-  (that car blinks without moving until a gap opens).
+  deceleration threshold — and any time a car is crawling or held stopped —
+  so a jam wave reads as a red pulse sweeping upstream; **blinkers** show
+  intent — merging in from a ramp, working over toward an exit, or wanting a
+  lane change that isn't safe yet (that car blinks without moving until a gap
+  opens). The ambulance flashes red/blue roof strobes instead.
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
@@ -56,22 +76,31 @@ branch → `main` / root**. That's it — there is nothing to build.
     The map label at each ramp shows its *measured* flow over the last minute:
     on-ramps show achieved vs. requested (they fall behind when the merge queue
     backs up), exits show what their share % currently amounts to in cars/min.
-  - **View** — color cars by speed (red = stopped → green = at desired speed) or
-    give each car a fixed color; overhead vs. perspective camera; live charts
-    and **space-time diagram** toggles; and a **chase camera** that rides along
-    behind a random car with a working speedometer (Esc to exit)
+  - **View** — color cars by speed (red = stopped → green = at desired speed),
+    **by type** (human / adaptive cruise / truck, matching the legend), or per
+    car; live charts, **space-time diagram**, and **fundamental diagram**
+    toggles; an FPS counter; overhead vs. perspective camera; and a **chase
+    camera** that rides along behind a random car with a working speedometer
+    (Esc to exit)
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
   drift *down-right* — the wave rolls upstream even though every car in it
   drives forward. Ticks on the left edge mark the ramps, dark red lines mark
   each incident's start, and hovering highlights the matching spot on the road.
+- The **fundamental diagram** below it is the other canonical plot: flow vs
+  density, one dot per second, accumulated over the whole run. Free-flowing
+  traffic rides the dashed diagonal; as the road saturates, the dots bend over
+  the crest and slide down the congested branch — the inverted U, traced live.
+- The line charts shade **red** while an incident is active and **blue** while
+  it rains, so a flow collapse lines up with whatever caused it.
 
-Try it: crank both on-ramps to 30+ cars/min with exits low and watch the jam grow
-backwards from the merge points. Or lower the time headway to 0.6 s and see how
-dense-but-fragile the flow becomes. Then, once the space-time diagram is full of
-jam stripes, raise the adaptive-cruise share and watch the stripes dissolve —
-the 2018 Stern experiment, reproducible from your couch.
+Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
+backwards from the merge points. Pick **ACC wave lab**, then raise the
+adaptive-cruise share and reset — the jam stripes dissolve; the 2018 Stern
+experiment, reproducible from your couch. Or pick **Sudden downpour** and watch
+a comfortably flowing road collapse into stop-and-go one minute later when the
+storm arrives.
 
 ## How it works
 
@@ -79,25 +108,16 @@ Each car runs the [Intelligent Driver Model](https://en.wikipedia.org/wiki/Intel
 (IDM) for acceleration/braking and a simplified [MOBIL](https://traffic-simulation.de)
 rule for lane changes. On-ramp cars queue on the ramp and merge into gaps in the
 outer lane; cars roll a die upstream of each exit to decide whether to leave, then
-work their way to the outer lane in time. Everything is rendered with three.js
-(instanced meshes), so thousands of cars stay smooth.
+work their way to the outer lane in time. Adaptive-cruise cars temper IDM with the
+constant-acceleration heuristic, so they absorb perturbations instead of
+amplifying them. Rain scales the whole driver model — slower targets, longer
+headways, less grip — which is why a stable regime tips when a storm rolls in.
+Everything is rendered with three.js (instanced meshes), so thousands of cars
+stay smooth.
 
 ## Roadmap
 
-- Scenario presets — one-click setups that stage the good demos: "rush hour"
-  (heavy inflow, watch jams grow from the merges), "accident storm" (tailgating
-  plus wrecks), and "ACC demo" (a jam-striped diagram, then raise the
-  adaptive-cruise share and watch the stripes dissolve)
-- Hover a car to read its current speed (and desired speed); chase view shows
-  the chased car's desired speed
-- Emergency vehicle button — spawn an ambulance and watch traffic make room
-- Weather — rain slows everyone down and tips fragile flow into jams
-- Better-looking vehicle models
+- Better-looking vehicle models (wheels, beveled bodies, body varieties)
 - Mobile view optimizations (e.g. no space-time diagram by default on phones)
-- A "By type" car-color mode (human / adaptive cruise / truck)
-- Fundamental diagram — a live flow-vs-density scatter tracing the classic
-  inverted-U as traffic builds and collapses
-- Work zone / lane closure — cone off a lane and watch zipper merges and the
-  capacity drop emerge
 - Figure-eight road shape with an overpass
 - Ramp metering
