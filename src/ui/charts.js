@@ -69,13 +69,16 @@ export class ChartPanel {
   }
 
   update(history, incidentStarts = []) {
+    this.history = history;
+    this.incidentStarts = incidentStarts;
+    // fold before any visibility gate: samples only live 5 minutes in
+    // `history`, and the trace must cover the whole run when re-shown
+    this.updateTrace();
     this.el.style.display = params.showCharts ? '' : 'none';
     if (!params.showCharts) {
       if (this.onHoverS) this.onHoverS(null); // don't leave a stale road marker
       return;
     }
-    this.history = history;
-    this.incidentStarts = incidentStarts;
     const imp = params.units === 'imperial';
     const spd = imp ? MPH : KMH;
     const unit = imp ? 'mph' : 'km/h';
@@ -270,6 +273,14 @@ export class ChartPanel {
   // canonical traffic plot. Free flow rides a straight line from the origin
   // (slope = speed); when the road saturates, dots peel off it downward and
   // to the right: flow collapsing as density keeps rising.
+  //
+  // Unlike the time-series charts this accumulates the WHOLE RUN, not the
+  // 5-minute window: the curve only means something as the trajectory a run
+  // traces through it, and a slowly evolving regime never holds more than a
+  // small patch of it in any window (axes rescaled to that window even hid
+  // the collapse — flow falling just deflated the y-axis). Dots fade to a
+  // dim floor rather than out, so the run leaves the curve behind as
+  // context while the bright head shows where the system is now.
   makeFundamental() {
     const wrap = document.createElement('div');
     wrap.className = 'chart';
@@ -292,8 +303,9 @@ export class ChartPanel {
     wrap.append(head, canvas);
     this.el.appendChild(wrap);
 
-    // hover stores canvas-space px: the readout snaps to the nearest dot
-    const f = { wrap, canvas, ctx, value, hoverX: null, hoverY: null };
+    // hover stores canvas-space px: the readout snaps to the nearest dot.
+    // trace: since-reset {t, m, f, v} records (see drawFundamental).
+    const f = { wrap, canvas, ctx, value, hoverX: null, hoverY: null, trace: [], lastT: -1, histRef: null };
     canvas.addEventListener('pointermove', (e) => {
       const r = canvas.getBoundingClientRect();
       f.hoverX = ((e.clientX - r.left) / r.width) * W;
@@ -303,14 +315,37 @@ export class ChartPanel {
     return f;
   }
 
+  // Fold new 1 Hz samples into the fundamental diagram's since-reset trace.
+  // Reset detection mirrors the space-time ring: history array identity plus
+  // the time-went-backwards fallback.
+  updateTrace() {
+    const f = this.fund;
+    const history = this.history;
+    const newest = history[history.length - 1];
+    if (f.histRef !== history || (newest && newest.t < f.lastT)) {
+      f.trace = [];
+      f.lastT = -1;
+      f.histRef = history;
+    }
+    for (const p of history) {
+      if (p.t <= f.lastT) continue;
+      f.lastT = p.t;
+      // flow is hard-gated to 0 until t > 5 (see sim.stats) — a persistent
+      // trace would pin those warm-up artifacts to the axis forever
+      if (p.t > 5) f.trace.push({ t: p.t, m: p.m, f: p.f, v: p.v });
+    }
+    // ~2 h cap: enough for any sitting, small enough to never matter
+    if (f.trace.length > 7200) f.trace.splice(0, f.trace.length - 7200);
+  }
+
   drawFundamental() {
     const f = this.fund;
     f.wrap.style.display = params.showFundamental ? '' : 'none';
     if (!params.showFundamental) return;
     const { ctx } = f;
     ctx.clearRect(0, 0, W, FUND_H);
-    const history = this.history;
-    if (history.length < 2) {
+    const trace = f.trace;
+    if (trace.length < 2) {
       f.value.textContent = '—';
       return;
     }
@@ -318,11 +353,13 @@ export class ChartPanel {
     const kUnit = imp ? MI : 1000; // meters per displayed road-length unit
     const kLabel = imp ? 'cars/mi' : 'cars/km';
     const kOf = (p) => (p.m / LOOP) * kUnit; // mainline cars per mi/km of roadway, all lanes
-    const last = history[history.length - 1];
+    const last = trace[trace.length - 1];
 
+    // axes fit the whole trace, so within a run they only ever grow — a
+    // slow collapse slides visibly down instead of deflating the y-axis
     let kMax = 0;
     let qMax = 0;
-    for (const p of history) {
+    for (const p of trace) {
       kMax = Math.max(kMax, kOf(p));
       qMax = Math.max(qMax, p.f);
     }
@@ -346,13 +383,14 @@ export class ChartPanel {
     ctx.setLineDash([]);
 
     // the point cloud: speed-colored like the cars and the space-time
-    // diagram (legend bottom-left), fading with age so the cloud is a trace,
-    // not a smear — a jam collapse reads as fresh dots sliding off the
-    // free-flow branch onto the congested one.
+    // diagram (legend bottom-left). Recency fades over the first ten
+    // minutes, then holds at a dim floor — a jam collapse reads as bright
+    // dots sliding off the free-flow branch onto the congested one, over
+    // the faint curve the rest of the run already traced.
     const vTop = Math.max(params.desiredSpeed, 0.1);
-    for (const p of history) {
+    for (const p of trace) {
       const t = Math.min(Math.max(p.v / vTop, 0), 1);
-      ctx.globalAlpha = 0.9 - 0.7 * ((last.t - p.t) / WINDOW);
+      ctx.globalAlpha = Math.max(0.15, 0.9 - (last.t - p.t) / 800);
       ctx.fillStyle = `hsl(${t * 120}, 85%, 50%)`;
       ctx.beginPath();
       ctx.arc(xs(kOf(p)), ys(p.f), 2, 0, Math.PI * 2);
@@ -376,10 +414,11 @@ export class ChartPanel {
 
     // hover: pin the readout to the nearest dot (12 px reach)
     const fmt = (p) => `${kOf(p).toFixed(0)} ${kLabel} · ${p.f.toFixed(1)}/min`;
+    const agoFmt = (s) => (s < 120 ? `${Math.round(s)}s ago` : `${Math.round(s / 60)}m ago`);
     if (f.hoverX !== null) {
       let best = null;
       let bestD = 12 * 12;
-      for (const p of history) {
+      for (const p of trace) {
         const dx = xs(kOf(p)) - f.hoverX;
         const dy = ys(p.f) - f.hoverY;
         const d = dx * dx + dy * dy;
@@ -394,7 +433,7 @@ export class ChartPanel {
         ctx.beginPath();
         ctx.arc(xs(kOf(best)), ys(best.f), 4, 0, Math.PI * 2);
         ctx.stroke();
-        f.value.textContent = `${fmt(best)} · ${Math.round(last.t - best.t)}s ago`;
+        f.value.textContent = `${fmt(best)} · ${agoFmt(last.t - best.t)}`;
       } else {
         f.value.textContent = '—';
       }
