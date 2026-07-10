@@ -235,6 +235,10 @@ function makeGui({ sim, renderer, onRebuild }) {
     'Flow vs density, the canonical traffic plot: one dot per second, colored by average speed and fading with age. Free-flowing dots ride the dashed diagonal (slope = desired speed); when the road saturates they break off it — flow collapsing while density keeps rising.'
   );
   tip(
+    fView.add(params, 'showFps').name('FPS counter').listen(),
+    "Show the renderer's frames per second at the bottom of the stats panel. The F key toggles this too."
+  );
+  tip(
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'Per car': 'random' })
       .name('Car colors'),
@@ -244,11 +248,11 @@ function makeGui({ sim, renderer, onRebuild }) {
     fView
       .add({ chase: () => renderer.startChase(sim.randomEligibleCar()) }, 'chase')
       .name('🎥 Chase a car'),
-    'Ride along behind a random car, with a live speedometer. Press again to switch cars; Esc or either view button returns to the free camera.'
+    'Ride along behind a random car, with a live speedometer. Press again (or the C key) to switch cars; Esc or either view button returns to the free camera.'
   );
   tip(
     fView.add({ top: () => renderer.setTopView() }, 'top').name('Overhead view'),
-    'Look straight down at the whole loop.'
+    'Look straight down at the whole loop. The V key cycles perspective → overhead → chase.'
   );
   tip(
     fView.add({ def: () => renderer.setDefaultView() }, 'def').name('Perspective view'),
