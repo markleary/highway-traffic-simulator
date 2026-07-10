@@ -209,16 +209,16 @@ function makeGui({ sim, renderer, onRebuild }) {
     'A random car crashes where it is, blocking its lane until cleared. You can also click any car on the map to crash that specific one.'
   );
   tip(
+    fEvents.add({ amb: () => sim.spawnAmbulance() }, 'amb').name('🚑 Emergency vehicle'),
+    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and pulls out of its lane — the "move over" corridor is emergent, not scripted. It weaves through whatever does not clear, and leaves the map after about a lap and a half.'
+  );
+  tip(
     fEvents.add(params, 'accidentLanes', 1, 2, 1).name('Accident size (lanes)'),
     'How many lanes an accident blocks: 2 also drags the nearest car in the adjacent lane into the pileup.'
   );
   tip(
     fEvents.add(params, 'incidentDuration', 15, 300, 5).name('Duration (s)'),
     'How long a breakdown stays parked on the shoulder, and how long a wreck blocks its lane before being cleared away.'
-  );
-  tip(
-    fEvents.add({ amb: () => sim.spawnAmbulance() }, 'amb').name('🚑 Emergency vehicle'),
-    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and pulls out of its lane — the "move over" corridor is emergent, not scripted. It weaves through whatever does not clear, and leaves the map after about a lap and a half.'
   );
   tip(
     fEvents.add(params, 'rubberneck', 0, 1, 0.05).name('Rubbernecking'),

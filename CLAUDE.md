@@ -140,7 +140,9 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
 - Emergency vehicle (`sim.spawnAmbulance`, Events panel): an 'ambulance'-kind
-  white box van (red/blue roof strobes) spawns into the widest inner-lane gap,
+  white Type-I-style rig (hood + cab + taller patient module, dark cab glass,
+  red module stripe, red/blue strobes on the module's front roof) that
+  spawns into the widest inner-lane gap,
   runs at 1.55× the desired-speed knob with hair-trigger MOBIL (no politeness,
   holds the innermost lane so the corridor stays predictable), and despawns
   after ~1.6 laps. Cars with the siren within ~220 m behind (`ambBehind`) and
