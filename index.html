@@ -24,7 +24,10 @@
       background: linear-gradient(to right, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%));
     }
     .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-top: 4px; }
-    .hint { right: 12px; bottom: 12px; font-size: 11px; color: #9fb0c0; }
+    /* sits left of the control panel column (lil-gui: 245px wide, 15px inset),
+       which otherwise paints over the hint's tail whenever it reaches the
+       bottom of the window */
+    .hint { right: 272px; bottom: 12px; font-size: 11px; color: #9fb0c0; }
     .map-label {
       color: #dbe4ee; background: rgba(10, 16, 14, 0.78);
       border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px;
@@ -58,6 +61,7 @@
     <div class="row"><span>Flow past start</span><span id="stat-flow">–</span></div>
     <div class="row"><span>Entered / exited</span><span id="stat-inout">–</span></div>
     <div class="row"><span>Sim time</span><span id="stat-time">–</span></div>
+    <div class="row" id="row-fps" style="display: none"><span>FPS</span><span id="stat-fps">–</span></div>
   </div>
 
   <div class="panel legend">
@@ -65,7 +69,7 @@
     <div class="labels"><span>stopped</span><span>desired speed</span></div>
   </div>
 
-  <div class="panel hint">hover a car: speed &nbsp;·&nbsp; click a car: crash it &nbsp;·&nbsp; drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause</div>
+  <div class="panel hint">hover a car: speed &nbsp;·&nbsp; click a car: crash it &nbsp;·&nbsp; drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause &nbsp;·&nbsp; c chase &nbsp;·&nbsp; v views &nbsp;·&nbsp; f fps</div>
 
   <script type="importmap">
     {

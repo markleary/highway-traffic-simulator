@@ -22,6 +22,7 @@ export const params = {
   // hidden (still toggleable) instead of painting over the HUD. The window
   // guard keeps the headless smoke test (Node) importable.
   showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800,
+  showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()

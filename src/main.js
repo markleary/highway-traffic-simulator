@@ -31,10 +31,12 @@ window.params = params;
 const H = 1 / 60;
 let last = performance.now();
 let acc = 0;
+let fpsFrames = 0; // render frames since the last HUD tick (FPS readout)
 
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
+  fpsFrames++;
   if (!params.paused) {
     acc += dt * params.timeScale;
     let steps = 0;
@@ -62,12 +64,34 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+// 'v' cycles the cameras; 'c' jumps straight to (or re-rolls) the chase.
+// Panel view buttons don't move this index — the cycle just resumes from
+// wherever it last was, which is harmless.
+const views = [
+  () => renderer.setDefaultView(),
+  () => renderer.setTopView(),
+  () => renderer.startChase(sim.randomEligibleCar()),
+];
+let viewIndex = 0; // startup camera is the perspective view
+
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && e.target === document.body) {
     e.preventDefault();
     params.paused = !params.paused;
   }
   if (e.code === 'Escape') renderer.stopChase();
+  // letter shortcuts: never while typing in the panel or chorded with a
+  // browser shortcut (cmd/ctrl+F is find, not our FPS toggle)
+  if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.code === 'KeyF') params.showFps = !params.showFps;
+  if (e.code === 'KeyC') {
+    viewIndex = 2; // a following 'v' continues the cycle from chase
+    renderer.startChase(sim.randomEligibleCar()); // fresh car if already chasing
+  }
+  if (e.code === 'KeyV') {
+    viewIndex = (viewIndex + 1) % views.length;
+    views[viewIndex]();
+  }
 });
 
 const el = {
@@ -76,9 +100,18 @@ const el = {
   flow: document.getElementById('stat-flow'),
   inout: document.getElementById('stat-inout'),
   time: document.getElementById('stat-time'),
+  fps: document.getElementById('stat-fps'),
+  fpsRow: document.getElementById('row-fps'),
 };
+let fpsLast = performance.now();
 setInterval(() => {
   const s = sim.stats();
+  // FPS over the real time since the last tick (the interval isn't exact)
+  const nowMs = performance.now();
+  el.fpsRow.style.display = params.showFps ? '' : 'none';
+  if (params.showFps) el.fps.textContent = (fpsFrames / ((nowMs - fpsLast) / 1000)).toFixed(0);
+  fpsFrames = 0;
+  fpsLast = nowMs;
   renderer.updateRampLabels(sim.rampFlows());
   charts.update(sim.history, sim.incidentStarts);
   el.cars.textContent = s.count;
