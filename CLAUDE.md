@@ -47,7 +47,11 @@ Headless physics check (no browser needed): `npm install && npm test`
 
 ```
 index.html             import map, HUD overlay (stats, legend), CSS
-src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time)
+src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
+                       also owns the keyboard shortcuts (space/esc/c/v/f), the
+                       per-frame hover pick + rain hand-off to the renderer, and
+                       the 250 ms HUD tick (stats, FPS readout, chase-aware hint
+                       swap, color-mode-aware legend swap)
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live —
                        plus DEFAULTS, a frozen factory snapshot
