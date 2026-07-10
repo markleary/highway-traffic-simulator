@@ -112,12 +112,34 @@ const hintFree = hintEl.innerHTML;
 const hintChase = 'esc exit chase &nbsp;·&nbsp; c switch car';
 let hintShowsChase = false;
 
+// The bottom-left legend follows the color mode: the speed gradient only
+// explains By speed; By type gets kind swatches (hues match the renderer's
+// TYPE_COLORS); Per car has nothing to explain, so it hides.
+const legendEl = document.getElementById('legend');
+const legendSpeed = legendEl.innerHTML;
+const sw = (hex, label) =>
+  `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;` +
+  `background:${hex};margin-right:5px"></i>${label}</span>`;
+// "ACC" over "adaptive cruise": the long label ran the legend panel under
+// the hint bar, and the hover readout already calls these "ACC car"
+const legendType =
+  `<div class="labels" style="margin-top:0;gap:12px;justify-content:flex-start">` +
+  sw('#3987e5', 'human') + sw('#199e70', 'ACC') + sw('#d98e32', 'truck') +
+  sw('#f4f7f9', 'ambulance') + `</div>`;
+let legendMode = 'speed';
+
 let fpsLast = performance.now();
 setInterval(() => {
   const s = sim.stats();
   if (hintShowsChase !== !!renderer.chaseCar) {
     hintShowsChase = !!renderer.chaseCar;
     hintEl.innerHTML = hintShowsChase ? hintChase : hintFree;
+  }
+  if (legendMode !== params.colorMode) {
+    legendMode = params.colorMode;
+    legendEl.style.display = legendMode === 'random' ? 'none' : '';
+    if (legendMode === 'speed') legendEl.innerHTML = legendSpeed;
+    else if (legendMode === 'type') legendEl.innerHTML = legendType;
   }
   // FPS over the real time since the last tick (the interval isn't exact)
   const nowMs = performance.now();

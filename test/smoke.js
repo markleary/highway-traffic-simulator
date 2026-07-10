@@ -3,6 +3,7 @@
 import { params, KMH } from '../src/params.js';
 import { Simulation, BIN_M } from '../src/sim/simulation.js';
 import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt } from '../src/sim/road.js';
+import { PRESETS, applyPreset } from '../src/presets.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -353,6 +354,48 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   check('traffic still flows past the closure', s.flowPerMin > 15, `(${s.flowPerMin.toFixed(1)}/min)`);
   check('merging out produced lane changes', s.laneChanges > 30, `(${s.laneChanges})`);
   assertSane(sim, 'work zone scenario');
+}
+
+{
+  console.log('\nscenario presets: every preset boots into sane, moving traffic');
+  for (const [key, preset] of Object.entries(PRESETS)) {
+    Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)));
+    const sim = new Simulation();
+    applyPreset(key, sim);
+    for (let i = 0; i < Math.round(30 / H); i++) sim.step(H);
+    const s = sim.stats();
+    check(
+      `${preset.label}: traffic on the road and moving`,
+      s.count > 10 && s.avgSpeed > 1,
+      `(n=${s.count}, v=${s.avgSpeed.toFixed(1)} m/s)`
+    );
+    assertSane(sim, preset.label);
+  }
+  // presets restage the sim but never clobber the user's display preferences
+  params.units = 'metric';
+  params.showFps = true;
+  const sim = new Simulation();
+  applyPreset('rush', sim);
+  check(
+    'presets keep display preferences',
+    params.units === 'metric' && params.showFps === true,
+    `(units=${params.units}, showFps=${params.showFps})`
+  );
+  check(
+    'preset regime applied over defaults',
+    params.onRampA === 30 && params.initialCars === 100 && params.paused === false,
+    `(onRampA=${params.onRampA}, initialCars=${params.initialCars})`
+  );
+  // ...but a preset whose demo lives in a chart must override hidden charts
+  // (Codex review: hidden charts made the Fundamental diagram preset a no-show)
+  params.showCharts = false;
+  params.showFundamental = false;
+  applyPreset('sweep', sim);
+  check(
+    'chart-centric presets force their chart visible',
+    params.showCharts === true && params.showFundamental === true,
+    `(showCharts=${params.showCharts}, showFundamental=${params.showFundamental})`
+  );
 }
 
 {

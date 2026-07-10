@@ -10,6 +10,13 @@ const MAX_TRUCKS = 400;
 const MAX_AMB = 8; // sim.spawnAmbulance caps at the same count (MAX_AMBULANCES)
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
+// 'By type' color mode: the charts' categorical trio (speed/flow/cars series
+// hues), so the whole UI speaks one palette. Ambulances stay white.
+const TYPE_COLORS = {
+  car: new THREE.Color(0x3987e5),
+  acc: new THREE.Color(0x199e70),
+  truck: new THREE.Color(0xd98e32),
+};
 const MAX_LIGHTS = MAX_CARS + MAX_TRUCKS;
 const BG = 0x0e1512;
 
@@ -470,6 +477,8 @@ export class SceneRenderer {
       } else if (params.colorMode === 'speed') {
         const t = THREE.MathUtils.clamp(car.v / desired, 0, 1);
         this._bodyColor.setHSL(t * 0.33, 0.85, 0.5);
+      } else if (params.colorMode === 'type') {
+        this._bodyColor.copy(TYPE_COLORS[car.kind] ?? TYPE_COLORS.car);
       } else {
         this._bodyColor.setHSL(car.hue, 0.65, 0.55);
       }
