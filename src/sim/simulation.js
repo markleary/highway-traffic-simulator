@@ -807,13 +807,17 @@ export class Simulation {
     if (i >= 0) this.cars.splice(i, 1);
   }
 
-  // Nearest normal mainline car to a world-space point (used by click-to-crash).
-  carNear(point, radius = 12) {
+  // Nearest car to a world-space point. Click-to-crash uses the default
+  // filter (normal mainline cars only); the hover readout passes any = true
+  // to also read ramp, shoulder, and incident cars.
+  carNear(point, radius = 12, any = false) {
     let best = null;
     let bestD = radius * radius;
     for (const car of this.cars) {
-      if (car.state !== 'main' || car.incident) continue;
-      const pos = pointAt(car.s, -car.renderLane * ROAD.laneWidth);
+      if (!any && (car.state !== 'main' || car.incident)) continue;
+      const pos = car.ramp
+        ? car.ramp.curve.getPointAt(Math.min(Math.max(car.rampPos / car.ramp.length, 0), 1))
+        : pointAt(car.s, -car.renderLane * ROAD.laneWidth);
       const dx = pos.x - point.x;
       const dz = pos.z - point.z;
       const d = dx * dx + dz * dz;

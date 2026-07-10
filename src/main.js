@@ -52,6 +52,10 @@ function frame(now) {
     else renderer.stopChase();
   }
   speedo.update(renderer.chaseCar);
+  // hover readout: same pick path as click-to-crash, re-run every frame so
+  // the nameplate follows whichever car is under the pointer right now
+  const hoverPt = renderer.pointerGround();
+  renderer.setHoverCar(hoverPt && sim.carNear(hoverPt, 12, true));
   renderer.update(sim.cars);
   renderer.render(dt);
   requestAnimationFrame(frame);
