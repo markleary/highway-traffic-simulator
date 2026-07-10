@@ -386,6 +386,16 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
     params.onRampA === 30 && params.initialCars === 100 && params.paused === false,
     `(onRampA=${params.onRampA}, initialCars=${params.initialCars})`
   );
+  // ...but a preset whose demo lives in a chart must override hidden charts
+  // (Codex review: hidden charts made the Fundamental diagram preset a no-show)
+  params.showCharts = false;
+  params.showFundamental = false;
+  applyPreset('sweep', sim);
+  check(
+    'chart-centric presets force their chart visible',
+    params.showCharts === true && params.showFundamental === true,
+    `(showCharts=${params.showCharts}, showFundamental=${params.showFundamental})`
+  );
 }
 
 {

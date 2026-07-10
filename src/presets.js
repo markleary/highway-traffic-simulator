@@ -31,20 +31,50 @@ export const PRESETS = {
       sim.triggerRandomAccident();
     },
   },
+  // Presets whose demo lives in a chart force that chart visible (the patch
+  // wins over the preserved display prefs) — a user who hid the charts would
+  // otherwise apply the regime and see nothing of what the tip advertises.
   accLab: {
     label: 'ACC wave lab',
     tip: 'The edge-of-instability regime: the space-time diagram fills with diagonal stop-and-go stripes. Now raise Adaptive cruise % and press Reset — the stripes dissolve. Cars are colored by type so the wave-absorbers stand out.',
-    patch: { initialCars: 130, onRampA: 14, onRampB: 14, offRampA: 5, offRampB: 5, colorMode: 'type' },
+    patch: {
+      initialCars: 130,
+      onRampA: 14,
+      onRampB: 14,
+      offRampA: 5,
+      offRampB: 5,
+      colorMode: 'type',
+      showCharts: true,
+      showDiagram: true,
+    },
   },
   sweep: {
     label: 'Fundamental diagram',
     tip: 'A near-empty road filling up with no exits: watch the flow × density chart trace the inverted U live — up the free-flow diagonal, over the crest, down the congested branch.',
-    patch: { initialCars: 20, onRampA: 25, onRampB: 25, offRampA: 0, offRampB: 0, showFundamental: true },
+    patch: {
+      initialCars: 20,
+      onRampA: 25,
+      onRampB: 25,
+      offRampA: 0,
+      offRampB: 0,
+      showCharts: true,
+      showFundamental: true,
+    },
   },
   cones: {
     label: 'Lane closure crunch',
     tip: 'A work zone cones off the inner lane under moderate inflow: zipper merging at the taper, a queue growing behind it, and the capacity drop in the flow chart.',
-    patch: { initialCars: 110, onRampA: 12, onRampB: 12, offRampA: 4, offRampB: 4, workZone: true, workZonePos: 35, workZoneLen: 300 },
+    patch: {
+      initialCars: 110,
+      onRampA: 12,
+      onRampB: 12,
+      offRampA: 4,
+      offRampB: 4,
+      workZone: true,
+      workZonePos: 35,
+      workZoneLen: 300,
+      showCharts: true,
+    },
   },
   siren: {
     label: 'Ambulance run',
