@@ -95,6 +95,11 @@ run('flood: heavy inflow, no exits → jam builds', { onRampA: 35, onRampB: 35, 
     hist[hist.length - 1].n > hist[0].n && hist[hist.length - 1].n === s.count,
     `(${hist[0].n} → ${hist[hist.length - 1].n})`
   );
+  // brake lights: below a ~5 mph crawl, any slowing car (and any blocked
+  // standstill) must show a lit lamp — dark stopped cars was a reported bug
+  const dark = sim.cars.filter((c) => !c.incident && c.v < 2.2 && c.a < 0 && !c.brakeLit);
+  const lit = sim.cars.filter((c) => c.brakeLit).length;
+  check('slowing crawlers show brake lights', dark.length === 0 && lit > 0, `(${lit} lit, ${dark.length} dark)`);
 });
 
 run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, offRampA: 45, offRampB: 45, initialCars: 120 }, 240, (sim) => {

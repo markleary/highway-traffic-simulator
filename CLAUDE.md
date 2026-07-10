@@ -117,8 +117,10 @@ test/smoke.js          runs the sim headless under several parameter regimes
   physics switches lanes discretely. Negative values are outside lane 0 — used
   by merging ramp cars and the breakdown shoulder (`SHOULDER_LANE`).
 - Vehicle lights (`sim.updateLights`, cosmetic): brake lights are EV-regen
-  style — lit past a deceleration threshold with hysteresis, plus held when
-  stopped — so jam waves read as red pulses running upstream. Blinkers
+  style — lit past a deceleration threshold with hysteresis; below a ~5 mph
+  crawl any slowing lights them, and a standstill holds them even while the
+  blocked car's commanded `a` breathes slightly positive — so jam waves read
+  as red pulses running upstream. Blinkers
   (`car.signal`, +1 = inward/driver's left) show *desire*: a maneuver in
   progress, a ramp merge, drifting toward a chosen exit, or a MOBIL lane
   change that passed the incentive test but was blocked by the gap/safety

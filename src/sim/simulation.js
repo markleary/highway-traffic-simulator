@@ -356,10 +356,15 @@ export class Simulation {
         car.brakeLit = false;
         continue;
       }
-      const holding = car.v < 0.5 && car.a <= 0.3; // stopped in queue: pedal held
-      car.brakeLit = car.brakeLit
-        ? car.a < -0.7 || holding
-        : car.a < -1.1 || holding;
+      // EV-regen thresholds at speed (ignite at -1.1, release at -0.7);
+      // below a ~5 mph crawl the pedal stays covered: any slowing lights
+      // the lamp and only a clear pull-away releases it. At a standstill
+      // the light holds even through the slightly positive commanded a of
+      // a blocked car whose gap breathes (that flicker read as stopped
+      // cars with no brake lights).
+      const onAt = car.v < 0.5 ? 0.3 : car.v < 2.2 ? 0 : -1.1;
+      const offAt = car.v < 0.5 ? 0.3 : car.v < 2.2 ? 0.25 : -0.7;
+      car.brakeLit = car.a < (car.brakeLit ? offAt : onAt);
 
       if (car.state === 'onramp') {
         car.signal = car.ramp.length - car.rampPos < car.ramp.mergeZone + 40 ? 1 : 0;
