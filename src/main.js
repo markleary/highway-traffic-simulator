@@ -24,6 +24,7 @@ renderer.onRoadClick = (point) => {
 window.sim = sim;
 window.renderer = renderer;
 window.speedo = speedo;
+window.charts = charts;
 window.params = params;
 
 // Fixed-timestep physics: rendering runs at display rate, simulation always

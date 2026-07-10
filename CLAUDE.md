@@ -60,11 +60,13 @@ src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time
                        + fundamental diagram (hand-rolled canvas 2D; heatmap columns
                        come from the per-10 m speed bins sampled into sim.history at
                        1 Hz; the fundamental diagram scatters flow vs mainline
-                       density — history's `m`, ramp queues excluded — from the same
-                       samples, speed-colored dots fading with age, with a dashed
-                       free-flow diagonal q = k·desiredSpeed; hidden by default
-                       on viewports under 800 px tall so the grown panel can't
-                       cover the HUD)
+                       density — history's `m`, ramp queues excluded — accumulated
+                       since reset into its own trace (2 h cap; the 5-min window
+                       would only ever show a patch of the curve), speed-colored
+                       dots fading to a dim floor so the run's curve persists
+                       under the bright head, with a dashed free-flow diagonal
+                       q = k·desiredSpeed; hidden by default on viewports under
+                       800 px tall so the grown panel can't cover the HUD)
 src/ui/speedo.js       speedometer gauge shown while the chase camera is active
 test/smoke.js          runs the sim headless under several parameter regimes
 ```
