@@ -5,6 +5,9 @@ import { Car, VEHICLE_LEN } from './car.js';
 // Spatial resolution of the space-time diagram's speed sampling (m of s).
 export const BIN_M = 10;
 
+// How far ahead of a work zone's cones the closed lane starts merging out.
+const WZ_WARN = 250;
+
 // Positions are vehicle CENTERS (that is where the meshes are drawn), so a
 // bumper-to-bumper gap must shed half of BOTH vehicles' lengths. With uniform
 // lengths subtracting one full length was equivalent; with trucks it is not.
@@ -235,6 +238,22 @@ export class Simulation {
         v0 = Math.min(v0, this.v0(car) * (0.65 + 0.35 * (near.dist / 220)));
       }
     }
+    const wz = this.workZone();
+    if (wz) {
+      const inside = forwardDist(wz.sStart, car.s) < wz.len;
+      if (car.lane === wz.lane) {
+        const dist = inside ? 0 : forwardDist(car.s, wz.sStart);
+        if (dist < WZ_WARN) {
+          // Runway shrinking toward the cones: brake down like an exit car
+          // and nose in — late-merge pressure is where the zipper (and the
+          // capacity drop) comes from. Floor of 6 m/s while merging out.
+          v0 = Math.min(v0, Math.max(6, (v0 * dist) / WZ_WARN));
+        }
+      } else if (inside || forwardDist(car.s, wz.sStart) < 60) {
+        // posted work-zone speed through the cones, all lanes
+        v0 = Math.min(v0, params.desiredSpeed * 0.7);
+      }
+    }
     if (car.incident) {
       // Pulling over for a breakdown: ease off while working over, but only
       // slow right down once in lane 0 — crawling in an inner lane makes the
@@ -257,6 +276,19 @@ export class Simulation {
       }
     }
     return v0;
+  }
+
+  // The work zone cones off the INNERMOST lane over a stretch — ramps attach
+  // to lane 0 and exits drift there, so the inner lane is the only one a
+  // closure can take without colliding with ramp logic. Derived from params
+  // on every call, so the sliders apply live with no reset; null when off.
+  workZone() {
+    if (!params.workZone) return null;
+    return {
+      lane: params.lanes - 1,
+      len: Math.min(params.workZoneLen, LOOP - 100), // never cone the whole loop
+      sStart: wrap((params.workZonePos / 100) * LOOP),
+    };
   }
 
   onLaneCountChanged() {
@@ -295,6 +327,7 @@ export class Simulation {
     if (this.applyLaneChanges(arrs)) arrs = this.buildLaneIndex();
     this.accelMainline(arrs);
     this.accelRamps(arrs[0]);
+    this.accelWorkZone();
     this.accelIncidents();
 
     for (const car of this.cars) {
@@ -490,6 +523,7 @@ export class Simulation {
   // for an exit only consider moving outward once the exit is near.
   applyLaneChanges(arrs) {
     const p = params;
+    const wz = this.workZone();
     let changed = false;
     for (let l = 0; l < arrs.length; l++) {
       const arr = arrs[l];
@@ -514,8 +548,17 @@ export class Simulation {
         const curGap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         const curAcc = idm(car, leader ? leader.v : car.v, curGap, v0);
 
+        // Work zone: a car in the closed lane must be out before the cones.
+        // Inside counts as distance 0 — cars caught by a live toggle escape
+        // outward at full urgency.
+        let wzDist = Infinity;
+        if (wz && l === wz.lane) {
+          wzDist = forwardDist(wz.sStart, car.s) < wz.len ? 0 : forwardDist(car.s, wz.sStart);
+        }
+        const wzUrgent = wzDist < WZ_WARN;
+
         const exitDist = car.exitRamp ? forwardDist(car.s, car.exitRamp.sDiverge) : Infinity;
-        const mandatory = exitDist < 400 || pullover;
+        const mandatory = exitDist < 400 || pullover || wzUrgent;
         // A stranded car gets bolder about cutting in the longer it has waited.
         let brakeLimit = p.safeBrake;
         if (pullover) {
@@ -548,6 +591,14 @@ export class Simulation {
         for (const t of targets) {
           // never merge into the corridor lane while the siren is in it
           if (siren && t === siren.amb.lane && l !== siren.amb.lane) continue;
+          // never merge into the coned lane on its approach or inside it
+          if (
+            wz &&
+            t === wz.lane &&
+            (forwardDist(wz.sStart, car.s) < wz.len || forwardDist(car.s, wz.sStart) < WZ_WARN)
+          ) {
+            continue;
+          }
           const { leader: nl, follower: nf } = neighborsAt(arrs[t], car.s);
           const gapAhead = nl ? forwardDist(car.s, nl.s) - halfLens(car, nl) : Infinity;
           const gapBehind = nf ? forwardDist(nf.s, car.s) - halfLens(nf, car) : Infinity;
@@ -559,6 +610,7 @@ export class Simulation {
           // that wants a gap it can't take blinks without moving.
           let want = myNew - curAcc + (amb ? 0 : t < l ? 0.08 : -0.08);
           if (pullover) want += 2.5;
+          else if (wzUrgent) want += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) want += 1 + 3 * (1 - exitDist / 400);
           else if (siren && l === siren.amb.lane) want += 2.2 + 1.8 * (1 - siren.dist / 220);
           if (want > wantScore) {
@@ -586,6 +638,7 @@ export class Simulation {
           if (amb) score += t > l ? 0.3 : -0.3;
           else score += t < l ? 0.08 : -0.08;
           if (pullover) score += 2.5;
+          else if (wzUrgent) score += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) score += 1 + 3 * (1 - exitDist / 400);
           // strong from the moment the siren is audible — real drivers clear
           // early, not when the bumper arrives (a distance-proportional bonus
@@ -720,6 +773,24 @@ export class Simulation {
         st.flowTimes.push(this.time);
         this.counters.merged++;
       }
+    }
+  }
+
+  // The cones are a wall: a car still in the closed lane stops at the taper
+  // rather than driving through it. A car stopped at the cones nosing into
+  // the open lane is the zipper's slow half — and the queue it grows is the
+  // work zone's capacity drop.
+  accelWorkZone() {
+    const wz = this.workZone();
+    if (!wz) return;
+    for (const car of this.cars) {
+      if (car.state !== 'main' || car.lane !== wz.lane || car.incident) continue;
+      const dist = forwardDist(car.s, wz.sStart);
+      // far away, or already inside (a live toggle caught it: it escapes
+      // outward under full merge urgency instead of stopping dead)
+      if (dist > 200 || forwardDist(wz.sStart, car.s) < wz.len) continue;
+      const gap = dist - car.len / 2 - 1.5;
+      car.a = Math.min(car.a, idm(car, 0, gap, this.effectiveV0(car)));
     }
   }
 

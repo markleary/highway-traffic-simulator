@@ -8,6 +8,20 @@ const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
 let failures = 0;
 
+// Deterministic runs: the sim samples Math.random freely (seeding, v0
+// spread, exit rolls, lane-change stagger), which made threshold checks on
+// emergent behavior — corridor strength, jam depth — a seed lottery that
+// flaked on the tail seeds. Pinning the RNG (mulberry32) turns every
+// scenario into a recorded trajectory: checks can stay tight, and a failure
+// is a real behavior change, not bad luck.
+let rngState = 0x2f6e2b1;
+Math.random = () => {
+  rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 function check(label, cond, detail = '') {
   if (cond) {
     console.log(`  ok   ${label}`);
@@ -268,6 +282,44 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   for (let i = 0; i < Math.round(180 / H) && sim.cars.includes(amb); i++) sim.step(H);
   check('ambulance despawns after its run', !sim.cars.includes(amb));
   assertSane(sim, 'emergency vehicle scenario');
+}
+
+{
+  console.log('\nwork zone: inner lane closes, traffic zippers past');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 100,
+    workZone: true,
+    workZonePos: 30,
+    workZoneLen: 300,
+  });
+  const sim = new Simulation();
+  const wz = sim.workZone();
+  check('zone derives from params', !!wz && wz.lane === params.lanes - 1 && wz.len === 300);
+  // The hard invariant: no car may drive INTO the coned stretch in the
+  // closed lane — after a 10 s grace. Grace because reset seeds blind: a car
+  // materialized at speed within its braking distance of the cone line can't
+  // stop for it (the same is true of toggling the zone on mid-run), which is
+  // physics, not a merge-logic hole. Cars seeded inside escape outward and
+  // never cross the line.
+  let ranCones = 0;
+  for (let i = 0; i < Math.round(120 / H); i++) {
+    sim.step(H);
+    if (i * H < 10) continue;
+    for (const c of sim.cars) {
+      if (c.state !== 'main' || c.lane !== wz.lane) continue;
+      const traveled = forwardDist(c.sPrev, c.s);
+      if (traveled > 0 && traveled < 30 && forwardDist(c.sPrev, wz.sStart) < traveled) ranCones++;
+    }
+  }
+  check('no car drives past the cones in the closed lane', ranCones === 0, `(${ranCones})`);
+  const inside = sim.cars.filter(
+    (c) => c.state === 'main' && c.lane === wz.lane && forwardDist(wz.sStart, c.s) < wz.len
+  );
+  check('coned stretch ends up clear', inside.length === 0, `(${inside.length} still inside)`);
+  const s = sim.stats();
+  check('traffic still flows past the closure', s.flowPerMin > 15, `(${s.flowPerMin.toFixed(1)}/min)`);
+  check('merging out produced lane changes', s.laneChanges > 30, `(${s.laneChanges})`);
+  assertSane(sim, 'work zone scenario');
 }
 
 {

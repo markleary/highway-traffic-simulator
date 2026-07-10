@@ -69,6 +69,9 @@ src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time
                        800 px tall so the grown panel can't cover the HUD)
 src/ui/speedo.js       speedometer gauge shown while the chase camera is active
 test/smoke.js          runs the sim headless under several parameter regimes
+                       (Math.random is seeded → runs are deterministic; checks
+                       on emergent behavior can be tight without seed-lottery
+                       flakes)
 ```
 
 ## Model & conventions
@@ -149,6 +152,17 @@ test/smoke.js          runs the sim headless under several parameter regimes
   corridor is emergent, and it degrades honestly with density (near capacity
   there is nowhere to move over to). Ambulances never take exits, skip
   rubbernecking, and are excluded from `randomEligibleCar`.
+- Work zone (`sim.workZone()`, Events panel; `workZone`/`workZonePos`/
+  `workZoneLen` params): cones close the INNERMOST lane over a stretch —
+  ramps attach to lane 0 and exits drift there, so the inner lane is the only
+  closable one. Applies live from params (no reset; position is a % of the
+  loop so it survives shape changes). Closed-lane cars within 250 m of the
+  cones (`WZ_WARN`) get exit-strength MOBIL urgency outward and bleed speed
+  like exit cars; the cones themselves are an IDM wall (`accelWorkZone`) —
+  a car that can't merge stops at the taper and noses in, which is the
+  zipper and the capacity drop. Nobody merges into the closed lane on
+  approach or inside; all lanes get a 0.7× posted speed through the zone.
+  Cars caught inside by a live toggle escape outward at full urgency.
 - Hovering a car shows a nameplate readout — kind + id, current speed with
   desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
   labels). Same pick path as click-to-crash but re-run every frame from the
@@ -192,11 +206,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
 - 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
-- Work zone / lane closure: cone off one lane over a chosen stretch. The
-  merge-behavior generator — zipper merging, early-vs-late merge dynamics, and
-  capacity drop all emerge. Likely mechanism: a zone that caps the usable lane
-  count, with MOBIL treating the closed lane like the exit-drift logic treats
-  lane 0.
 - Figure-eight road shape: needs an overpass, but elevation can be cosmetic
   exactly like curvature is (the model still drives a straight wrapped line) —
   give pointAt a y component from a per-segment elevation profile and render

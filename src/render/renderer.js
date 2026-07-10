@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt } from '../sim/road.js';
+import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap } from '../sim/road.js';
 import { params, KMH, MPH } from '../params.js';
 
 const MAX_CARS = 1500;
@@ -68,9 +68,11 @@ export class SceneRenderer {
 
     this.roadGroup = null;
     this.rampGroup = null;
+    this.coneGroup = null;
     this.rampFlowEls = {};
     this.buildRoad();
     this.buildRamps();
+    this.buildWorkZone();
     this.buildCars();
 
     // faint cross-road marker mirroring the space-time diagram's hovered
@@ -293,7 +295,64 @@ export class SceneRenderer {
   onRoadChanged() {
     this.buildRoad();
     this.buildRamps();
+    this.buildWorkZone(); // zone position is a % of the loop: it maps across shapes
     this.setDefaultView();
+  }
+
+  onWorkZoneChanged() {
+    this.buildWorkZone();
+  }
+
+  // Traffic cones for the work zone: a diagonal taper sweeping the closed
+  // (innermost) lane shut, a cone line just inside the open-lane boundary
+  // through the zone, and a short taper back open at the end. Mirrors
+  // sim.workZone()'s geometry, derived from the same params.
+  buildWorkZone() {
+    if (this.coneGroup) {
+      this.coneGroup.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+      this.scene.remove(this.coneGroup);
+      this.coneGroup = null;
+    }
+    if (!params.workZone) return;
+    const lane = params.lanes - 1;
+    const W = ROAD.laneWidth;
+    const len = Math.min(params.workZoneLen, LOOP - 100);
+    const sStart = wrap((params.workZonePos / 100) * LOOP);
+    const innerEdge = -(lane + 0.5) * W + 0.35; // just off the yellow line
+    const line = -(lane - 0.5) * W - 0.35; // just inside the open-lane boundary
+
+    // (s, lateral) stations: approach taper, the zone line, closing taper
+    const spots = [];
+    const TAPER = 60;
+    for (let i = 0; i <= 10; i++) {
+      spots.push([sStart - TAPER + (i / 10) * TAPER, innerEdge + (i / 10) * (line - innerEdge)]);
+    }
+    for (let d = 12; d < len - 8; d += 12) spots.push([sStart + d, line]);
+    for (let i = 0; i <= 4; i++) {
+      spots.push([sStart + len - 8 + (i / 4) * 8, line + (i / 4) * (innerEdge - line)]);
+    }
+
+    const cones = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(0.34, 0.85, 8).translate(0, 0.42, 0),
+      new THREE.MeshStandardMaterial({ color: 0xff7a1f, roughness: 0.8 }),
+      spots.length
+    );
+    // locals: this runs from the constructor before the pooled vectors exist
+    const pos = new THREE.Vector3();
+    const d = new THREE.Object3D();
+    for (let i = 0; i < spots.length; i++) {
+      pointAt(wrap(spots[i][0] + LOOP), spots[i][1], pos);
+      d.position.set(pos.x, 0, pos.z);
+      d.updateMatrix();
+      cones.setMatrixAt(i, d.matrix);
+    }
+    cones.frustumCulled = false;
+    this.coneGroup = new THREE.Group();
+    this.coneGroup.add(cones);
+    this.scene.add(this.coneGroup);
   }
 
   buildCars() {

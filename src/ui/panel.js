@@ -39,6 +39,7 @@ function makeGui({ sim, renderer, onRebuild }) {
     comfortBrake: Number((params.comfortBrake / acc).toFixed(1)),
     laneChangeThreshold: Number((params.laneChangeThreshold / acc).toFixed(2)),
     safeBrake: Number((params.safeBrake / acc).toFixed(1)),
+    workZoneLen: Math.round(params.workZoneLen / acc),
   };
 
   const gui = new GUI({ title: 'Traffic Controls' });
@@ -223,6 +224,30 @@ function makeGui({ sim, renderer, onRebuild }) {
   tip(
     fEvents.add({ cl: () => sim.clearIncidents() }, 'cl').name('Clear all events'),
     'Immediately remove every active breakdown and accident (the involved cars vanish).'
+  );
+  tip(
+    fEvents
+      .add(params, 'workZone')
+      .name('🚧 Work zone')
+      .onChange(() => renderer.onWorkZoneChanged()),
+    'Cone off the innermost lane over a stretch of road. Approaching traffic merges out at the taper — zipper merging, early-vs-late mergers, and the capacity drop all emerge. Applies live: cars caught inside work their way out.'
+  );
+  tip(
+    fEvents
+      .add(params, 'workZonePos', 0, 100, 1)
+      .name('Zone position (%)')
+      .onChange(() => renderer.onWorkZoneChanged()),
+    'Where the cones start, as a fraction of the way around the loop from the start line.'
+  );
+  tip(
+    fEvents
+      .add(ui, 'workZoneLen', ...(imp ? [330, 2600, 30] : [100, 800, 10]))
+      .name(`Zone length (${lenU})`)
+      .onChange((v) => {
+        params.workZoneLen = v * acc;
+        renderer.onWorkZoneChanged();
+      }),
+    'How much road the cones close off. Longer zones move the bottleneck, not its capacity — the queue lives at the taper.'
   );
 
   const fView = gui.addFolder('View');
