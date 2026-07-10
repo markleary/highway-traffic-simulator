@@ -29,6 +29,9 @@ Headless physics check (no browser needed): `npm install && npm test`
   from `main`, so nothing is live until the PR merges.
 - Run `npm test` before opening a PR, and note any manual browser verification
   in the PR description.
+- When a PR ships a user-facing feature, update **README.md** (Controls,
+  Try-it, Roadmap) in the same PR. CLAUDE.md gets maintained per-PR by habit;
+  the README silently drifted across a dozen feature PRs before anyone noticed.
 
 ## Review guidelines
 
