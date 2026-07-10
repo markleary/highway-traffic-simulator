@@ -171,6 +171,16 @@ test/smoke.js          runs the sim headless under several parameter regimes
   zipper and the capacity drop. Nobody merges into the closed lane on
   approach or inside; all lanes get a 0.7× posted speed through the zone.
   Cars caught inside by a live toggle escape outward at full urgency.
+- Weather (`params.rain` 0–1 knob + `sim.startStorm()` button, Events panel):
+  wet roads scale the driver model globally — desired speeds ×(1−0.3r), time
+  headways ×(1+0.5r), comfortable braking ×(1−0.35r), hard-brake floor and
+  MOBIL/merge safety gates ×(1−0.3r) — together enough to tip a near-capacity
+  regime into stop-and-go. The live level `sim.rainNow` (max of the knob and
+  the storm arc: 40 s in, 90 s pour, 50 s out; module-level `rainNow` feeds
+  the hot idm() path) is sampled into history (`rain`) for the charts' blue
+  rain bands and drives the renderer mood (darker bluer sky, closer fog,
+  dimmer sun, a rain-point sheet following the camera). The "Sudden
+  downpour" preset stages the dry-stable → wet-jammed tipping demo.
 - Hovering a car shows a nameplate readout — kind + id, current speed with
   desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
   labels). Same pick path as click-to-crash but re-run every frame from the
@@ -194,9 +204,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Weather events: a rain storm lowers desired speeds and grip (longer
-  headways, gentler comfortable braking) road-wide, with a visual mood shift;
-  watch a stable regime tip into jams as the rain starts.
 - Improve the vehicle visual models (still low-poly: wheels, beveled bodies,
   maybe a couple of car body varieties).
 - Mobile view optimizations: hide the space-time diagram by default on small

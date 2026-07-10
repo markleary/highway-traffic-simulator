@@ -235,6 +235,14 @@ function makeGui({ sim, renderer, onRebuild }) {
     'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and pulls out of its lane — the "move over" corridor is emergent, not scripted. It weaves through whatever does not clear, and leaves the map after about a lap and a half.'
   );
   tip(
+    fEvents.add({ storm: () => sim.startStorm() }, 'storm').name('🌧 Rain storm'),
+    'A three-minute storm: rolls in over 40 s, pours, then clears. Wet roads mean ~30% slower targets, half again the following distance, and less grip — watch a busy regime tip into stop-and-go as it peaks. The line charts shade blue while it rains.'
+  );
+  tip(
+    fEvents.add(params, 'rain', 0, 1, 0.05).name('Rain (steady)'),
+    'Steady rain level, applied live: 0 = dry, 1 = downpour. The storm button peaks over whatever is set here.'
+  );
+  tip(
     fEvents.add(params, 'accidentLanes', 1, 2, 1).name('Accident size (lanes)'),
     'How many lanes an accident blocks: 2 also drags the nearest car in the adjacent lane into the pileup.'
   );
