@@ -3,7 +3,9 @@ let nextId = 1;
 // 'acc' is an adaptive-cruise-control car: same size and speed habits as a
 // human-driven car, but it follows with the constant-acceleration heuristic
 // (see simulation.js) so it absorbs jam waves instead of amplifying them.
-export const VEHICLE_LEN = { car: 4.6, truck: 16.5, acc: 4.6 }; // m
+// 'ambulance' is the emergency vehicle (sim.spawnAmbulance): a box van that
+// runs well above the desired speed while traffic opens a move-over corridor.
+export const VEHICLE_LEN = { car: 4.6, truck: 16.5, acc: 4.6, ambulance: 5.4 }; // m
 
 export class Car {
   constructor({ s = 0, lane = 0, v = 0, v0Factor = 1, kind = 'car' } = {}) {
@@ -16,6 +18,11 @@ export class Car {
       this.accelK = 0.35;
       this.headwayK = 1.6;
       this.brakeK = 0.8;
+    } else if (kind === 'ambulance') {
+      // Emergency driver: launches hard, follows close, brakes late.
+      this.accelK = 1.5;
+      this.headwayK = 0.55;
+      this.brakeK = 1.1;
     } else {
       this.accelK = 1;
       this.headwayK = 1;

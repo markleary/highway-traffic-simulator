@@ -136,6 +136,19 @@ test/smoke.js          runs the sim headless under several parameter regimes
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
+- Emergency vehicle (`sim.spawnAmbulance`, Events panel): an 'ambulance'-kind
+  white box van (red/blue roof strobes) spawns into the widest inner-lane gap,
+  runs at 1.55× the desired-speed knob with hair-trigger MOBIL (no politeness,
+  holds the innermost lane so the corridor stays predictable), and despawns
+  after ~1.6 laps. Cars with the siren within ~220 m behind (`ambBehind`) and
+  in its lane bleed speed as it closes (0.65–1.0× — matching the receiving
+  lane is what makes the merge out feasible, the exit-drift trick), get a
+  strong bias out of that lane plus relaxed merge gates, and nobody merges
+  into it; receiving lanes are deliberately NOT slowed — a cap that travels
+  with the ambulance compresses them into a clot that walls everyone in. The
+  corridor is emergent, and it degrades honestly with density (near capacity
+  there is nowhere to move over to). Ambulances never take exits, skip
+  rubbernecking, and are excluded from `randomEligibleCar`.
 - Hovering a car shows a nameplate readout — kind + id, current speed with
   desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
   labels). Same pick path as click-to-crash but re-run every frame from the
@@ -171,9 +184,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
     ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
     ACC share and reset to watch them dissolve (calibrated during the ACC PR;
     denser regimes saturate orange and hide the effect).
-- Emergency vehicle button: spawn an ambulance that runs well above desired
-  speed while traffic biases lane changes away from its lane and slows —
-  an emergent "move over" corridor.
 - Weather events: a rain storm lowers desired speeds and grip (longer
   headways, gentler comfortable braking) road-wide, with a visual mood shift;
   watch a stable regime tip into jams as the rain starts.
