@@ -49,7 +49,13 @@ Headless physics check (no browser needed): `npm install && npm test`
 index.html             import map, HUD overlay (stats, legend), CSS
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time)
 src/params.js          single mutable `params` object — the GUI writes it, the sim
-                       reads it every step; that is how every knob applies live
+                       reads it every step; that is how every knob applies live —
+                       plus DEFAULTS, a frozen factory snapshot
+src/presets.js         scenario presets: curated param regimes applied over
+                       DEFAULTS (user display prefs kept unless the preset says
+                       otherwise) + sim.reset() + an optional `after` hook (spawn
+                       an ambulance, trigger wrecks); the panel's Scenario
+                       dropdown drives it and every preset is smoke-tested
 src/sim/road.js        loop shapes (SHAPES catalog) + ramp geometry, s-coordinate
                        helpers; LOOP/RAMPS are live bindings updated by setShape()
 src/sim/car.js         Car state record
@@ -188,18 +194,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Scenario presets: one-click parameter setups that stage the good demos and
-  reset. The parameter space (shape × scale × interchanges × lanes × traffic
-  knobs) is now big enough that reaching an interesting regime takes slider
-  archaeology. Candidates:
-  - "Rush hour" — heavy flood (both ramps 30+/min, exits low); jams grow
-    backwards from the merges.
-  - "Accident storm" — short headways (~0.9 s) plus a couple of triggered
-    wrecks; fragile flow collapsing.
-  - "ACC demo" — the jam-prone edge-of-instability regime (~130 cars, ramps
-    ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
-    ACC share and reset to watch them dissolve (calibrated during the ACC PR;
-    denser regimes saturate orange and hide the effect).
 - Weather events: a rain storm lowers desired speeds and grip (longer
   headways, gentler comfortable braking) road-wide, with a visual mood shift;
   watch a stable regime tip into jams as the rain starts.
@@ -207,7 +201,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
   maybe a couple of car body varieties).
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
-- 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
 - Figure-eight road shape: needs an overpass, but elevation can be cosmetic
   exactly like curvature is (the model still drives a straight wrapped line) —
   give pointAt a y component from a per-segment elevation profile and render

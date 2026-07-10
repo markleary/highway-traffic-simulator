@@ -13,7 +13,7 @@ export const params = {
 
   // display
   units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
-  colorMode: 'speed', // 'speed' | 'random'
+  colorMode: 'speed', // 'speed' | 'random' | 'type' (human / ACC / truck)
   showCharts: true,
   showDiagram: true, // space-time heatmap section of the charts panel
   // flow × density scatter section of the charts panel. Its default is
@@ -73,3 +73,8 @@ export const params = {
   workZonePos: 50, // where the cones start, % of the way around the loop
   workZoneLen: 300, // coned length, m
 };
+
+// Factory snapshot, taken before anything mutates params. Scenario presets
+// (src/presets.js) spread this back in so every preset starts from the same
+// known stage rather than compounding on whatever the sliders last said.
+export const DEFAULTS = Object.freeze(JSON.parse(JSON.stringify(params)));

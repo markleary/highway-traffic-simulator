@@ -1,6 +1,10 @@
 import GUI from 'lil-gui';
 import { params, KMH, MPH, FT } from '../params.js';
 import { SHAPES, RAMPS } from '../sim/road.js';
+import { PRESETS, applyPreset } from '../presets.js';
+
+// survives panel rebuilds so the dropdown keeps showing the applied scenario
+const presetState = { scenario: '' };
 
 // params holds SI values only. Sliders with units bind to a proxy object in
 // display units and write converted SI back on change; toggling units tears
@@ -43,6 +47,24 @@ function makeGui({ sim, renderer, onRebuild }) {
   };
 
   const gui = new GUI({ title: 'Traffic Controls' });
+  tip(
+    gui
+      .add(presetState, 'scenario', {
+        '— pick a scenario —': '',
+        ...Object.fromEntries(Object.entries(PRESETS).map(([key, p]) => [p.label, key])),
+      })
+      .name('Scenario')
+      .onChange((key) => {
+        if (!key) return;
+        applyPreset(key, sim);
+        renderer.onRoadChanged(); // preset may toggle the work zone etc.
+        onRebuild(); // sliders must show the preset's values
+      }),
+    'One-click demo setups: applies a curated parameter regime and resets the road.\n' +
+      Object.values(PRESETS)
+        .map((p) => `• ${p.label}: ${p.tip}`)
+        .join('\n')
+  );
   tip(
     gui
       .add(params, 'units', { 'Imperial (mph)': 'imperial', 'Metric (km/h)': 'metric' })
@@ -272,9 +294,9 @@ function makeGui({ sim, renderer, onRebuild }) {
   );
   tip(
     fView
-      .add(params, 'colorMode', { 'By speed': 'speed', 'Per car': 'random' })
+      .add(params, 'colorMode', { 'By speed': 'speed', 'By type': 'type', 'Per car': 'random' })
       .name('Car colors'),
-    'By speed: red = stopped, green = at desired speed — jams pop out instantly. Per car: each car keeps a fixed random color, good for following individuals.'
+    'By speed: red = stopped, green = at desired speed — jams pop out instantly. By type: human / adaptive-cruise / truck each get a fixed color (see the legend) — watch who absorbs the waves. Per car: each car keeps a fixed random color, good for following individuals.'
   );
   tip(
     fView
