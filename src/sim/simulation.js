@@ -114,7 +114,7 @@ export class Simulation {
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
     this.time = 0;
-    this.history = []; // 1 Hz samples of {t, v, f, inc, bins} for the live charts
+    this.history = []; // 1 Hz samples of {t, v, f, n, m, inc, bins} for the live charts
     this.binCount = Math.ceil(LOOP / BIN_M); // space-time diagram resolution
     this.incidentStarts = []; // sim timestamps, one per triggered incident (chart markers)
     this.sampleTimer = 0;
@@ -315,6 +315,7 @@ export class Simulation {
         v: s.avgSpeed,
         f: s.flowPerMin,
         n: s.count, // every vehicle, ramps included — matches the HUD
+        m: s.mainCount, // mainline only — the fundamental diagram's density
         inc: this.incidents.length > 0,
         bins: this.speedBins(),
       });
@@ -882,6 +883,7 @@ export class Simulation {
     const window = Math.min(this.time, 60);
     return {
       count: this.cars.length,
+      mainCount: n, // mainline only — the loop's density excludes ramp queues
       avgSpeed: n ? sum / n : 0, // m/s; display layer converts
       flowPerMin: window > 5 ? this.flowTimes.length * (60 / window) : 0,
       ...this.counters,

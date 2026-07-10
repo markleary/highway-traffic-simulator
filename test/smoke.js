@@ -57,7 +57,14 @@ run('baseline regime (no trucks), 120 sim-seconds', { truckShare: 0 }, 120, (sim
   check(
     'chart history sampled at 1 Hz',
     sim.history.length === 120 &&
-      sim.history.every((p) => Number.isFinite(p.v) && Number.isFinite(p.f) && Number.isFinite(p.n)),
+      sim.history.every(
+        (p) =>
+          Number.isFinite(p.v) &&
+          Number.isFinite(p.f) &&
+          Number.isFinite(p.n) &&
+          Number.isFinite(p.m) &&
+          p.m <= p.n // mainline count (fundamental-diagram density) excludes ramp queues
+      ),
     `(len=${sim.history.length})`
   );
   // space-time diagram samples: one speed bin per BIN_M of loop, -1 = empty
