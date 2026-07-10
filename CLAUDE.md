@@ -57,8 +57,12 @@ src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit log
 src/render/renderer.js three.js scene; cars are two InstancedMeshes (body + cabin)
 src/ui/panel.js        lil-gui control panel
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
-                       (hand-rolled canvas 2D; heatmap columns come from the
-                       per-10 m speed bins sampled into sim.history at 1 Hz)
+                       + fundamental diagram (hand-rolled canvas 2D; heatmap columns
+                       come from the per-10 m speed bins sampled into sim.history at
+                       1 Hz; the fundamental diagram scatters flow vs mainline
+                       density — history's `m`, ramp queues excluded — from the same
+                       samples, speed-colored dots fading with age, with a dashed
+                       free-flow diagonal q = k·desiredSpeed)
 src/ui/speedo.js       speedometer gauge shown while the chase camera is active
 test/smoke.js          runs the sim headless under several parameter regimes
 ```
@@ -172,10 +176,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
 - 'By type' car-color mode (human / ACC / truck) alongside By speed & Per car.
-- Fundamental diagram: live flow-vs-density scatter in the charts panel — the
-  other canonical traffic plot. Both series are already sampled at 1 Hz in
-  sim.history; the point cloud traces the inverted-U live, and a jam collapse
-  reads as points dropping from the free-flow branch to the congested branch.
 - Work zone / lane closure: cone off one lane over a chosen stretch. The
   merge-behavior generator — zipper merging, early-vs-late merge dynamics, and
   capacity drop all emerge. Likely mechanism: a zone that caps the usable lane

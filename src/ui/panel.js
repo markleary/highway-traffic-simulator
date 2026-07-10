@@ -231,6 +231,10 @@ function makeGui({ sim, renderer, onRebuild }) {
     'Position × time heatmap of speeds: each column is one second, bottom to top is one lap of the loop (ticks mark the ramps). Jams appear as red bands drifting down-right — the wave rolls upstream even though every car in it drives forward.'
   );
   tip(
+    fView.add(params, 'showFundamental').name('Fundamental diagram'),
+    'Flow vs density, the canonical traffic plot: one dot per second, colored by average speed and fading with age. Free-flowing dots ride the dashed diagonal (slope = desired speed); when the road saturates they break off it — flow collapsing while density keeps rising.'
+  );
+  tip(
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'Per car': 'random' })
       .name('Car colors'),

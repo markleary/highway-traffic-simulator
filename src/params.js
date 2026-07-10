@@ -16,6 +16,7 @@ export const params = {
   colorMode: 'speed', // 'speed' | 'random'
   showCharts: true,
   showDiagram: true, // space-time heatmap section of the charts panel
+  showFundamental: true, // flow × density scatter section of the charts panel
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()

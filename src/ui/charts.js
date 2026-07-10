@@ -10,6 +10,8 @@ const WINDOW = 300; // seconds shown
 const W = 320; // logical canvas size (CSS px)
 const H = 56;
 const DIAG_H = 120;
+const FUND_H = 120;
+const MI = 1609.344; // m — imperial mode shows density per mile
 const SPEED_COLOR = '#3987e5';
 const FLOW_COLOR = '#199e70';
 const CARS_COLOR = '#d98e32';
@@ -29,6 +31,7 @@ export class ChartPanel {
     this.flow = this.makeChart('Flow past start', FLOW_COLOR);
     this.cars = this.makeChart('Cars on road', CARS_COLOR);
     this.diag = this.makeDiagram();
+    this.fund = this.makeFundamental(); // below the diagram: it has its own axes, not the shared time axis
     document.body.appendChild(this.el);
     this.history = [];
     this.incidentStarts = [];
@@ -80,6 +83,7 @@ export class ChartPanel {
     this.draw(this.flow, (p) => p.f, (x) => `${x.toFixed(1)}/min`);
     this.draw(this.cars, (p) => p.n, (x) => `${Math.round(x)}`);
     this.drawDiagram((x) => `${(x / spd).toFixed(0)} ${unit}`);
+    this.drawFundamental();
   }
 
   // Space-time diagram: each column is one second, bottom→top is one lap of
@@ -260,6 +264,143 @@ export class ChartPanel {
       ctx.fillRect(x, nBins - 1 - b, 1, 1); // s = 0 at the bottom
     }
     d.cursor++;
+  }
+
+  // Fundamental diagram: flow vs density, one dot per 1 Hz sample — the other
+  // canonical traffic plot. Free flow rides a straight line from the origin
+  // (slope = speed); when the road saturates, dots peel off it downward and
+  // to the right: flow collapsing as density keeps rising.
+  makeFundamental() {
+    const wrap = document.createElement('div');
+    wrap.className = 'chart';
+    const head = document.createElement('div');
+    head.className = 'chead tall'; // hover readout is long enough to wrap
+    const name = document.createElement('span');
+    name.innerHTML =
+      '<i style="background:linear-gradient(90deg, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%))"></i>Flow × density';
+    const value = document.createElement('span');
+    value.className = 'cval';
+    value.textContent = '—';
+    head.append(name, value);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'fund';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr;
+    canvas.height = FUND_H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    wrap.append(head, canvas);
+    this.el.appendChild(wrap);
+
+    // hover stores canvas-space px: the readout snaps to the nearest dot
+    const f = { wrap, canvas, ctx, value, hoverX: null, hoverY: null };
+    canvas.addEventListener('pointermove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      f.hoverX = ((e.clientX - r.left) / r.width) * W;
+      f.hoverY = ((e.clientY - r.top) / r.height) * FUND_H;
+    });
+    canvas.addEventListener('pointerleave', () => (f.hoverX = null));
+    return f;
+  }
+
+  drawFundamental() {
+    const f = this.fund;
+    f.wrap.style.display = params.showFundamental ? '' : 'none';
+    if (!params.showFundamental) return;
+    const { ctx } = f;
+    ctx.clearRect(0, 0, W, FUND_H);
+    const history = this.history;
+    if (history.length < 2) {
+      f.value.textContent = '—';
+      return;
+    }
+    const imp = params.units === 'imperial';
+    const kUnit = imp ? MI : 1000; // meters per displayed road-length unit
+    const kLabel = imp ? 'cars/mi' : 'cars/km';
+    const kOf = (p) => (p.m / LOOP) * kUnit; // mainline cars per mi/km of roadway, all lanes
+    const last = history[history.length - 1];
+
+    let kMax = 0;
+    let qMax = 0;
+    for (const p of history) {
+      kMax = Math.max(kMax, kOf(p));
+      qMax = Math.max(qMax, p.f);
+    }
+    kMax = niceMax(kMax);
+    qMax = niceMax(qMax);
+    const xs = (k) => 4 + (k / kMax) * (W - 10);
+    const ys = (q) => FUND_H - 11 - (q / qMax) * (FUND_H - 21);
+
+    // free-flow reference: q = k·v0. Dots hug this diagonal while everyone
+    // drives at the desired speed; congestion is exactly the departure from
+    // it. Drawn from the live knob, so retuning the speed slider moves it.
+    const v0 = (params.desiredSpeed * 60) / kUnit; // (cars per unit) → cars/min
+    const kEnd = Math.min(kMax, qMax / v0);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xs(0), ys(0));
+    ctx.lineTo(xs(kEnd), ys(kEnd * v0));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // the point cloud: speed-colored like the cars and the space-time
+    // diagram (legend bottom-left), fading with age so the cloud is a trace,
+    // not a smear — a jam collapse reads as fresh dots sliding off the
+    // free-flow branch onto the congested one.
+    const vTop = Math.max(params.desiredSpeed, 0.1);
+    for (const p of history) {
+      const t = Math.min(Math.max(p.v / vTop, 0), 1);
+      ctx.globalAlpha = 0.9 - 0.7 * ((last.t - p.t) / WINDOW);
+      ctx.fillStyle = `hsl(${t * 120}, 85%, 50%)`;
+      ctx.beginPath();
+      ctx.arc(xs(kOf(p)), ys(p.f), 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // "now" marker: a ring around the newest dot
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(xs(kOf(last)), ys(last.f), 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // axis-max tick labels (text tokens, not series color)
+    ctx.fillStyle = 'rgba(159, 176, 192, 0.85)';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillText(`${+qMax.toFixed(1)}/min`, 3, 9);
+    const xl = `${+kMax.toFixed(1)} ${kLabel}`;
+    ctx.fillText(xl, W - ctx.measureText(xl).width - 3, FUND_H - 2);
+
+    // hover: pin the readout to the nearest dot (12 px reach)
+    const fmt = (p) => `${kOf(p).toFixed(0)} ${kLabel} · ${p.f.toFixed(1)}/min`;
+    if (f.hoverX !== null) {
+      let best = null;
+      let bestD = 12 * 12;
+      for (const p of history) {
+        const dx = xs(kOf(p)) - f.hoverX;
+        const dy = ys(p.f) - f.hoverY;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
+      }
+      if (best) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(xs(kOf(best)), ys(best.f), 4, 0, Math.PI * 2);
+        ctx.stroke();
+        f.value.textContent = `${fmt(best)} · ${Math.round(last.t - best.t)}s ago`;
+      } else {
+        f.value.textContent = '—';
+      }
+    } else {
+      f.value.textContent = fmt(last);
+    }
   }
 
   draw(chart, get, fmt) {
