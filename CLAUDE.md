@@ -126,6 +126,13 @@ test/smoke.js          runs the sim headless under several parameter regimes
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
+- Hovering a car shows a nameplate readout — kind + id, current speed with
+  desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
+  labels). Same pick path as click-to-crash but re-run every frame from the
+  resting pointer position (`pointerGround` → `carNear(pt, 12, true)`, the
+  `any` flag adding ramp/shoulder/incident cars), so the label tracks traffic
+  flowing under the cursor; the chase speedometer caption also shows the
+  chased car's desired speed.
 - Vehicle kinds: `car.kind` is 'car', 'truck', or 'acc' (shares set by the
   Trucks and Adaptive-cruise knobs at spawn/reset). Trucks are 16.5 m, ~20%
   slower with less spread, and scale the global IDM knobs via per-car factors
@@ -154,9 +161,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
     ~14/min, exits 5%): diagram fills with diagonal stripes, then raise the
     ACC share and reset to watch them dissolve (calibrated during the ACC PR;
     denser regimes saturate orange and hide the effect).
-- Hover a car for a readout: current speed with desired speed in parens (same
-  raycast path as click-to-crash, on pointermove); the chase speedometer
-  caption gains the chased car's desired speed too.
 - Emergency vehicle button: spawn an ambulance that runs well above desired
   speed while traffic biases lane changes away from its lane and slows —
   an emergent "move over" corridor.

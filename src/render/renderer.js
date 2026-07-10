@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt } from '../sim/road.js';
-import { params } from '../params.js';
+import { params, KMH, MPH } from '../params.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
@@ -112,6 +112,29 @@ export class SceneRenderer {
       if (pt) this.onRoadClick(pt);
     });
 
+    // Hover position for the car readout: buttons pressed means an orbit
+    // drag (or a touch), not a hover. main.js re-picks against this every
+    // frame so the readout tracks traffic moving under a resting pointer.
+    this._pointer = null;
+    canvas.addEventListener('pointermove', (e) => {
+      this._pointer = e.buttons === 0 ? { x: e.clientX, y: e.clientY } : null;
+    });
+    canvas.addEventListener('pointerleave', () => {
+      this._pointer = null;
+    });
+
+    // nameplate above the hovered car (see setHoverCar)
+    const tip = document.createElement('div');
+    tip.className = 'map-label hover';
+    this.hoverName = document.createElement('div');
+    this.hoverSub = document.createElement('div');
+    this.hoverSub.className = 'sub';
+    tip.append(this.hoverName, this.hoverSub);
+    this.hoverTip = new CSS2DObject(tip);
+    this.hoverTip.center.set(0.5, 1); // bottom-center anchor: label floats above
+    this.hoverTip.visible = false;
+    this.scene.add(this.hoverTip);
+
     window.addEventListener('resize', () => this.onResize());
   }
 
@@ -125,6 +148,27 @@ export class SceneRenderer {
     this._raycaster.setFromCamera(ndc, this.camera);
     const out = new THREE.Vector3();
     return this._raycaster.ray.intersectPlane(this._groundPlane, out) ? out : null;
+  }
+
+  // Ground point under the resting pointer, or null (off-canvas / mid-drag).
+  pointerGround() {
+    return this._pointer ? this.pickGround(this._pointer.x, this._pointer.y) : null;
+  }
+
+  // Hover readout: nameplate above a car with its live speed and desired
+  // speed in parens. Called every frame with the car under the pointer (or
+  // null), so the text and anchor stay current as the car drives on.
+  setHoverCar(car) {
+    this.hoverTip.visible = !!car;
+    if (!car) return;
+    this.carPose(car, this._pos, this._tan);
+    this.hoverTip.position.set(this._pos.x, car.kind === 'truck' ? 4.2 : 2.6, this._pos.z);
+    const imp = params.units === 'imperial';
+    const unit = imp ? MPH : KMH;
+    const want = params.desiredSpeed * car.v0Factor;
+    this.hoverName.textContent = `${car.kind === 'acc' ? 'ACC car' : car.kind} #${car.id}`;
+    this.hoverSub.textContent =
+      `${Math.round(car.v / unit)} (${Math.round(want / unit)}) ${imp ? 'mph' : 'km/h'}`;
   }
 
   // The road is rebuilt whenever the lane count or the loop shape changes.

@@ -101,7 +101,9 @@ export class Speedometer {
     ctx.textAlign = 'left';
 
     const kind = car.kind === 'acc' ? 'ACC car' : car.kind;
-    this.cap.textContent = `following ${kind} #${car.id}${statusOf(car)}`;
+    const want = Math.round((params.desiredSpeed * car.v0Factor) / unit);
+    this.cap.textContent =
+      `following ${kind} #${car.id} · wants ${want} ${imp ? 'mph' : 'km/h'}${statusOf(car)}`;
   }
 }
 
