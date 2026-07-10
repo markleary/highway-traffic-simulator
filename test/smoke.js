@@ -8,6 +8,20 @@ const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
 let failures = 0;
 
+// Deterministic runs: the sim samples Math.random freely (seeding, v0
+// spread, exit rolls, lane-change stagger), which made threshold checks on
+// emergent behavior — corridor strength, jam depth — a seed lottery that
+// flaked on the tail seeds. Pinning the RNG (mulberry32) turns every
+// scenario into a recorded trajectory: checks can stay tight, and a failure
+// is a real behavior change, not bad luck.
+let rngState = 0x2f6e2b1;
+Math.random = () => {
+  rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 function check(label, cond, detail = '') {
   if (cond) {
     console.log(`  ok   ${label}`);
@@ -268,6 +282,39 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   for (let i = 0; i < Math.round(180 / H) && sim.cars.includes(amb); i++) sim.step(H);
   check('ambulance despawns after its run', !sim.cars.includes(amb));
   assertSane(sim, 'emergency vehicle scenario');
+}
+
+{
+  console.log('\nambulance spawn edge cases (Codex review regressions)');
+  // one car per lane: the widest-gap scan must treat a lone car's gap as the
+  // whole loop, not forwardDist(s, s) = 0 (which spawned onto the car)
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 3,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const sim = new Simulation();
+  const amb = sim.spawnAmbulance();
+  const lone = sim.cars.find((c) => c !== amb && c.lane === amb.lane);
+  const gap = Math.min(forwardDist(amb.s, lone.s), forwardDist(lone.s, amb.s));
+  check(
+    'lone-car lane: ambulance spawns into the open half-loop',
+    gap > LOOP / 4,
+    `(gap=${gap.toFixed(0)} m)`
+  );
+  // spawns cap at the renderer's instanced capacity — past it the vehicle
+  // would drive physics invisibly
+  let spawned = 1;
+  for (let i = 0; i < 12; i++) if (sim.spawnAmbulance()) spawned++;
+  check(
+    'concurrent ambulances cap at the renderable count',
+    spawned === 8 && sim.cars.filter((c) => c.kind === 'ambulance').length === 8,
+    `(${spawned} spawned)`
+  );
+  for (let i = 0; i < Math.round(5 / H); i++) sim.step(H);
+  assertSane(sim, 'ambulance spawn edges');
 }
 
 {
