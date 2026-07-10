@@ -104,9 +104,21 @@ const el = {
   fps: document.getElementById('stat-fps'),
   fpsRow: document.getElementById('row-fps'),
 };
+// In chase view the centered speedometer lands on top of the full hint line,
+// and most of its tips (orbit, zoom) don't apply anyway — swap in a short
+// chase-specific set that fits beside the gauge.
+const hintEl = document.getElementById('hint');
+const hintFree = hintEl.innerHTML;
+const hintChase = 'esc exit chase &nbsp;·&nbsp; c switch car';
+let hintShowsChase = false;
+
 let fpsLast = performance.now();
 setInterval(() => {
   const s = sim.stats();
+  if (hintShowsChase !== !!renderer.chaseCar) {
+    hintShowsChase = !!renderer.chaseCar;
+    hintEl.innerHTML = hintShowsChase ? hintChase : hintFree;
+  }
   // FPS over the real time since the last tick (the interval isn't exact)
   const nowMs = performance.now();
   el.fpsRow.style.display = params.showFps ? '' : 'none';
