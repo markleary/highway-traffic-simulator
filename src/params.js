@@ -16,7 +16,12 @@ export const params = {
   colorMode: 'speed', // 'speed' | 'random'
   showCharts: true,
   showDiagram: true, // space-time heatmap section of the charts panel
-  showFundamental: true, // flow × density scatter section of the charts panel
+  // flow × density scatter section of the charts panel. Its default is
+  // viewport-aware: the full panel stands ~630 px above the window bottom and
+  // the HUD owns the top ~170, so on shorter windows the section starts
+  // hidden (still toggleable) instead of painting over the HUD. The window
+  // guard keeps the headless smoke test (Node) importable.
+  showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800,
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()

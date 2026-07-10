@@ -62,7 +62,9 @@ src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time
                        1 Hz; the fundamental diagram scatters flow vs mainline
                        density — history's `m`, ramp queues excluded — from the same
                        samples, speed-colored dots fading with age, with a dashed
-                       free-flow diagonal q = k·desiredSpeed)
+                       free-flow diagonal q = k·desiredSpeed; hidden by default
+                       on viewports under 800 px tall so the grown panel can't
+                       cover the HUD)
 src/ui/speedo.js       speedometer gauge shown while the chase camera is active
 test/smoke.js          runs the sim headless under several parameter regimes
 ```
