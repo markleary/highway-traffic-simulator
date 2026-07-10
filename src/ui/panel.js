@@ -213,6 +213,10 @@ function makeGui({ sim, renderer, onRebuild }) {
     'How long a breakdown stays parked on the shoulder, and how long a wreck blocks its lane before being cleared away.'
   );
   tip(
+    fEvents.add({ amb: () => sim.spawnAmbulance() }, 'amb').name('🚑 Emergency vehicle'),
+    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and pulls out of its lane — the "move over" corridor is emergent, not scripted. It weaves through whatever does not clear, and leaves the map after about a lap and a half.'
+  );
+  tip(
     fEvents.add(params, 'rubberneck', 0, 1, 0.05).name('Rubbernecking'),
     'How much passing drivers slow down to gawk at an incident, strongest in the lanes closest to it. Even a shoulder breakdown that blocks nothing can collapse throughput.'
   );

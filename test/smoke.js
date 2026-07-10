@@ -205,6 +205,72 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
 }
 
 {
+  console.log('\nemergency vehicle: outruns traffic, corridor opens, then leaves');
+  // Moderate density on purpose: the corridor needs spare capacity in the
+  // receiving lanes to exist at all. Near capacity there is nowhere to move
+  // over TO — corridors fail in real congestion too (it is why the German
+  // Rettungsgasse forms before traffic densifies, not after) — and a
+  // corridor assertion there measures physics, not this feature.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 60 });
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(10 / H); i++) sim.step(H);
+  const amb = sim.spawnAmbulance();
+  check(
+    'ambulance spawns in the innermost lane',
+    amb.kind === 'ambulance' && amb.lane === params.lanes - 1 && sim.cars.includes(amb)
+  );
+  let ambV = 0;
+  let fleetV = 0;
+  let steps = 0;
+  // Corridor metric compares the ambulance's OWN lane near vs far: the near
+  // band (≤ 140 m ahead, inside the siren's reach) against a same-lane
+  // control band well beyond it (300–740 m, unaware of the siren). Same-lane
+  // control matters: the innermost lane runs emptier than average even
+  // without an ambulance (keep-right bias, no trucks).
+  let corridor = 0;
+  let control = 0;
+  let ticks = 0;
+  for (let i = 0; i < Math.round(60 / H); i++) {
+    sim.step(H);
+    if (!sim.cars.includes(amb)) break;
+    ambV += amb.v;
+    let sum = 0;
+    let n = 0;
+    let near = 0;
+    let far = 0;
+    for (const c of sim.cars) {
+      if (c === amb || c.state !== 'main' || c.incident) continue;
+      sum += c.v;
+      n++;
+      if (c.lane !== amb.lane) continue;
+      const d = forwardDist(amb.s, c.s);
+      if (d <= 140) near++;
+      else if (d > 300 && d <= 740) far++;
+    }
+    fleetV += n ? sum / n : 0;
+    steps++;
+    if (i * H < 15) continue; // corridor needs time to knit: measure steady state
+    corridor += near;
+    control += far / ((740 - 300) / 140); // normalize the control band to 140 m
+    ticks++;
+  }
+  check(
+    'ambulance outruns the fleet',
+    // averaged over the whole run, spawn-in and baulked stretches included
+    ambV / steps > 1.15 * (fleetV / steps),
+    `(amb=${(ambV / steps).toFixed(1)} vs fleet=${(fleetV / steps).toFixed(1)} m/s)`
+  );
+  check(
+    'move-over corridor: the siren clears its own lane ahead',
+    corridor < 0.6 * control,
+    `(near=${(corridor / ticks).toFixed(2)} vs same-lane control=${(control / ticks).toFixed(2)} cars)`
+  );
+  for (let i = 0; i < Math.round(180 / H) && sim.cars.includes(amb); i++) sim.step(H);
+  check('ambulance despawns after its run', !sim.cars.includes(amb));
+  assertSane(sim, 'emergency vehicle scenario');
+}
+
+{
   console.log('\ndense seeding never overlaps (Codex review regression)');
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 300, truckShare: 40 });
   const sim = new Simulation();
