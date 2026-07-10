@@ -16,6 +16,7 @@ const SPEED_COLOR = '#3987e5';
 const FLOW_COLOR = '#199e70';
 const CARS_COLOR = '#d98e32';
 const INCIDENT_SHADE = 'rgba(230, 103, 103, 0.16)';
+const RAIN_SHADE = 'rgba(96, 150, 230, 0.13)';
 // Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
 // shows as bright trajectories against it and jams as red bands.
 const EMPTY_COLOR = 'hsl(120, 25%, 24%)';
@@ -466,6 +467,17 @@ export class ChartPanel {
       if (!history[i].inc) continue;
       let j = i;
       while (j + 1 < history.length && history[j + 1].inc) j++;
+      ctx.fillRect(xs(history[i].t) - 0.5, 0, xs(history[j].t) - xs(history[i].t) + 1.5, H);
+      i = j;
+    }
+
+    // rain band: a blue wash while it rained, so a regime change lines up
+    // with the weather that caused it
+    ctx.fillStyle = RAIN_SHADE;
+    for (let i = 0; i < history.length; i++) {
+      if (!(history[i].rain > 0.05)) continue;
+      let j = i;
+      while (j + 1 < history.length && history[j + 1].rain > 0.05) j++;
       ctx.fillRect(xs(history[i].t) - 0.5, 0, xs(history[j].t) - xs(history[i].t) + 1.5, H);
       i = j;
     }

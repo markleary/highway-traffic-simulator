@@ -19,6 +19,10 @@ const TYPE_COLORS = {
 };
 const MAX_LIGHTS = MAX_CARS + MAX_TRUCKS;
 const BG = 0x0e1512;
+const BG_DRY = new THREE.Color(BG);
+const BG_WET = new THREE.Color(0x0a0e14); // storm sky: darker, bluer
+const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
+const RAIN_HEIGHT = 260;
 
 // Light mount points per vehicle kind, in the car's local frame (+z = front,
 // +x = driver's left = inward). y/rear/front from the body geometries below.
@@ -62,10 +66,11 @@ export class SceneRenderer {
     this.controls.maxDistance = 1400;
     this.setDefaultView(); // after controls exist, so the view target sticks
 
-    this.scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x36462f, 0.9));
-    const sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
-    sun.position.set(250, 380, -180);
-    this.scene.add(sun);
+    this.hemi = new THREE.HemisphereLight(0xcfe0ff, 0x36462f, 0.9);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
+    this.sun.position.set(250, 380, -180);
+    this.scene.add(this.sun);
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(2400, 64).rotateX(-Math.PI / 2),
@@ -78,10 +83,12 @@ export class SceneRenderer {
     this.rampGroup = null;
     this.coneGroup = null;
     this.rampFlowEls = {};
+    this._rain = 0;
     this.buildRoad();
     this.buildRamps();
     this.buildWorkZone();
     this.buildCars();
+    this.buildRainSheet();
 
     // faint cross-road marker mirroring the space-time diagram's hovered
     // position (see setRoadCursor); lives outside roadGroup so it survives
@@ -241,11 +248,61 @@ export class SceneRenderer {
     // cameras sit from the road — big road scales push the overhead view
     // past the defaults tuned for the 1x loop
     const { h } = this.viewFit();
-    this.scene.fog.near = h * 1.35;
-    this.scene.fog.far = h * 3.2;
+    this._fogFit = h; // weather scales fog from this base (applyWeather)
+    this.applyWeather();
     this.controls.maxDistance = Math.max(1400, h * 1.5);
     this.camera.far = Math.max(3000, h * 4);
     this.camera.updateProjectionMatrix();
+  }
+
+  // Weather mood, driven every frame from sim.rainNow via setRain: darker
+  // bluer sky, fog pulled in, dimmer lights, and the rain sheet fading in.
+  setRain(r) {
+    if (r === this._rain) return;
+    this._rain = r;
+    this.applyWeather();
+  }
+
+  applyWeather() {
+    const r = this._rain;
+    const h = this._fogFit;
+    this.scene.background.copy(BG_DRY).lerp(BG_WET, r);
+    this.scene.fog.color.copy(this.scene.background);
+    this.scene.fog.near = h * 1.35 * (1 - 0.45 * r);
+    this.scene.fog.far = h * 3.2 * (1 - 0.45 * r);
+    this.sun.intensity = 1.8 * (1 - 0.55 * r);
+    this.hemi.intensity = 0.9 * (1 - 0.3 * r);
+    if (this.rainPts) {
+      this.rainPts.visible = r > 0.03;
+      this.rainPts.material.opacity = 0.45 * r;
+    }
+  }
+
+  // A sheet of falling points that rides along with the camera — cheap
+  // (one geometry, y-wrap per frame) but it sells the storm.
+  buildRainSheet() {
+    const N = 2200;
+    const pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * RAIN_BOX;
+      pos[i * 3 + 1] = Math.random() * RAIN_HEIGHT;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * RAIN_BOX;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.rainPts = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        color: 0x9fb6cc,
+        size: 0.7,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      })
+    );
+    this.rainPts.visible = false;
+    this.rainPts.frustumCulled = false;
+    this.scene.add(this.rainPts);
   }
 
   // Rebuilt on shape changes; ramp curves live in road.js and are already new.
@@ -605,6 +662,17 @@ export class SceneRenderer {
       this.camera.lookAt(this._chaseAim);
     } else {
       this.controls.update();
+    }
+    if (this.rainPts.visible) {
+      // wall-clock fall (rain is scenery, not physics), sheet follows the camera
+      const arr = this.rainPts.geometry.attributes.position.array;
+      const drop = 90 * dt;
+      for (let i = 1; i < arr.length; i += 3) {
+        arr[i] -= drop;
+        if (arr[i] < 0) arr[i] += RAIN_HEIGHT;
+      }
+      this.rainPts.geometry.attributes.position.needsUpdate = true;
+      this.rainPts.position.set(this.camera.position.x, 0, this.camera.position.z);
     }
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);

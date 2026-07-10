@@ -12,6 +12,17 @@ const WZ_WARN = 250;
 // (MAX_AMB in renderer.js): a spawn past it would drive physics invisibly.
 const MAX_AMBULANCES = 8;
 
+// Rain (0–1, the max of the steady Rain knob and a live storm): slower
+// desired speeds, longer following, and less grip. Each factor is mild, but
+// together they cut capacity enough to tip a near-capacity regime into
+// stop-and-go — which is the demo. Module-level live value (like road.js's
+// LOOP binding) so the hot idm() path reads it without extra plumbing.
+const RAIN_V0 = 0.3; // desired-speed reduction at full rain
+const RAIN_HEADWAY = 0.5; // extra time headway at full rain
+const RAIN_GRIP = 0.35; // comfortable-braking reduction at full rain (planning)
+const RAIN_HARD = 0.3; // hard-brake and safety-gate reduction at full rain (physics)
+let rainNow = 0; // set at the top of every step
+
 // Positions are vehicle CENTERS (that is where the meshes are drawn), so a
 // bumper-to-bumper gap must shed half of BOTH vehicles' lengths. With uniform
 // lengths subtracting one full length was equivalent; with trucks it is not.
@@ -25,19 +36,20 @@ function halfLens(a, b) {
 // brake more gently, and follow at a bigger time gap.
 function idm(car, vLead, gap, v0) {
   const p = params;
-  const hardBrake = -9 * car.brakeK;
+  const hardBrake = -9 * car.brakeK * (1 - RAIN_HARD * rainNow); // wet road: less grip
   if (gap <= 0) return hardBrake;
   const v = car.v;
   const aMax = p.maxAccel * car.accelK;
   let acc = aMax * (1 - Math.pow(v / Math.max(v0, 0.1), 4));
   if (Number.isFinite(gap)) {
     const dv = v - vLead;
+    const wetBrake = p.comfortBrake * (1 - RAIN_GRIP * rainNow);
     const sStar =
       p.minGap +
       Math.max(
         0,
-        v * p.timeHeadway * car.headwayK +
-          (v * dv) / (2 * Math.sqrt(aMax * p.comfortBrake * car.brakeK))
+        v * p.timeHeadway * car.headwayK * (1 + RAIN_HEADWAY * rainNow) +
+          (v * dv) / (2 * Math.sqrt(aMax * wetBrake * car.brakeK))
       );
     acc -= aMax * (sStar / gap) ** 2;
   }
@@ -72,10 +84,10 @@ function accACC(car, leader, gap, aIDM) {
     aCAH = aL - (dv * dv) / (2 * gap);
   }
   if (aIDM >= aCAH) return aIDM; // IDM isn't panicking; keep it
-  const b = p.comfortBrake;
+  const b = p.comfortBrake * (1 - RAIN_GRIP * rainNow);
   return Math.max(
     (1 - ACC_COOL) * aIDM + ACC_COOL * (aCAH + b * Math.tanh((aIDM - aCAH) / b)),
-    -9
+    -9 * (1 - RAIN_HARD * rainNow)
   );
 }
 
@@ -120,8 +132,10 @@ export class Simulation {
     setShape(params.roadShape, params.roadScale, params.interchanges);
     this.cars = [];
     this.incidents = []; // active breakdowns / accidents
+    this.storm = null; // live rain storm (startStorm), on top of the Rain knob
+    rainNow = this.rainNow = Math.min(1, params.rain);
     this.time = 0;
-    this.history = []; // 1 Hz samples of {t, v, f, n, m, inc, bins} for the live charts
+    this.history = []; // 1 Hz samples of {t, v, f, n, m, inc, rain, bins} for the live charts
     this.binCount = Math.ceil(LOOP / BIN_M); // space-time diagram resolution
     this.incidentStarts = []; // sim timestamps, one per triggered incident (chart markers)
     this.sampleTimer = 0;
@@ -210,7 +224,8 @@ export class Simulation {
   }
 
   v0(car) {
-    return params.desiredSpeed * car.v0Factor;
+    // wet roads slow everyone's target speed, ambulances included
+    return params.desiredSpeed * car.v0Factor * (1 - RAIN_V0 * rainNow);
   }
 
   // Desired speed, reduced when the car is heading for an exit: it slows to
@@ -282,6 +297,26 @@ export class Simulation {
     return v0;
   }
 
+  // A storm arc: rolls in over 40 s, pours for 90, clears over 50. The live
+  // rain level each step is the max of this and the steady Rain knob, so the
+  // knob sets a climate and the button throws weather at it. `delay` puts
+  // the onset in the future — the downpour preset uses it to give the demo
+  // a dry minute of baseline traffic before the tipping starts.
+  startStorm(delay = 0) {
+    this.storm = { t0: this.time + delay };
+  }
+
+  stormLevel() {
+    if (!this.storm) return 0;
+    const age = this.time - this.storm.t0;
+    if (age < 0) return 0; // scheduled but not rolled in yet
+    if (age < 40) return age / 40;
+    if (age < 130) return 1;
+    if (age < 180) return (180 - age) / 50;
+    this.storm = null;
+    return 0;
+  }
+
   // The work zone cones off the INNERMOST lane over a stretch — ramps attach
   // to lane 0 and exits drift there, so the inner lane is the only one a
   // closure can take without colliding with ramp logic. Derived from params
@@ -315,6 +350,10 @@ export class Simulation {
 
   step(h) {
     this.time += h;
+
+    // live rain: the steady knob or the storm arc, whichever is wetter —
+    // every physics pass below reads the module-level value
+    rainNow = this.rainNow = Math.min(1, Math.max(params.rain, this.stormLevel()));
 
     // ambulances: retire any that finished their siren run, and cache the
     // active list for the move-over corridor checks (ambBehind runs per car
@@ -379,6 +418,7 @@ export class Simulation {
         n: s.count, // every vehicle, ramps included — matches the HUD
         m: s.mainCount, // mainline only — the fundamental diagram's density
         inc: this.incidents.length > 0,
+        rain: rainNow, // the charts shade blue while it rained
         bins: this.speedBins(),
       });
       if (this.history.length > 300) this.history.shift();
@@ -481,7 +521,7 @@ export class Simulation {
 
   accelRamps(lane0) {
     const p = params;
-    const rampV0 = p.rampSpeed;
+    const rampV0 = p.rampSpeed * (1 - RAIN_V0 * rainNow);
     for (const ramp of RAMPS) {
       const st = this.rampState.get(ramp.id);
       st.cars.sort((a, b) => a.rampPos - b.rampPos);
@@ -564,7 +604,7 @@ export class Simulation {
         const exitDist = car.exitRamp ? forwardDist(car.s, car.exitRamp.sDiverge) : Infinity;
         const mandatory = exitDist < 400 || pullover || wzUrgent;
         // A stranded car gets bolder about cutting in the longer it has waited.
-        let brakeLimit = p.safeBrake;
+        let brakeLimit = p.safeBrake * (1 - RAIN_HARD * rainNow); // wet: gentler gates
         if (pullover) {
           brakeLimit *= 1 + Math.min((this.time - car.incident.phaseStart) / 10, 1.5);
         } else if (amb || (siren && l === siren.amb.lane)) {
@@ -750,7 +790,7 @@ export class Simulation {
         // gets desperate and noses in, forcing the follower to yield — which
         // is where merge-induced jam waves come from.
         const desperation = 1 + 2 * Math.max(0, 1 - remaining / 20);
-        const shed = 2 * p.safeBrake * 1.5 * desperation;
+        const shed = 2 * p.safeBrake * (1 - RAIN_HARD * rainNow) * 1.5 * desperation;
         const needAhead =
           p.minGap +
           (0.5 * car.v) / desperation +
@@ -859,7 +899,7 @@ export class Simulation {
         const gapAhead = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         const gapBehind = follower ? forwardDist(follower.s, car.s) - halfLens(follower, car) : Infinity;
         const desperation = 1 + 2 * Math.min(phaseTime / 12, 1);
-        const shed = 2 * p.safeBrake * 1.5 * desperation;
+        const shed = 2 * p.safeBrake * (1 - RAIN_HARD * rainNow) * 1.5 * desperation;
         const needAhead =
           p.minGap +
           (0.5 * car.v) / desperation +

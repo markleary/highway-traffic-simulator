@@ -743,5 +743,42 @@ run('aggressive tailgating params stay stable', { timeHeadway: 0.6, minGap: 0.5,
   check('cars remain on the road', s.count > 20, `(count=${s.count})`);
 });
 
+{
+  console.log('\nrain: wet roads slow the same regime; the storm arc completes');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 110 });
+  const dry = new Simulation();
+  for (let i = 0; i < Math.round(90 / H); i++) dry.step(H);
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 110, rain: 0.8 });
+  const wet = new Simulation();
+  for (let i = 0; i < Math.round(90 / H); i++) wet.step(H);
+  check(
+    'wet traffic runs markedly slower than dry',
+    wet.stats().avgSpeed < 0.85 * dry.stats().avgSpeed,
+    `(wet=${wet.stats().avgSpeed.toFixed(1)} vs dry=${dry.stats().avgSpeed.toFixed(1)} m/s)`
+  );
+  check(
+    'history samples carry the rain level',
+    wet.history.every((p) => p.rain === 0.8),
+    `(rain=${wet.history[0]?.rain})`
+  );
+  assertSane(wet, 'wet regime');
+
+  // storm lifecycle: ramps to full, pours, clears, and cleans up after itself
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {});
+  const sim = new Simulation();
+  sim.startStorm();
+  let peak = 0;
+  for (let i = 0; i < Math.round(200 / H); i++) {
+    sim.step(H);
+    peak = Math.max(peak, sim.rainNow);
+  }
+  check(
+    'storm peaked at full rain and cleared',
+    peak === 1 && sim.rainNow === 0 && sim.storm === null,
+    `(peak=${peak.toFixed(2)}, now=${sim.rainNow})`
+  );
+  assertSane(sim, 'storm scenario');
+}
+
 console.log(failures === 0 ? '\nAll smoke checks passed.' : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

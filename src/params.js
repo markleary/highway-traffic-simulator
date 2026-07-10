@@ -66,6 +66,7 @@ export const params = {
   incidentDuration: 90, // s — how long a breakdown stays parked / a wreck blocks
   rubberneck: 0.5,      // 0–1: how much passing traffic slows to gawk
   accidentLanes: 1,     // cars involved in a triggered accident (1 or 2 lanes)
+  rain: 0, // 0–1 steady rain level; the storm event (sim.startStorm) peaks over it
 
   // work zone: cones close the innermost lane over a stretch (sim.workZone).
   // Applies live — no reset; cars caught inside work their way out.

@@ -76,6 +76,20 @@ export const PRESETS = {
       showCharts: true,
     },
   },
+  downpour: {
+    label: 'Sudden downpour',
+    tip: 'A minute of stable dry traffic — then a storm rolls in. Wet capacity drops below the inflow, the space-time diagram stripes with stop-and-go, and the charts shade blue while it lasts; flow recovers as the rain clears.',
+    patch: {
+      initialCars: 75,
+      onRampA: 8,
+      onRampB: 8,
+      offRampA: 6,
+      offRampB: 6,
+      showCharts: true,
+      showDiagram: true,
+    },
+    after: (sim) => sim.startStorm(60), // dry baseline first, storm at 1:00
+  },
   siren: {
     label: 'Ambulance run',
     tip: 'Moderate traffic with an ambulance on a siren run: watch the move-over corridor open ahead of it. Spawn more from the Events folder.',
