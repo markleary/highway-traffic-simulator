@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap } from '../sim/road.js';
 import { params, KMH, MPH } from '../params.js';
 
@@ -373,15 +374,28 @@ export class SceneRenderer {
       new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide }),
       MAX_CARS
     );
-    // ambulance: white box van with a red belt stripe; roof strobes are
-    // separate unlit instances whose red/blue swap sides on the hazard
-    // blink clock, so the bar reads as flashing from any angle
-    const vanGeo = new THREE.BoxGeometry(2.25, 2.05, 5.4).translate(0, 1.33, 0);
-    const stripeGeo = new THREE.BoxGeometry(2.31, 0.3, 5.46).translate(0, 1.05, 0);
-    this.ambBody = new THREE.InstancedMesh(vanGeo, mat(), MAX_AMB);
+    // ambulance: a Type-I style rig rather than a plain box — hood and cab
+    // up front, the taller patient module behind (+z = front, 5.4 m total
+    // to match VEHICLE_LEN), dark glass over the cab, red belt stripe on
+    // the module. Roof strobes are separate unlit instances whose red/blue
+    // swap sides on the hazard blink clock, so the bar reads as flashing
+    // from any angle.
+    const ambBodyGeo = mergeGeometries([
+      new THREE.BoxGeometry(2.3, 2.15, 3.0).translate(0, 1.42, -1.2), // patient module
+      new THREE.BoxGeometry(2.05, 1.5, 1.35).translate(0, 1.1, 0.92), // cab
+      new THREE.BoxGeometry(1.9, 0.85, 1.2).translate(0, 0.78, 2.1), // hood
+    ]);
+    const stripeGeo = new THREE.BoxGeometry(2.36, 0.32, 3.0).translate(0, 1.16, -1.2);
+    const glassGeo = new THREE.BoxGeometry(2.09, 0.5, 1.1).translate(0, 1.52, 0.98);
+    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, mat(), MAX_AMB);
     this.ambStripe = new THREE.InstancedMesh(
       stripeGeo,
       new THREE.MeshStandardMaterial({ color: 0xc63a30, roughness: 0.5, metalness: 0.25 }),
+      MAX_AMB
+    );
+    this.ambGlass = new THREE.InstancedMesh(
+      glassGeo,
+      new THREE.MeshStandardMaterial({ color: 0x1d2731, roughness: 0.25, metalness: 0.4 }),
       MAX_AMB
     );
     this.strobes = new THREE.InstancedMesh(
@@ -404,7 +418,7 @@ export class SceneRenderer {
       new THREE.MeshBasicMaterial({ color: 0xffb226 }),
       MAX_LIGHTS
     );
-    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.ambBody, this.ambStripe, this.strobes, this.brakeLights, this.blinkers]) {
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.ambBody, this.ambStripe, this.ambGlass, this.strobes, this.brakeLights, this.blinkers]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       // three.js culls an InstancedMesh by its BASE geometry's bounding
@@ -468,17 +482,19 @@ export class SceneRenderer {
         this.cab.setColorAt(ti, this._cabinColor);
         ti++;
       } else if (ambu) {
-        // white van regardless of color mode; incidents keep the amber blink
+        // white rig regardless of color mode; incidents keep the amber blink
         if (!car.incident) this._bodyColor.set(0xf4f7f9);
         this.ambBody.setMatrixAt(mi, this._dummy.matrix);
         this.ambStripe.setMatrixAt(mi, this._dummy.matrix);
+        this.ambGlass.setMatrixAt(mi, this._dummy.matrix);
         this.ambBody.setColorAt(mi, this._bodyColor);
         mi++;
         if (!car.incident && si + 1 < MAX_AMB * 2) {
-          // roof bar: red/blue swap sides every blink tick
-          this.placeLight(this.strobes, si, rotY, 0.6, 2.55, 1.6, 0.5, 0.22, 0.5);
+          // light bar on the module's front roof edge — the rig's high point,
+          // visible from every angle; red/blue swap sides every blink tick
+          this.placeLight(this.strobes, si, rotY, 0.55, 2.6, 0.1, 0.5, 0.22, 0.5);
           this.strobes.setColorAt(si++, blinkOn ? STROBE_RED : STROBE_BLUE);
-          this.placeLight(this.strobes, si, rotY, -0.6, 2.55, 1.6, 0.5, 0.22, 0.5);
+          this.placeLight(this.strobes, si, rotY, -0.55, 2.6, 0.1, 0.5, 0.22, 0.5);
           this.strobes.setColorAt(si++, blinkOn ? STROBE_BLUE : STROBE_RED);
         }
       } else if (acc) {
@@ -513,10 +529,11 @@ export class SceneRenderer {
     this.cyber.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
+    this.ambGlass.count = mi;
     this.strobes.count = si;
     this.brakeLights.count = li;
     this.blinkers.count = ki;
-    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.ambBody, this.ambStripe, this.strobes, this.brakeLights, this.blinkers]) {
+    for (const m of [this.body, this.cabin, this.trailer, this.cab, this.cyber, this.ambBody, this.ambStripe, this.ambGlass, this.strobes, this.brakeLights, this.blinkers]) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
