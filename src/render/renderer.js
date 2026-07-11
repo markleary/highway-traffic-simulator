@@ -682,9 +682,11 @@ export class SceneRenderer {
     this.sedanCabin = new THREE.InstancedMesh(loft(SEDAN_CABIN), cabinMat(), MAX_CARS);
     this.hatch = new THREE.InstancedMesh(loft(HATCH_BODY), mat(), MAX_CARS);
     this.hatchCabin = new THREE.InstancedMesh(loft(HATCH_CABIN), cabinMat(), MAX_CARS);
-    // one four-wheel set serves every ~4.5 m body (sedan, hatch, ACC wedge)
+    // one four-wheel set serves every ~4.5 m body (sedan, hatch, ACC wedge).
+    // Track width keeps the outer faces proud of the widest shell (hw 0.95):
+    // dead flush and the coplanar faces z-fight — flickering rear wheels.
     this.wheels = new THREE.InstancedMesh(
-      wheelsGeo([[0.82, 1.4], [-0.82, 1.4], [0.82, -1.4], [-0.82, -1.4]], 0.34, 0.26),
+      wheelsGeo([[0.84, 1.4], [-0.84, 1.4], [0.84, -1.4], [-0.84, -1.4]], 0.34, 0.26),
       wheelMat,
       MAX_CARS
     );
