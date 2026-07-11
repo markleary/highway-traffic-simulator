@@ -724,11 +724,22 @@ export class SceneRenderer {
       wheelMat,
       MAX_CARS
     );
-    // the signature always-on light bar, a thin unlit strip across the top
-    // of the fascia (headlights aren't simulated; this is pure identity)
+    // the signature always-on light bar, a thin unlit strip sitting exactly
+    // on the hood/fascia crease, a touch wider than the face so the ends
+    // read as wrapping the corners (headlights aren't simulated; this is
+    // pure identity)
     this.cyberBar = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.86, 0.05, 0.05).translate(0, 0.96, 2.3),
+      new THREE.BoxGeometry(2.02, 0.05, 0.07).translate(0, 0.98, 2.29),
       new THREE.MeshBasicMaterial({ color: 0xf2ead8 }),
+      MAX_CARS
+    );
+    // dark windshield lying on the hood plane, inset so a body-colored
+    // frame (the A-pillars) borders it — the wedge face read as bare metal
+    // without it. Rougher than the ambulance's vertical cab glass: this
+    // pane tilts at the sky, and a glossy finish washes white in the sun.
+    this.cyberGlass = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1.48, 0.03, 1.34).rotateX(0.246).translate(0, 1.431, 0.57),
+      new THREE.MeshStandardMaterial({ color: 0x161e26, roughness: 0.55, metalness: 0.15 }),
       MAX_CARS
     );
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
@@ -783,7 +794,7 @@ export class SceneRenderer {
     this._meshes = [
       this.sedan, this.sedanCabin, this.hatch, this.hatchCabin, this.wheels,
       this.trailer, this.cab, this.truckWheels,
-      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberBar,
+      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberBar, this.cyberGlass,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambWheels,
       this.strobes, this.brakeLights, this.blinkers,
     ];
@@ -879,6 +890,7 @@ export class SceneRenderer {
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
         this.cyberBar.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberGlass.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
       } else {
@@ -923,6 +935,7 @@ export class SceneRenderer {
     this.cyberTrim.count = ai;
     this.cyberWheels.count = ai;
     this.cyberBar.count = ai;
+    this.cyberGlass.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
     this.ambGlass.count = mi;
