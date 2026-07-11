@@ -219,11 +219,12 @@ test/smoke.js          runs the sim headless under several parameter regimes
   the leader actually requires, so they absorb stop-and-go waves instead of
   amplifying them (mainline only; ramp queues keep plain IDM). Rendered as a
   Cybertruck-style wedge: one flat full-width hood plane from fascia to roof
-  peak, a blank raked face with an always-on light bar across its top and
-  clipped lower corners, dark composite trim (heavy bumper, rocker, slatted
-  tonneau, polygonal wheel-arch flares framing a wider fully-exposed wheel
-  set), and strip lights — thin brake bar atop the tailgate, low blinker
-  strips — so nose and tail read differently at a glance. The wave-damping
+  peak carrying an inset dark windshield, a blank raked face with an
+  always-on light bar riding the hood crease and clipped lower corners,
+  dark composite trim (heavy bumper, rocker, slatted tonneau, polygonal
+  wheel-arch flares framing a wider fully-exposed wheel set), and strip
+  lights — thin brake bar atop the tailgate, low blinker strips — so nose
+  and tail read differently at a glance. The wave-damping
   is regression-tested by comparing stop-and-go exposure at 0% vs 100% ACC
   in a flood regime.
 
