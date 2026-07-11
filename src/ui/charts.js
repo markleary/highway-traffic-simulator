@@ -20,9 +20,10 @@ const RAIN_SHADE = 'rgba(96, 150, 230, 0.13)';
 // Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
 // shows as bright trajectories against it and jams as red bands.
 const EMPTY_COLOR = 'hsl(120, 25%, 24%)';
-// Incident ✕ marker on the diagram: saturated red, kin to the line charts'
-// incident bands; its dark halo pass separates it from jam-red heatmap cells.
-const INCIDENT_START = '#ff4a4a';
+// Incident ✕ marker on the diagram: deep red, darker than the heatmap's
+// bright jam-red so the bare strokes stay legible inside the band they
+// seed (a halo pass was tried and read as a black box around the ✕).
+const INCIDENT_START = '#b32020';
 
 export class ChartPanel {
   constructor() {
@@ -206,23 +207,20 @@ export class ChartPanel {
     // that begins while another is still live gets its own mark. Clip
     // against the displayed window start (t0), not the first sample's
     // time — an incident triggered in the first second after a reset
-    // predates every sample but its time is still on the axis. A dark halo
-    // pass keeps the mark legible on both green and red heatmap cells.
+    // predates every sample but its time is still on the axis.
+    ctx.strokeStyle = INCIDENT_START;
+    ctx.lineWidth = 2.2;
     for (const inc of this.incidentStarts) {
       if (inc.t < t0 || inc.t > tNow) continue;
       const x = xs(inc.t);
       const y = DIAG_H * (1 - inc.s / LOOP);
       const a = 4.5; // arm half-length
-      for (const [style, w] of [['rgba(8, 5, 5, 0.85)', 5.5], [INCIDENT_START, 2]]) {
-        ctx.strokeStyle = style;
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        ctx.moveTo(x - a, y - a);
-        ctx.lineTo(x + a, y + a);
-        ctx.moveTo(x + a, y - a);
-        ctx.lineTo(x - a, y + a);
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      ctx.moveTo(x - a, y - a);
+      ctx.lineTo(x + a, y + a);
+      ctx.moveTo(x + a, y - a);
+      ctx.lineTo(x - a, y + a);
+      ctx.stroke();
     }
 
     // hover: pin the readout to the (time, position) cell under the cursor.
