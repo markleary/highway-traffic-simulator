@@ -139,7 +139,6 @@ export class SceneRenderer {
     this._bodyColor = new THREE.Color();
     this._cabinColor = new THREE.Color();
     this._raycaster = new THREE.Raycaster();
-    this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     // chase camera state. Yaw/pitch are a held-drag orbit offset around the
     // chased car (0 = the standard behind-the-car framing); on release they
@@ -176,8 +175,7 @@ export class SceneRenderer {
       const dx = e.clientX - press.x;
       const dy = e.clientY - press.y;
       if (dx * dx + dy * dy > 36 || performance.now() - press.t > 500) return;
-      const pt = this.pickGround(e.clientX, e.clientY);
-      if (pt) this.onRoadClick(pt);
+      this.onRoadClick(this.pickRay(e.clientX, e.clientY));
     });
 
     // Hover position for the car readout: buttons pressed means an orbit
@@ -219,21 +217,22 @@ export class SceneRenderer {
     window.addEventListener('resize', () => this.onResize());
   }
 
-  // Ray from a screen position onto the ground plane (y = 0).
-  pickGround(clientX, clientY) {
+  // World-space pointer ray from a screen position, for elevation-aware car
+  // picking (sim.carNearRay). A ground-plane hit point — the old approach —
+  // lands metres past a car on the figure eight's bridge deck.
+  pickRay(clientX, clientY) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1
     );
     this._raycaster.setFromCamera(ndc, this.camera);
-    const out = new THREE.Vector3();
-    return this._raycaster.ray.intersectPlane(this._groundPlane, out) ? out : null;
+    return { origin: this._raycaster.ray.origin.clone(), dir: this._raycaster.ray.direction.clone() };
   }
 
-  // Ground point under the resting pointer, or null (off-canvas / mid-drag).
-  pointerGround() {
-    return this._pointer ? this.pickGround(this._pointer.x, this._pointer.y) : null;
+  // Pointer ray under the resting pointer, or null (off-canvas / mid-drag).
+  pointerRay() {
+    return this._pointer ? this.pickRay(this._pointer.x, this._pointer.y) : null;
   }
 
   // Hover readout: nameplate above a car with its live speed and desired

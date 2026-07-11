@@ -1037,22 +1037,31 @@ export class Simulation {
     return best && { amb: best, dist: bestD };
   }
 
-  // Nearest car to a world-space point. Click-to-crash uses the default
-  // filter (normal mainline cars only); the hover readout passes any = true
-  // to also read ramp, shoulder, and incident cars.
-  carNear(point, radius = 12, any = false) {
+  // Nearest car to a pointer ray ({origin, dir}, dir normalized), measured
+  // point-to-ray in 3D so elevation counts: a ground-plane hit point lands
+  // metres past a car on the figure eight's bridge, and at its crossing both
+  // levels share x/z. The small penalty along the ray means that when it
+  // threads both levels, the nearer (upper) car wins — it's the visible one.
+  // Click-to-crash uses the default filter (normal mainline cars only); the
+  // hover readout passes any = true to also read ramp, shoulder, and
+  // incident cars.
+  carNearRay(ray, radius = 9, any = false) {
     let best = null;
-    let bestD = radius * radius;
+    let bestScore = Infinity;
+    const { origin, dir } = ray;
     for (const car of this.cars) {
       if (!any && (car.state !== 'main' || car.incident)) continue;
       const pos = car.ramp
         ? car.ramp.curve.getPointAt(Math.min(Math.max(car.rampPos / car.ramp.length, 0), 1))
         : pointAt(car.s, -car.renderLane * ROAD.laneWidth);
-      const dx = pos.x - point.x;
-      const dz = pos.z - point.z;
-      const d = dx * dx + dz * dz;
-      if (d < bestD) {
-        bestD = d;
+      const vx = pos.x - origin.x;
+      const vy = pos.y + 0.8 - origin.y; // aim at mid-body, not the tire line
+      const vz = pos.z - origin.z;
+      const t = Math.max(0, vx * dir.x + vy * dir.y + vz * dir.z);
+      const d = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - t * t));
+      const score = d + t * 0.004; // ~2.6 cm per m of depth at the crossing
+      if (d < radius && score < bestScore) {
+        bestScore = score;
         best = car;
       }
     }

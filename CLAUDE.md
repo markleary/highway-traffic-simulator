@@ -174,7 +174,7 @@ test/smoke.js          runs the sim headless under several parameter regimes
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
   Both project a "rubbernecking" zone ~200 m upstream that caps passing cars'
   desired speed, strongest in adjacent lanes (see `effectiveV0`). Click a car
-  on the map to crash it (`renderer.onRoadClick` → `sim.carNear` →
+  on the map to crash it (`renderer.onRoadClick` → `sim.carNearRay` →
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
@@ -217,9 +217,12 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Hovering a car shows a nameplate readout — kind + id, current speed with
   desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
   labels). Same pick path as click-to-crash but re-run every frame from the
-  resting pointer position (`pointerGround` → `carNear(pt, 12, true)`, the
+  resting pointer position (`pointerRay` → `carNearRay(ray, 9, true)`, the
   `any` flag adding ramp/shoulder/incident cars), so the label tracks traffic
-  flowing under the cursor; the chase speedometer caption also shows the
+  flowing under the cursor. Picking is point-to-ray in 3D — a ground-plane
+  hit point misses cars on the eight's bridge, and at its crossing both
+  levels share x/z; a small depth penalty makes the upper (visible) car win
+  when the ray threads both. The chase speedometer caption also shows the
   chased car's desired speed.
 - Vehicle kinds: `car.kind` is 'car', 'truck', or 'acc' (shares set by the
   Trucks and Adaptive-cruise knobs at spawn/reset). Trucks are 16.5 m, ~20%

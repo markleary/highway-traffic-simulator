@@ -16,9 +16,10 @@ charts.onHoverS = (s) => renderer.setRoadCursor(s);
 charts.onPickS = (s) => renderer.focusOnS(s);
 // re-fit the camera now that both side panels exist and can be measured
 renderer.setDefaultView();
-// Click a car (or the road right next to one) to crash it.
-renderer.onRoadClick = (point) => {
-  const car = sim.carNear(point);
+// Click a car (or the road right next to one) to crash it. Picking is ray-
+// based so cars on the figure eight's bridge deck pick correctly.
+renderer.onRoadClick = (ray) => {
+  const car = sim.carNearRay(ray);
   if (car) sim.triggerAccident(car);
 };
 
@@ -59,8 +60,8 @@ function frame(now) {
   speedo.update(renderer.chaseCar);
   // hover readout: same pick path as click-to-crash, re-run every frame so
   // the nameplate follows whichever car is under the pointer right now
-  const hoverPt = renderer.pointerGround();
-  renderer.setHoverCar(hoverPt && sim.carNear(hoverPt, 12, true));
+  const hoverRay = renderer.pointerRay();
+  renderer.setHoverCar(hoverRay && sim.carNearRay(hoverRay, 9, true));
   renderer.setRain(sim.rainNow || 0);
   renderer.update(sim.cars);
   renderer.render(dt);
