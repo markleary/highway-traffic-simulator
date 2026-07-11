@@ -682,9 +682,9 @@ export class SceneRenderer {
     this.sedanCabin = new THREE.InstancedMesh(loft(SEDAN_CABIN), cabinMat(), MAX_CARS);
     this.hatch = new THREE.InstancedMesh(loft(HATCH_BODY), mat(), MAX_CARS);
     this.hatchCabin = new THREE.InstancedMesh(loft(HATCH_CABIN), cabinMat(), MAX_CARS);
-    // one four-wheel set serves every ~4.5 m body (sedan, hatch, ACC wedge).
-    // Track width keeps the outer faces proud of the widest shell (hw 0.95):
-    // dead flush and the coplanar faces z-fight — flickering rear wheels.
+    // one four-wheel set serves the sedans and hatchbacks. Track width keeps
+    // the outer faces proud of the widest shell (hw 0.95): dead flush and
+    // the coplanar faces z-fight — flickering rear wheels.
     this.wheels = new THREE.InstancedMesh(
       wheelsGeo([[0.84, 1.4], [-0.84, 1.4], [0.84, -1.4], [-0.84, -1.4]], 0.34, 0.26),
       wheelMat,
@@ -714,6 +714,21 @@ export class SceneRenderer {
     this.cyberTrim = new THREE.InstancedMesh(
       cyberTrimGeo(),
       new THREE.MeshStandardMaterial({ color: 0x33383e, roughness: 0.85 }),
+      MAX_CARS
+    );
+    // its own wheel set, wider and taller than the cars': the wheels stand
+    // fully exposed inside the polygonal arch flares instead of tucking
+    // under the shell
+    this.cyberWheels = new THREE.InstancedMesh(
+      wheelsGeo([[0.98, 1.4], [-0.98, 1.4], [0.98, -1.4], [-0.98, -1.4]], 0.38, 0.28),
+      wheelMat,
+      MAX_CARS
+    );
+    // the signature always-on light bar, a thin unlit strip across the top
+    // of the fascia (headlights aren't simulated; this is pure identity)
+    this.cyberBar = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1.86, 0.05, 0.05).translate(0, 0.96, 2.3),
+      new THREE.MeshBasicMaterial({ color: 0xf2ead8 }),
       MAX_CARS
     );
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
@@ -767,7 +782,8 @@ export class SceneRenderer {
     );
     this._meshes = [
       this.sedan, this.sedanCabin, this.hatch, this.hatchCabin, this.wheels,
-      this.trailer, this.cab, this.truckWheels, this.cyber, this.cyberTrim,
+      this.trailer, this.cab, this.truckWheels,
+      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberBar,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambWheels,
       this.strobes, this.brakeLights, this.blinkers,
     ];
@@ -804,7 +820,7 @@ export class SceneRenderer {
     let ti = 0; // next free truck instance
     let ai = 0; // next free ACC-car instance
     let mi = 0; // next free ambulance instance
-    let wi = 0; // next free car-family wheel-set instance (sedans + hatches + ACC)
+    let wi = 0; // next free car wheel-set instance (sedans + hatches)
     let si = 0; // next free strobe instance
     let li = 0; // next free brake-light instance
     let ki = 0; // next free blinker instance
@@ -861,9 +877,10 @@ export class SceneRenderer {
       } else if (acc) {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberBar.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
-        if (wi < MAX_CARS) this.wheels.setMatrixAt(wi++, this._dummy.matrix);
       } else {
         const body = hatch ? this.hatch : this.sedan;
         const cabin = hatch ? this.hatchCabin : this.sedanCabin;
@@ -904,6 +921,8 @@ export class SceneRenderer {
     this.truckWheels.count = ti;
     this.cyber.count = ai;
     this.cyberTrim.count = ai;
+    this.cyberWheels.count = ai;
+    this.cyberBar.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
     this.ambGlass.count = mi;
@@ -1109,32 +1128,32 @@ export class SceneRenderer {
   }
 }
 
-// ACC cars: a low-poly angular pickup wedge — one unbroken line from the
-// nose up to a roof peak, then straight down to the tail. Same 4.6 m
-// footprint as a regular car (+z = front, matching the box geometries).
-// The nose end is deliberately asymmetric to the tail: the fascia rakes
-// back under itself, its top edge is narrower than the fenders so the
-// front corners bevel in plan view, and a crease runs where the fenders
-// peak — without them the wedge read the same driven either way.
+// ACC cars: a low-poly Cybertruck-style wedge. The hood is ONE flat plane,
+// full width, running unbroken from the fascia's top edge to the roof peak
+// (an earlier corner-bevel attempt narrowed that edge and dented the sides).
+// From the front it reads: wide rectangular stance, the light bar's mount
+// line up top, a large blank stainless face below it — raked back toward the
+// bumper, no grille — with the lower corners clipped where the wheel-arch
+// flares (trim mesh) wrap. A subtle horizontal crease runs along each side,
+// like the real truck's. Same 4.6 m footprint as a regular car (+z = front).
 // Non-indexed triangles so computeVertexNormals yields the flat facets.
 function cybertruckGeo() {
-  const A = (s) => [s * 0.94, 0.35, 2.12]; // fascia bottom, raked back
-  const N = (s) => [s * 0.8, 0.98, 2.3];   // fascia top edge (light-bar line)
-  const W = (s) => [s * 1.0, 0.94, 1.55];  // fender peak: full width starts here
-  const S = (s) => [s * 1.0, 0.35, 1.3];   // rocker point under the fender peak
+  const N = (s) => [s * 0.98, 0.98, 2.3];  // fascia top edge (light-bar line)
+  const C = (s) => [s * 0.98, 0.62, 2.22]; // where the lower-corner clip starts
+  const A = (s) => [s * 0.8, 0.35, 2.16];  // fascia bottom, narrowed by the clips
+  const S = (s) => [s * 1.0, 0.35, 1.9];   // side bottom, behind the clip
   const P = (s) => [s * 0.8, 1.62, -0.25]; // roof peak (sides taper inward)
   const T = (s) => [s * 0.9, 1.18, -2.3];  // tail top
   const B = (s) => [s * 1.0, 0.35, -2.3];  // tail bottom
   const tris = [
-    [A(-1), A(1), N(1)], [A(-1), N(1), N(-1)], // raked nose fascia
-    [N(-1), N(1), W(1)], [N(-1), W(1), W(-1)], // hood to the fender crease
-    [W(-1), W(1), P(1)], [W(-1), P(1), P(-1)], // hood + windshield plane
+    // fascia: one blank six-cornered face, fanned from N(-1)
+    [N(-1), N(1), C(1)], [N(-1), C(1), A(1)], [N(-1), A(1), A(-1)], [N(-1), A(-1), C(-1)],
+    [N(-1), N(1), P(1)], [N(-1), P(1), P(-1)], // the flat hood, one plane to the peak
     [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)], // bed cover
     [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)], // tail face
-    [N(1), A(1), S(1)], [N(1), S(1), W(1)], // right front corner bevel
-    [A(-1), N(-1), S(-1)], [N(-1), W(-1), S(-1)], // left front corner bevel
-    [S(1), B(1), T(1)], [S(1), T(1), P(1)], [S(1), P(1), W(1)], // right side
-    [S(-1), T(-1), B(-1)], [S(-1), P(-1), T(-1)], [S(-1), W(-1), P(-1)], // left side
+    [C(1), A(1), S(1)], [C(-1), S(-1), A(-1)], // lower-corner clip planes
+    [S(1), B(1), T(1)], [S(1), T(1), P(1)], [S(1), P(1), N(1)], [S(1), N(1), C(1)], // right side
+    [S(-1), T(-1), B(-1)], [S(-1), P(-1), T(-1)], [S(-1), N(-1), P(-1)], [S(-1), C(-1), N(-1)], // left side
     [A(1), A(-1), S(-1)], [A(1), S(-1), S(1)], // underside, nose section
     [S(1), S(-1), B(-1)], [S(1), B(-1), B(1)], // underside, main run
   ];
@@ -1148,13 +1167,17 @@ function cybertruckGeo() {
 // same matrix as the body (like the wheel sets): a heavy vertically-thin
 // front bumper with clipped corners tucked under the raked fascia, a plain
 // rear bumper (the rear blinker strips sit proud of its outer ends), rocker
-// cladding between the wheels, and a slatted tonneau cover over the bed.
+// cladding, a slatted tonneau cover over the bed, and the truck's signature
+// polygonal wheel-arch flares — three-piece eyebrows proud of the body that
+// frame the fully-exposed wheels (the ACC wheel set rides wider than the
+// shell for exactly this reason) and run into the bumpers and rocker so the
+// lower trim reads as one continuous band.
 function cyberTrimGeo() {
   const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
   const parts = [
-    new THREE.BoxGeometry(1.5, 0.16, 0.24).translate(0, 0.27, 2.22), // front bumper
-    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(0.7).translate(0.84, 0.27, 2.05),
-    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(-0.7).translate(-0.84, 0.27, 2.05),
+    new THREE.BoxGeometry(1.96, 0.16, 0.22).translate(0, 0.27, 2.2), // front bumper
+    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(0.7).translate(0.9, 0.27, 2.06),
+    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(-0.7).translate(-0.9, 0.27, 2.06),
     new THREE.BoxGeometry(1.7, 0.16, 0.14).translate(0, 0.27, -2.26), // rear bumper
     new THREE.BoxGeometry(2.02, 0.15, 2.1).translate(0, 0.3, 0), // rocker cladding
     // tonneau: a recessed panel lying on the bed plane, ribbed with slats
@@ -1166,6 +1189,21 @@ function cyberTrimGeo() {
         .rotateX(-slope)
         .translate(0, 1.62 - 0.44 * f + 0.03, -0.25 - 2.05 * f)
     );
+  }
+  // polygonal arch flares: a flat brow + two ~50° shoulders over each wheel,
+  // both sides (axles at z ±1.4, wheel r 0.38 → ~0.15 m of visible gap)
+  for (const zc of [1.4, -1.4]) {
+    for (const side of [1, -1]) {
+      parts.push(
+        new THREE.BoxGeometry(0.18, 0.13, 0.66).translate(side * 1.04, 0.93, zc),
+        new THREE.BoxGeometry(0.18, 0.13, 0.68)
+          .rotateX(0.88)
+          .translate(side * 1.04, 0.62, zc + 0.565),
+        new THREE.BoxGeometry(0.18, 0.13, 0.68)
+          .rotateX(-0.88)
+          .translate(side * 1.04, 0.62, zc - 0.565)
+      );
+    }
   }
   return mergeGeometries(parts);
 }
