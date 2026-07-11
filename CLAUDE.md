@@ -113,17 +113,28 @@ test/smoke.js          runs the sim headless under several parameter regimes
   drift toward lane 0 when the car has chosen an upcoming exit).
 - `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape- and
   scale-dependent, ~1050–4000 m). All lanes share `s` — the model treats the loop
-  as a straight road that wraps; curvature is purely cosmetic.
+  as a straight road that wraps; curvature is purely cosmetic, and so is
+  elevation: `s` is PLAN-VIEW arc length, a shape's optional `elev(s)` profile
+  only feeds `pointAt`'s y / `elevAt` for rendering (the eight's bridge adds
+  no driven length).
 - The loop's centerline is a closed path of straight + circular-arc segments
-  (`road.js` SHAPES: circle, speedway, beltway, gp), so arc length, tangents and
-  lateral offsets are exact. Every closed shape must turn a net −2π (left-handed);
-  `setShape()` throws if a shape doesn't close. `params.roadShape` and
-  `params.roadScale` (1–3×; builders scale radii and straights, while ramp
-  anchors stay a fixed distance from their segment ends) are applied by
-  `Simulation.reset()` (a geometry change requires a reset — `s` doesn't map
-  across shapes or sizes); the panel then calls `renderer.onRoadChanged()`.
-  Cameras frame the road from `bounds()`, never from hardcoded positions; fog,
-  zoom range, and the far clip plane follow the fitted height in `buildRoad()`.
+  (`road.js` SHAPES: circle, speedway, beltway, gp, eight), so arc length,
+  tangents and lateral offsets are exact. A shape must return to its start
+  pose with a whole number of net turns — −1 for the simple loops, 0 for the
+  figure eight (its lobes turn opposite ways and cancel); `setShape()` throws
+  if a shape doesn't close. The eight is two lobes joined by their internal
+  tangents; the second straight bridges over the first on a raised-cosine
+  hump (6.5 m grade separation, at-grade at the ramp anchors), the renderer
+  hangs concrete skirts and piers under elevated spans (`buildBridgeInto`),
+  pitches car bodies with the grade (and slope-corrects light mounts), and
+  the smoke test's self-overlap guard exempts pairs >3 m apart vertically.
+  `params.roadShape` and `params.roadScale` (1–3×; builders scale radii and
+  straights, while ramp anchors stay a fixed physical distance from their
+  segment ends) are applied by `Simulation.reset()` (a geometry change
+  requires a reset — `s` doesn't map across shapes or sizes); the panel then
+  calls `renderer.onRoadChanged()`. Cameras frame the road from `bounds()`,
+  never from hardcoded positions; fog, zoom range, and the far clip plane
+  follow the fitted height in `buildRoad()`.
 - Lane 0 = **outermost** lane (ramps attach to it); higher index = further inside.
   Outward = driver's right = `cross(forward, up)`: positive lateral offsets are
   outside the centerline, `laneOffset()` is negative. The outer pavement edge is
@@ -236,11 +247,5 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
-- Figure-eight road shape: needs an overpass, but elevation can be cosmetic
-  exactly like curvature is (the model still drives a straight wrapped line) —
-  give pointAt a y component from a per-segment elevation profile and render
-  the crossing as a bridge; no intersection logic needed since it's
-  grade-separated. The self-intersection guard in the smoke test would need a
-  crossing-aware exemption.
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept
   to Mark — though with 2–4 meterable on-ramps it now has a stage)

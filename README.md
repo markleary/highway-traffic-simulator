@@ -60,11 +60,12 @@ branch → `main` / root**. That's it — there is nothing to build.
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
-  - **Road** — loop shape (circle, speedway oval, beltway square, or a pinched
-    grand-prix circuit), road scale (1–3×: longer stretches between interchanges
-    give jam waves room to develop and travel), number of interchanges (2–4 —
-    each shape fits what its geometry allows; bigger roads unlock more), and
-    number of lanes (2–4)
+  - **Road** — loop shape (circle, speedway oval, beltway square, a pinched
+    grand-prix circuit, or a **figure eight** whose crossing is a real
+    grade-separated overpass — one straight bridges over the other), road
+    scale (1–3×: longer stretches between interchanges give jam waves room to
+    develop and travel), number of interchanges (2–4 — each shape fits what
+    its geometry allows; bigger roads unlock more), and number of lanes (2–4)
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
     keep right), percentage of cars on **adaptive cruise control** (the angular
     wedge-shaped ones — they never brake harder than physics requires, so they
@@ -125,5 +126,4 @@ with the same live rain level that drives the physics.
 ## Roadmap
 
 - Mobile view optimizations (e.g. no space-time diagram by default on phones)
-- Figure-eight road shape with an overpass
 - Ramp metering

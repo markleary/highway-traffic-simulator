@@ -120,6 +120,39 @@ export const SHAPES = {
       };
     },
   },
+  eight: {
+    label: 'Figure eight',
+    build(k) {
+      // Two lobes joined by their internal tangent lines: wrap the right
+      // lobe clockwise, cross, wrap the left lobe counterclockwise, cross
+      // back. Net turn is 0 — the lobes cancel — which is why the closure
+      // check accepts any whole number of turns. The second straight rises
+      // over the first on a raised-cosine hump: the model still drives a
+      // flat wrapped line (s stays plan-view arc length; elevation is
+      // cosmetic exactly like curvature), the renderer adds the bridge.
+      const r = 100 * k; // lobe radius
+      const c = 175 * k; // lobe center distance from the crossing
+      const beta = Math.asin(r / c); // tangent angle off the lobe axis
+      const A = 180 + (2 * beta) / DEG; // degrees swept around each lobe
+      const h = Math.sqrt(c * c - r * r); // crossing → tangent point
+      const arc = r * A * DEG;
+      const mid = 2 * arc + 3 * h; // middle of the second straight = the crossing
+      const R = Math.min(120, 0.8 * h); // bridge approach length each side
+      return {
+        ops: [Rt(r, A), S(2 * h), L(r, A), S(2 * h)],
+        elev(s) {
+          const d = Math.abs(s - mid);
+          return d < R ? 3.25 * (1 + Math.cos((Math.PI * d) / R)) : 0; // peak 6.5 m
+        },
+        // one diamond per lobe, straddling it like the corner interchanges
+        // on the other shapes; anchors sit outside the bridge approaches
+        interchanges: (len) => [
+          { off: arc + 2 * h - 15, on: 2 * arc + 2 * h + 15 }, // around the left lobe
+          { off: len - 15, on: arc + 15 }, // around the right lobe
+        ],
+      };
+    },
+  },
 };
 
 // Two-straight shapes (Speedway, Grand Prix): the base pair of interchanges
@@ -153,6 +186,14 @@ let currentScale = 0;
 let currentCount = 0;
 let segs = [];
 let extent = { halfX: 0, halfZ: 0 };
+let elevFn = null; // the shape's elevation profile (bridges); null = flat
+
+// Cosmetic elevation at arc length s. The traffic model never sees this —
+// s is plan-view arc length and the sim drives a flat wrapped line; only
+// rendering (and the smoke test's grade-separation exemption) look up y.
+export function elevAt(s) {
+  return elevFn ? elevFn(wrap(s)) : 0;
+}
 
 export function wrap(s) {
   return ((s % LOOP) + LOOP) % LOOP;
@@ -178,7 +219,8 @@ export function setShape(id, scale = 1, interchanges = 2) {
   currentScale = k;
   currentCount = n;
 
-  const { ops, interchanges: placeInterchanges } = shape.build(k);
+  const { ops, interchanges: placeInterchanges, elev } = shape.build(k);
+  elevFn = elev ?? null;
 
   // Walk the turtle: precompute each segment's entry pose, and for arcs the
   // rotation center and entry radial vector.
@@ -217,9 +259,12 @@ export function setShape(id, scale = 1, interchanges = 2) {
   LOOP = s0;
 
   // A shape that doesn't return to its start pose would tear the road at the
-  // wrap seam — fail loudly, this is a design error in the shape table.
-  const headingErr = Math.abs(phi + 2 * Math.PI);
-  if (Math.hypot(x, z) > 0.01 || headingErr > 1e-6) {
+  // wrap seam — fail loudly, this is a design error in the shape table. The
+  // net turn must be a whole number of turns: −1 for the simple loops, 0 for
+  // the figure eight (its lobes turn opposite ways and cancel).
+  const turns = phi / (2 * Math.PI);
+  const headingErr = Math.abs(turns - Math.round(turns));
+  if (Math.hypot(x, z) > 0.01 || headingErr > 1e-7) {
     throw new Error(`road shape '${id}' does not close (gap ${Math.hypot(x, z).toFixed(3)} m)`);
   }
 
@@ -293,7 +338,8 @@ function poseAt(s) {
 }
 
 // World position at arc length s, displaced sideways by `offset` meters
-// (positive = outward / driver's right, matching laneOffset()).
+// (positive = outward / driver's right, matching laneOffset()). y carries
+// the shape's cosmetic elevation (flat 0 on every shape but the eight).
 export function pointAt(s, offset = 0, target = new THREE.Vector3()) {
   const p = poseAt(s);
   let { x, z } = p;
@@ -301,7 +347,7 @@ export function pointAt(s, offset = 0, target = new THREE.Vector3()) {
     x += -Math.sin(p.phi) * offset;
     z += Math.cos(p.phi) * offset;
   }
-  return target.set(x, 0, z);
+  return target.set(x, elevFn ? elevFn(wrap(s)) : 0, z);
 }
 
 export function forwardAt(s, target = new THREE.Vector3()) {

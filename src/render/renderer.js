@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap } from '../sim/road.js';
+import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../sim/road.js';
 import { params, KMH, MPH } from '../params.js';
 
 const MAX_CARS = 1500;
@@ -134,6 +134,8 @@ export class SceneRenderer {
     this._pos = new THREE.Vector3();
     this._tan = new THREE.Vector3();
     this._dummy = new THREE.Object3D();
+    this._dummy.rotation.order = 'YXZ'; // yaw first, then pitch about the car's own right axis
+    this._slope = 0; // current car's road grade (bridge approaches), set per car in update
     this._bodyColor = new THREE.Color();
     this._cabinColor = new THREE.Color();
     this._raycaster = new THREE.Raycaster();
@@ -241,7 +243,11 @@ export class SceneRenderer {
     this.hoverTip.visible = !!car;
     if (!car) return;
     this.carPose(car, this._pos, this._tan);
-    this.hoverTip.position.set(this._pos.x, car.kind === 'truck' ? 4.2 : 2.6, this._pos.z);
+    this.hoverTip.position.set(
+      this._pos.x,
+      this._pos.y + (car.kind === 'truck' ? 4.2 : 2.6),
+      this._pos.z
+    );
     const imp = params.units === 'imperial';
     const unit = imp ? MPH : KMH;
     const want = params.desiredSpeed * car.v0Factor;
@@ -289,7 +295,7 @@ export class SceneRenderer {
       const SEG = Math.ceil(LOOP / 2);
       for (let i = 0; i <= SEG; i++) {
         const p = pointAt(((i % SEG) / SEG) * LOOP, off);
-        pts.push(new THREE.Vector3(p.x, 0.04, p.z));
+        pts.push(new THREE.Vector3(p.x, p.y + 0.04, p.z));
       }
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
@@ -298,6 +304,8 @@ export class SceneRenderer {
       line.computeLineDistances();
       g.add(line);
     }
+
+    this.buildBridgeInto(g); // concrete under any elevated span (figure eight)
 
     this.roadGroup = g;
     this.scene.add(g);
@@ -313,6 +321,53 @@ export class SceneRenderer {
     this.camera.updateProjectionMatrix();
     // keep the dome comfortably inside the far plane at any road scale
     this.skyDome.scale.setScalar((this.camera.far * 0.75) / SKY_R);
+  }
+
+  // Bridge dressing wherever the shape's elevation profile leaves the
+  // ground (the figure eight's crossing): concrete skirts hang from both
+  // pavement edges — running to the ground on the low approaches, so they
+  // read as embankments, and hanging 1 m at the span, so the road below
+  // passes under an open deck — plus two piers straddling the crossing.
+  // Purely cosmetic, like the elevation itself; flat shapes build nothing.
+  buildBridgeInto(g) {
+    const spans = [];
+    let start = null;
+    for (let s = 0; s <= LOOP; s += 2) {
+      const up = s < LOOP && elevAt(s) > 0.05;
+      if (up && start === null) start = s;
+      if (!up && start !== null) {
+        spans.push([start, s]);
+        start = null;
+      }
+    }
+    if (!spans.length) return;
+    const outer = ROAD.laneWidth / 2 + ROAD.shoulderWidth;
+    const inner = ROAD.laneWidth / 2 - params.lanes * ROAD.laneWidth - 1.0;
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x8f9190,
+      roughness: 0.95,
+      side: THREE.DoubleSide,
+    });
+    const p = new THREE.Vector3();
+    const t = new THREE.Vector3();
+    for (const [s0, s1] of spans) {
+      g.add(new THREE.Mesh(bridgeSkirt(s0, s1, outer), mat));
+      g.add(new THREE.Mesh(bridgeSkirt(s0, s1, inner), mat));
+      const mid = (s0 + s1) / 2;
+      for (const ds of [-28, 28]) {
+        pointAt(mid + ds, (outer + inner) / 2, p);
+        if (p.y < 3) continue; // hump too low here for a pier to read
+        forwardAt(mid + ds, t);
+        const hgt = p.y - 0.6; // stop under the deck slab
+        const pier = new THREE.Mesh(
+          new THREE.BoxGeometry(outer - inner - 6, hgt, 1.4),
+          mat
+        );
+        pier.position.set(p.x, hgt / 2 - 0.15, p.z);
+        pier.rotation.y = Math.atan2(t.x, t.z); // broad side across the deck
+        g.add(pier);
+      }
+    }
   }
 
   // Weather mood, driven every frame from sim.rainNow via setRain: darker
@@ -657,7 +712,7 @@ export class SceneRenderer {
     const d = new THREE.Object3D();
     for (let i = 0; i < spots.length; i++) {
       pointAt(wrap(spots[i][0] + LOOP), spots[i][1], pos);
-      d.position.set(pos.x, 0, pos.z);
+      d.position.set(pos.x, pos.y, pos.z); // pos.y: cones ride any bridge
       d.updateMatrix();
       cones.setMatrixAt(i, d.matrix);
     }
@@ -805,11 +860,17 @@ export class SceneRenderer {
   }
 
   // Place one light: the car's local-frame offset rotated into the world.
+  // The slope term keeps mounts on the body when the car sits on a grade
+  // (a fore/aft offset oz gains slope·oz of height on a pitched car).
   placeLight(mesh, idx, rotY, ox, oy, oz, sx, sy, sz) {
     const d = this._lightDummy;
     const cos = Math.cos(rotY);
     const sin = Math.sin(rotY);
-    d.position.set(this._pos.x + ox * cos + oz * sin, oy, this._pos.z - ox * sin + oz * cos);
+    d.position.set(
+      this._pos.x + ox * cos + oz * sin,
+      this._pos.y + oy + this._slope * oz,
+      this._pos.z - ox * sin + oz * cos
+    );
     d.rotation.set(0, rotY, 0);
     d.scale.set(sx, sy, sz);
     d.updateMatrix();
@@ -838,8 +899,12 @@ export class SceneRenderer {
       this.carPose(car, this._pos, this._tan);
       let rotY = Math.atan2(this._tan.x, this._tan.z);
       if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
-      this._dummy.position.set(this._pos.x, 0, this._pos.z);
-      this._dummy.rotation.set(0, rotY, 0);
+      // grade: pitch the body up/down the bridge approaches (rotation order
+      // is YXZ so pitch turns about the yawed, car-local right axis); the
+      // slope also corrects the light mounts' height in placeLight
+      this._slope = car.ramp ? 0 : (elevAt(car.s + 3) - elevAt(car.s - 3)) / 6;
+      this._dummy.position.set(this._pos.x, this._pos.y, this._pos.z);
+      this._dummy.rotation.set(this._slope === 0 ? 0 : -Math.atan(this._slope), rotY, 0);
       this._dummy.updateMatrix();
 
       if (car.incident) {
@@ -1074,7 +1139,7 @@ export class SceneRenderer {
     const inner = ROAD.laneWidth / 2 - params.lanes * ROAD.laneWidth - 1.0; // incl. apron
     pointAt(s, (outer + inner) / 2, this._pos);
     forwardAt(s, this._tan);
-    this.roadCursor.position.set(this._pos.x, 0.06, this._pos.z);
+    this.roadCursor.position.set(this._pos.x, this._pos.y + 0.06, this._pos.z);
     this.roadCursor.rotation.y = Math.atan2(this._tan.x, this._tan.z);
     this.roadCursor.scale.set(outer - inner, 1, 1.4);
     this.roadCursor.visible = true;
@@ -1132,9 +1197,9 @@ export class SceneRenderer {
     this.stopChase();
     const mid = -((params.lanes - 1) * ROAD.laneWidth) / 2; // between the edge lines
     pointAt(s, mid, this._pos);
-    this.camera.position.set(this._pos.x, 170, this._pos.z + 0.1);
-    this.camera.lookAt(this._pos.x, 0, this._pos.z);
-    this.controls.target.set(this._pos.x, 0, this._pos.z);
+    this.camera.position.set(this._pos.x, this._pos.y + 170, this._pos.z + 0.1);
+    this.camera.lookAt(this._pos.x, this._pos.y, this._pos.z);
+    this.controls.target.set(this._pos.x, this._pos.y, this._pos.z);
   }
 
   onResize() {
@@ -1405,8 +1470,9 @@ function cloudGeo() {
   ]);
 }
 
-// Flat triangle strip swept around the whole loop between two lateral offsets
-// (positive = outward of lane 0's centerline). Used for pavement and the
+// Triangle strip swept around the whole loop between two lateral offsets
+// (positive = outward of lane 0's centerline), riding the shape's elevation
+// (pointAt's y) with `y` added as a small lift. Used for pavement and the
 // solid edge lines; same vertex layout and winding as rampRibbon below.
 function loopStrip(offOut, offIn, y) {
   const N = Math.ceil(LOOP / 2); // ~2 m samples: chord error is sub-mm at our radii
@@ -1421,10 +1487,10 @@ function loopStrip(offOut, offIn, y) {
     pointAt(s, offIn, b);
     const o = i * 6;
     positions[o] = a.x;
-    positions[o + 1] = y;
+    positions[o + 1] = a.y + y;
     positions[o + 2] = a.z;
     positions[o + 3] = b.x;
-    positions[o + 4] = y;
+    positions[o + 4] = b.y + y;
     positions[o + 5] = b.z;
     normals.set([0, 1, 0, 0, 1, 0], o);
     if (i < N) {
@@ -1436,6 +1502,35 @@ function loopStrip(offOut, offIn, y) {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geo.setIndex(indices);
+  return geo;
+}
+
+// Vertical concrete ribbon hanging from one pavement edge over [s0, s1]:
+// top rides the deck, bottom is the deck minus 1 m clamped to the ground —
+// embankment on the approaches, open span where the bridge is high.
+function bridgeSkirt(s0, s1, off) {
+  const n = Math.max(2, Math.ceil((s1 - s0) / 3));
+  const positions = new Float32Array((n + 1) * 2 * 3);
+  const indices = [];
+  const p = new THREE.Vector3();
+  for (let i = 0; i <= n; i++) {
+    pointAt(s0 + ((s1 - s0) * i) / n, off, p);
+    const o = i * 6;
+    positions[o] = p.x;
+    positions[o + 1] = p.y + 0.01;
+    positions[o + 2] = p.z;
+    positions[o + 3] = p.x;
+    positions[o + 4] = Math.max(-0.2, p.y - 1.0); // -0.2: tuck under the ground plane
+    positions[o + 5] = p.z;
+    if (i < n) {
+      const v = i * 2;
+      indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals(); // DoubleSide material forgives the winding
   return geo;
 }
 
