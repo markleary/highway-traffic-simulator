@@ -67,7 +67,18 @@ src/sim/road.js        loop shapes (SHAPES catalog) + ramp geometry, s-coordinat
                        helpers; LOOP/RAMPS are live bindings updated by setShape()
 src/sim/car.js         Car state record
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic
-src/render/renderer.js three.js scene; cars are two InstancedMeshes (body + cabin)
+src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun disc
+                       (camera-tied), cloud carousel, unlit pre-hazed hill ring,
+                       and trees/bushes/rocks scattered by rejection sampling
+                       against a road+ramp keep-out corridor (re-run on shape
+                       changes; `params.scenery` hides the dressing live).
+                       applyWeather lerps the whole palette — sky uniforms, fog,
+                       lights, clouds, hills — from sim.rainNow. Vehicles are
+                       per-kind InstancedMeshes: lofted low-poly shells (loft()
+                       stitches {z, hw, y0, y1} cross-sections; sedan vs
+                       hatchback picked by a car.id bit) + matte greenhouse +
+                       shared dark wheel sets; trucks are a lofted conventional
+                       cab + box trailer + five axles
 src/ui/panel.js        lil-gui control panel
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        + fundamental diagram (hand-rolled canvas 2D; heatmap columns
@@ -142,7 +153,8 @@ test/smoke.js          runs the sim headless under several parameter regimes
   change that passed the incentive test but was blocked by the gap/safety
   gates (`signalWant`, expires ~1 s unless re-affirmed). Hazards (incident
   amber body-blink) take precedence over both. Rendered as two extra
-  InstancedMeshes with per-kind mount points (`LIGHT_DIMS`).
+  InstancedMeshes with per-kind mount points (`LIGHT_DIMS`; the 'car' entry is
+  per body style, indexed by the same car.id bit that picks the loft).
 - Incidents (`sim.incidents`): breakdowns pull over to the shoulder, park with
   hazards, then re-merge (with growing desperation, forced after a timeout);
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
@@ -211,8 +223,6 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Improve the vehicle visual models (still low-poly: wheels, beveled bodies,
-  maybe a couple of car body varieties).
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
 - Figure-eight road shape: needs an overpass, but elevation can be cosmetic
