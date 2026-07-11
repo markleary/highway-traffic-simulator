@@ -47,7 +47,14 @@ const LIGHT_DIMS = {
     { rear: -2.3, front: 2.3, halfW: 0.58, y: 0.6, brakeW: 1.15 }, // sedan
     { rear: -2.19, front: 2.19, halfW: 0.62, y: 0.64, brakeW: 1.3 }, // hatchback
   ],
-  acc: { rear: -2.31, front: 2.31, halfW: 0.78, y: 1.0, brakeW: 1.7 }, // full-width light bar
+  // acc overrides the shared mount fields: the brake light is a thin
+  // full-width strip along the top of the tailgate, and the blinkers are
+  // thin low strips — just above the front bumper, riding the rear one
+  acc: {
+    rear: -2.33, front: 2.2, halfW: 0.62, y: 1.0,
+    brakeY: 1.12, brakeW: 1.72, brakeH: 0.07,
+    blinkYF: 0.48, blinkYR: 0.3, blinkW: 0.5, blinkH: 0.07,
+  },
   truck: { rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95, brakeW: 2.1 }, // front = hood flanks
   ambulance: { rear: -2.69, front: 2.69, halfW: 0.85, y: 1.0, brakeW: 1.9 },
 };
@@ -694,10 +701,17 @@ export class SceneRenderer {
       wheelMat,
       MAX_TRUCKS
     );
-    // ACC cars: an angular stainless wedge — unmistakable from above
+    // ACC cars: an angular stainless wedge — unmistakable from above — plus
+    // constant dark trim (bumpers, rocker cladding, slatted tonneau) that
+    // rides the same matrices, so the paint tints but the composite doesn't
     this.cyber = new THREE.InstancedMesh(
       cybertruckGeo(),
       new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide }),
+      MAX_CARS
+    );
+    this.cyberTrim = new THREE.InstancedMesh(
+      cyberTrimGeo(),
+      new THREE.MeshStandardMaterial({ color: 0x33383e, roughness: 0.85 }),
       MAX_CARS
     );
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
@@ -751,7 +765,7 @@ export class SceneRenderer {
     );
     this._meshes = [
       this.sedan, this.sedanCabin, this.hatch, this.hatchCabin, this.wheels,
-      this.trailer, this.cab, this.truckWheels, this.cyber,
+      this.trailer, this.cab, this.truckWheels, this.cyber, this.cyberTrim,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambWheels,
       this.strobes, this.brakeLights, this.blinkers,
     ];
@@ -844,6 +858,7 @@ export class SceneRenderer {
         }
       } else if (acc) {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
         if (wi < MAX_CARS) this.wheels.setMatrixAt(wi++, this._dummy.matrix);
@@ -862,12 +877,18 @@ export class SceneRenderer {
       if (!car.incident) {
         const L = car.kind === 'car' ? LIGHT_DIMS.car[car.id & 1] : LIGHT_DIMS[car.kind];
         if (car.brakeLit && li < MAX_LIGHTS) {
-          this.placeLight(this.brakeLights, li++, rotY, 0, L.y, L.rear, L.brakeW, 0.16, 0.1);
+          this.placeLight(
+            this.brakeLights, li++, rotY,
+            0, L.brakeY ?? L.y, L.rear,
+            L.brakeW, L.brakeH ?? 0.16, 0.1
+          );
         }
         if (car.signal !== 0 && blinkOn && ki + 1 < MAX_LIGHTS) {
           const sx = car.signal > 0 ? L.halfW : -L.halfW; // +x local = driver's left
-          this.placeLight(this.blinkers, ki++, rotY, sx, L.y, L.rear, 0.22, 0.2, 0.14);
-          this.placeLight(this.blinkers, ki++, rotY, sx, L.y, L.front, 0.22, 0.2, 0.14);
+          const bw = L.blinkW ?? 0.22;
+          const bh = L.blinkH ?? 0.2;
+          this.placeLight(this.blinkers, ki++, rotY, sx, L.blinkYR ?? L.y, L.rear, bw, bh, 0.14);
+          this.placeLight(this.blinkers, ki++, rotY, sx, L.blinkYF ?? L.y, L.front, bw, bh, 0.14);
         }
       }
     }
@@ -880,6 +901,7 @@ export class SceneRenderer {
     this.cab.count = ti;
     this.truckWheels.count = ti;
     this.cyber.count = ai;
+    this.cyberTrim.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
     this.ambGlass.count = mi;
@@ -1088,30 +1110,62 @@ export class SceneRenderer {
 // ACC cars: a low-poly angular pickup wedge — one unbroken line from the
 // nose up to a roof peak, then straight down to the tail. Same 4.6 m
 // footprint as a regular car (+z = front, matching the box geometries).
+// The nose end is deliberately asymmetric to the tail: the fascia rakes
+// back under itself, its top edge is narrower than the fenders so the
+// front corners bevel in plan view, and a crease runs where the fenders
+// peak — without them the wedge read the same driven either way.
 // Non-indexed triangles so computeVertexNormals yields the flat facets.
 function cybertruckGeo() {
-  const y0 = 0.35; // ground clearance
-  const zF = 2.3;  // nose
-  const zT = -2.3; // tail
-  const zP = -0.25; // roof peak, just behind the midpoint
-  const A = (s) => [s * 1.0, y0, zF];    // nose, beltline width
-  const B = (s) => [s * 1.0, y0, zT];    // tail bottom
-  const F = (s) => [s * 0.95, 0.98, zF]; // hood leading edge
-  const P = (s) => [s * 0.8, 1.62, zP];  // roof peak (sides taper inward)
-  const T = (s) => [s * 0.9, 1.18, zT];  // tail top
+  const A = (s) => [s * 0.94, 0.35, 2.12]; // fascia bottom, raked back
+  const N = (s) => [s * 0.8, 0.98, 2.3];   // fascia top edge (light-bar line)
+  const W = (s) => [s * 1.0, 0.94, 1.55];  // fender peak: full width starts here
+  const S = (s) => [s * 1.0, 0.35, 1.3];   // rocker point under the fender peak
+  const P = (s) => [s * 0.8, 1.62, -0.25]; // roof peak (sides taper inward)
+  const T = (s) => [s * 0.9, 1.18, -2.3];  // tail top
+  const B = (s) => [s * 1.0, 0.35, -2.3];  // tail bottom
   const tris = [
-    [F(-1), F(1), P(1)], [F(-1), P(1), P(-1)], // hood + windshield plane
+    [A(-1), A(1), N(1)], [A(-1), N(1), N(-1)], // raked nose fascia
+    [N(-1), N(1), W(1)], [N(-1), W(1), W(-1)], // hood to the fender crease
+    [W(-1), W(1), P(1)], [W(-1), P(1), P(-1)], // hood + windshield plane
     [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)], // bed cover
-    [A(-1), A(1), F(1)], [A(-1), F(1), F(-1)], // nose face
     [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)], // tail face
-    [A(1), B(1), T(1)], [A(1), T(1), P(1)], [A(1), P(1), F(1)], // right side
-    [A(-1), T(-1), B(-1)], [A(-1), P(-1), T(-1)], [A(-1), F(-1), P(-1)], // left side
-    [A(1), A(-1), B(-1)], [A(1), B(-1), B(1)], // underside
+    [N(1), A(1), S(1)], [N(1), S(1), W(1)], // right front corner bevel
+    [A(-1), N(-1), S(-1)], [N(-1), W(-1), S(-1)], // left front corner bevel
+    [S(1), B(1), T(1)], [S(1), T(1), P(1)], [S(1), P(1), W(1)], // right side
+    [S(-1), T(-1), B(-1)], [S(-1), P(-1), T(-1)], [S(-1), W(-1), P(-1)], // left side
+    [A(1), A(-1), S(-1)], [A(1), S(-1), S(1)], // underside, nose section
+    [S(1), S(-1), B(-1)], [S(1), B(-1), B(1)], // underside, main run
   ];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
   geo.computeVertexNormals(); // DoubleSide material corrects any face parity
   return geo;
+}
+
+// Dark composite trim for the ACC wedge, one instance per truck riding the
+// same matrix as the body (like the wheel sets): a heavy vertically-thin
+// front bumper with clipped corners tucked under the raked fascia, a plain
+// rear bumper (the rear blinker strips sit proud of its outer ends), rocker
+// cladding between the wheels, and a slatted tonneau cover over the bed.
+function cyberTrimGeo() {
+  const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
+  const parts = [
+    new THREE.BoxGeometry(1.5, 0.16, 0.24).translate(0, 0.27, 2.22), // front bumper
+    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(0.7).translate(0.84, 0.27, 2.05),
+    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(-0.7).translate(-0.84, 0.27, 2.05),
+    new THREE.BoxGeometry(1.7, 0.16, 0.14).translate(0, 0.27, -2.26), // rear bumper
+    new THREE.BoxGeometry(2.02, 0.15, 2.1).translate(0, 0.3, 0), // rocker cladding
+    // tonneau: a recessed panel lying on the bed plane, ribbed with slats
+    new THREE.BoxGeometry(1.56, 0.04, 1.95).rotateX(-slope).translate(0, 1.42, -1.27),
+  ];
+  for (const f of [0.18, 0.38, 0.58, 0.78, 0.95]) {
+    parts.push(
+      new THREE.BoxGeometry(1.6, 0.05, 0.1)
+        .rotateX(-slope)
+        .translate(0, 1.62 - 0.44 * f + 0.03, -0.25 - 2.05 * f)
+    );
+  }
+  return mergeGeometries(parts);
 }
 
 // Low-poly vehicle shell: a loft of rectangular cross-sections along the

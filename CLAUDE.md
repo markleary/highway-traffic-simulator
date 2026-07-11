@@ -218,8 +218,12 @@ test/smoke.js          runs the sim headless under several parameter regimes
   they refuse to brake much harder than a constant-acceleration prediction of
   the leader actually requires, so they absorb stop-and-go waves instead of
   amplifying them (mainline only; ramp queues keep plain IDM). Rendered as an
-  angular stainless wedge. The wave-damping is regression-tested by comparing
-  stop-and-go exposure at 0% vs 100% ACC in a flood regime.
+  angular stainless wedge with dark composite trim (clipped-corner front
+  bumper under a raked fascia, rocker cladding, slatted tonneau) and strip
+  lights — thin brake bar atop the tailgate, low blinker strips — so nose
+  and tail read differently at a glance. The wave-damping is
+  regression-tested by comparing stop-and-go exposure at 0% vs 100% ACC in
+  a flood regime.
 
 ## Roadmap
 
