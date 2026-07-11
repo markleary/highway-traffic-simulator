@@ -1163,15 +1163,35 @@ function cybertruckGeo() {
   return geo;
 }
 
+// One cohesive polygonal wheel-arch flare: a hexagonal band hugging the
+// wheel (r 0.38 at the axle origin), extruded as a single solid so there
+// are no seams between brow and shoulders. Shape coords: x = along the car
+// relative to the axle, y = height relative to the axle; the extrusion
+// (0.16 deep) becomes the car's lateral thickness after the rotate.
+function archGeo() {
+  const s = new THREE.Shape();
+  s.moveTo(-0.72, -0.08); // outer boundary, up and over the wheel
+  s.lineTo(-0.33, 0.58);
+  s.lineTo(0.33, 0.58);
+  s.lineTo(0.72, -0.08);
+  s.lineTo(0.58, -0.08); // inner boundary back, ~0.1 m off the tire
+  s.lineTo(0.24, 0.46);
+  s.lineTo(-0.24, 0.46);
+  s.lineTo(-0.58, -0.08);
+  s.closePath();
+  return new THREE.ExtrudeGeometry(s, { depth: 0.16, bevelEnabled: false })
+    .rotateY(-Math.PI / 2); // shape-x → car z, extrusion depth → car x
+}
+
 // Dark composite trim for the ACC wedge, one instance per truck riding the
 // same matrix as the body (like the wheel sets): a heavy vertically-thin
 // front bumper with clipped corners tucked under the raked fascia, a plain
 // rear bumper (the rear blinker strips sit proud of its outer ends), rocker
 // cladding, a slatted tonneau cover over the bed, and the truck's signature
-// polygonal wheel-arch flares — three-piece eyebrows proud of the body that
-// frame the fully-exposed wheels (the ACC wheel set rides wider than the
-// shell for exactly this reason) and run into the bumpers and rocker so the
-// lower trim reads as one continuous band.
+// polygonal wheel-arch flares framing the fully-exposed wheels (the ACC
+// wheel set rides wider than the shell for exactly this reason). A dark
+// well plate stands behind each wheel so the opening shows tire and
+// shadow — never the body-colored side wall.
 function cyberTrimGeo() {
   const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
   const parts = [
@@ -1190,22 +1210,21 @@ function cyberTrimGeo() {
         .translate(0, 1.62 - 0.44 * f + 0.03, -0.25 - 2.05 * f)
     );
   }
-  // polygonal arch flares: a flat brow + two ~50° shoulders over each wheel,
-  // both sides (axles at z ±1.4, wheel r 0.38 → ~0.15 m of visible gap)
+  // arch flare + well plate per wheel (axles at z ±1.4, y 0.38). The flare
+  // spans x 0.97–1.13, embedding into the ±1.0 side wall and running flush
+  // with the wheel's outer face; the plate sits at ±1.04, between wall and
+  // tire, well clear of both (no coplanar pairs).
   for (const zc of [1.4, -1.4]) {
     for (const side of [1, -1]) {
       parts.push(
-        new THREE.BoxGeometry(0.18, 0.13, 0.66).translate(side * 1.04, 0.93, zc),
-        new THREE.BoxGeometry(0.18, 0.13, 0.68)
-          .rotateX(0.88)
-          .translate(side * 1.04, 0.62, zc + 0.565),
-        new THREE.BoxGeometry(0.18, 0.13, 0.68)
-          .rotateX(-0.88)
-          .translate(side * 1.04, 0.62, zc - 0.565)
+        archGeo().translate(side === 1 ? 1.13 : -0.97, 0.38, zc),
+        new THREE.BoxGeometry(0.03, 0.85, 1.2).translate(side * 1.04, 0.44, zc)
       );
     }
   }
-  return mergeGeometries(parts);
+  // ExtrudeGeometry is non-indexed while the boxes are indexed; normalize
+  // so mergeGeometries accepts the mix
+  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
 }
 
 // Low-poly vehicle shell: a loft of rectangular cross-sections along the
