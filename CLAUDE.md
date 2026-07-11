@@ -113,17 +113,28 @@ test/smoke.js          runs the sim headless under several parameter regimes
   drift toward lane 0 when the car has chosen an upcoming exit).
 - `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape- and
   scale-dependent, ~1050–4000 m). All lanes share `s` — the model treats the loop
-  as a straight road that wraps; curvature is purely cosmetic.
+  as a straight road that wraps; curvature is purely cosmetic, and so is
+  elevation: `s` is PLAN-VIEW arc length, a shape's optional `elev(s)` profile
+  only feeds `pointAt`'s y / `elevAt` for rendering (the eight's bridge adds
+  no driven length).
 - The loop's centerline is a closed path of straight + circular-arc segments
-  (`road.js` SHAPES: circle, speedway, beltway, gp), so arc length, tangents and
-  lateral offsets are exact. Every closed shape must turn a net −2π (left-handed);
-  `setShape()` throws if a shape doesn't close. `params.roadShape` and
-  `params.roadScale` (1–3×; builders scale radii and straights, while ramp
-  anchors stay a fixed distance from their segment ends) are applied by
-  `Simulation.reset()` (a geometry change requires a reset — `s` doesn't map
-  across shapes or sizes); the panel then calls `renderer.onRoadChanged()`.
-  Cameras frame the road from `bounds()`, never from hardcoded positions; fog,
-  zoom range, and the far clip plane follow the fitted height in `buildRoad()`.
+  (`road.js` SHAPES: circle, speedway, beltway, gp, eight), so arc length,
+  tangents and lateral offsets are exact. A shape must return to its start
+  pose with a whole number of net turns — −1 for the simple loops, 0 for the
+  figure eight (its lobes turn opposite ways and cancel); `setShape()` throws
+  if a shape doesn't close. The eight is two lobes joined by their internal
+  tangents; the second straight bridges over the first on a raised-cosine
+  hump (6.5 m grade separation, at-grade at the ramp anchors), the renderer
+  hangs concrete skirts and piers under elevated spans (`buildBridgeInto`),
+  pitches car bodies with the grade (and slope-corrects light mounts), and
+  the smoke test's self-overlap guard exempts pairs >3 m apart vertically.
+  `params.roadShape` and `params.roadScale` (1–3×; builders scale radii and
+  straights, while ramp anchors stay a fixed physical distance from their
+  segment ends) are applied by `Simulation.reset()` (a geometry change
+  requires a reset — `s` doesn't map across shapes or sizes); the panel then
+  calls `renderer.onRoadChanged()`. Cameras frame the road from `bounds()`,
+  never from hardcoded positions; fog, zoom range, and the far clip plane
+  follow the fitted height in `buildRoad()`.
 - Lane 0 = **outermost** lane (ramps attach to it); higher index = further inside.
   Outward = driver's right = `cross(forward, up)`: positive lateral offsets are
   outside the centerline, `laneOffset()` is negative. The outer pavement edge is
@@ -163,7 +174,7 @@ test/smoke.js          runs the sim headless under several parameter regimes
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
   Both project a "rubbernecking" zone ~200 m upstream that caps passing cars'
   desired speed, strongest in adjacent lanes (see `effectiveV0`). Click a car
-  on the map to crash it (`renderer.onRoadClick` → `sim.carNear` →
+  on the map to crash it (`renderer.onRoadClick` → `sim.carNearRay` →
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
@@ -206,9 +217,12 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - Hovering a car shows a nameplate readout — kind + id, current speed with
   desired speed in parens (`renderer.setHoverCar`, a CSS2D label like the ramp
   labels). Same pick path as click-to-crash but re-run every frame from the
-  resting pointer position (`pointerGround` → `carNear(pt, 12, true)`, the
+  resting pointer position (`pointerRay` → `carNearRay(ray, 9, true)`, the
   `any` flag adding ramp/shoulder/incident cars), so the label tracks traffic
-  flowing under the cursor; the chase speedometer caption also shows the
+  flowing under the cursor. Picking is point-to-ray in 3D — a ground-plane
+  hit point misses cars on the eight's bridge, and at its crossing both
+  levels share x/z; a small depth penalty makes the upper (visible) car win
+  when the ray threads both. The chase speedometer caption also shows the
   chased car's desired speed.
 - Vehicle kinds: `car.kind` is 'car', 'truck', or 'acc' (shares set by the
   Trucks and Adaptive-cruise knobs at spawn/reset). Trucks are 16.5 m, ~20%
@@ -236,11 +250,5 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 - Mobile view optimizations: hide the space-time diagram by default on small
   screens, audit the panel/charts layout for phones.
-- Figure-eight road shape: needs an overpass, but elevation can be cosmetic
-  exactly like curvature is (the model still drives a straight wrapped line) —
-  give pointAt a y component from a per-segment elevation profile and render
-  the crossing as a bridge; no intersection logic needed since it's
-  grade-separated. The self-intersection guard in the smoke test would need a
-  crossing-aware exemption.
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept
   to Mark — though with 2–4 meterable on-ramps it now has a stage)

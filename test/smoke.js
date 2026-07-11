@@ -2,7 +2,7 @@
 // parameter regimes and asserts basic physical plausibility. No browser needed.
 import { params, KMH } from '../src/params.js';
 import { Simulation, BIN_M } from '../src/sim/simulation.js';
-import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt } from '../src/sim/road.js';
+import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
 import { PRESETS, applyPreset } from '../src/presets.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
@@ -616,13 +616,16 @@ for (const [id, shape] of Object.entries(SHAPES)) {
   check(`${id}: loop length sane`, LOOP > 800 && LOOP < 1600, `(LOOP=${LOOP.toFixed(0)} m)`);
   check(`${id}: path closes at the wrap seam`, pointAt(0).distanceTo(pointAt(LOOP - 1e-9)) < 1e-3);
 
-  // s is exact arc length: 0.5 m of s moves ~0.5 m of world, along forwardAt
+  // s is exact PLAN-VIEW arc length (elevation is cosmetic and adds no
+  // driven length): 0.5 m of s moves ~0.5 m of ground, along forwardAt
   let worstLen = 0;
   let worstTan = 1;
   for (let i = 0; i < 500; i++) {
     const s = (i / 500) * LOOP;
     const a = pointAt(s);
     const b = pointAt(s + 0.5);
+    a.y = 0;
+    b.y = 0;
     worstLen = Math.max(worstLen, Math.abs(a.distanceTo(b) - 0.5));
     worstTan = Math.min(worstTan, b.sub(a).normalize().dot(forwardAt(s + 0.25)));
   }
@@ -630,7 +633,9 @@ for (const [id, shape] of Object.entries(SHAPES)) {
   check(`${id}: tangents match the path`, worstTan > 0.9999, `(dot=${worstTan.toFixed(5)})`);
 
   // stretches of road far apart in s must be far apart in space, or the
-  // pavement (up to ~15 m each side of the centerline) would overlap itself
+  // pavement (up to ~15 m each side of the centerline) would overlap itself.
+  // Pairs separated by >3 m of elevation are grade-separated (the figure
+  // eight's bridge) — crossing over is not overlapping.
   const N = Math.ceil(LOOP / 3);
   const pts = [];
   for (let i = 0; i < N; i++) pts.push(pointAt((i / N) * LOOP));
@@ -638,11 +643,22 @@ for (const [id, shape] of Object.entries(SHAPES)) {
   for (let i = 0; i < N; i++) {
     for (let j = i + 1; j < N; j++) {
       const ds = Math.min(j - i, N - (j - i)) * (LOOP / N);
-      if (ds > 60) minD = Math.min(minD, pts[i].distanceTo(pts[j]));
+      if (ds > 60 && Math.abs(pts[i].y - pts[j].y) < 3) {
+        minD = Math.min(minD, pts[i].distanceTo(pts[j]));
+      }
     }
   }
   check(`${id}: road never overlaps itself`, minD >= 40, `(min far-pair dist=${minD.toFixed(1)} m)`);
   check(`${id}: four ramps placed`, RAMPS.length === 4 && RAMPS.every((r) => r.length > 80));
+  if (id === 'eight') {
+    let peak = 0;
+    for (let s = 0; s < LOOP; s += 2) peak = Math.max(peak, elevAt(s));
+    check('eight: bridge peaks at grade separation', peak > 6.3 && peak < 6.7, `(peak=${peak.toFixed(2)} m)`);
+    check(
+      'eight: every ramp anchor sits at grade',
+      RAMPS.every((r) => elevAt(r.type === 'on' ? r.sJoin : r.sDiverge) === 0)
+    );
+  }
   check(`${id}: speed bins sized to this loop`, sim.binCount === Math.ceil(LOOP / BIN_M), `(${sim.binCount})`);
 
   for (let i = 0; i < Math.round(120 / H); i++) sim.step(H);
