@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Highway Traffic Simulator</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #46586b; }
@@ -50,6 +50,37 @@
     .speedo { left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px 8px; text-align: center; }
     .speedo canvas { display: block; width: 180px; height: 110px; }
     .speedo .cap { font-size: 11px; color: #9fb0c0; }
+    /* touch chase toggle: hidden on desktop (the C key and panel button
+       cover it); shown by the phone breakpoint below */
+    .chasebtn {
+      display: none; font: inherit; font-size: 13px; color: #dbe4ee;
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      pointer-events: auto; touch-action: manipulation;
+    }
+    /* phones, either orientation (matches SMALL in params.js): keyboard
+       tips are dead weight without a keyboard, and a finger needs a chase
+       toggle */
+    @media (max-width: 500px), (max-height: 500px) {
+      .hint { display: none; }
+      .chasebtn { display: block; }
+      .speedo canvas { width: 150px; height: 92px; } /* clears the chase button */
+    }
+    /* narrow screens: compact HUD (it must coexist with the 245 px control
+       panel), and the chart stack squeezes to the viewport if re-enabled
+       (canvas hover math is fraction-based, so scaling is safe) */
+    @media (max-width: 760px) {
+      .hud { font-size: 11px; line-height: 1.45; min-width: 0; max-width: 46vw; padding: 6px 10px; }
+      .hud h1 { font-size: 11px; margin: 0 0 4px; }
+      .hud .row { gap: 10px; }
+      .legend .bar { width: 130px; }
+      .charts { width: min(320px, calc(100vw - 44px)); padding: 8px 8px; }
+      .charts canvas { width: 100%; }
+    }
+    /* notched phones: keep fixed panels out of the sensor/home-bar areas */
+    .hud { left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); }
+    .legend { left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); }
+    .charts { left: max(12px, env(safe-area-inset-left)); }
   </style>
 </head>
 <body>
@@ -71,6 +102,8 @@
   </div>
 
   <div class="panel hint" id="hint">hover a car: speed &nbsp;·&nbsp; click a car: crash it &nbsp;·&nbsp; drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause &nbsp;·&nbsp; c chase &nbsp;·&nbsp; v views &nbsp;·&nbsp; f fps</div>
+
+  <button class="panel chasebtn" id="chase-btn">🎥 Chase</button>
 
   <script type="importmap">
     {

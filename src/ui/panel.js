@@ -13,10 +13,19 @@ const presetState = { scenario: '' };
 // exactly the ramps that exist).
 export function buildPanel({ sim, renderer }) {
   let gui = null;
+  // phones start collapsed to the title bar: a 245 px panel on a ~430 px
+  // screen buries the map and collides with the HUD. Open state survives
+  // rebuilds (units/interchange/preset changes) — collapsing under the
+  // finger that just moved a slider would be hostile.
+  let open = typeof window === 'undefined' || Math.min(window.innerWidth, window.innerHeight) >= 500;
   const rebuild = () => {
-    if (gui) gui.destroy();
+    if (gui) {
+      open = !gui._closed;
+      gui.destroy();
+    }
     // defer: destroying the GUI from inside its own onChange handler
     gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
+    if (!open) gui.close();
   };
   rebuild();
 }

@@ -117,6 +117,15 @@ const hintFree = hintEl.innerHTML;
 const hintChase = 'drag orbit &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
 let hintShowsChase = false;
 
+// Touch chase toggle (visible only at the phone breakpoint): one tap in,
+// one tap out — there's no C key on a phone. Label follows the state on
+// the HUD tick below.
+const chaseBtn = document.getElementById('chase-btn');
+chaseBtn.addEventListener('click', () => {
+  if (renderer.chaseCar) renderer.stopChase();
+  else renderer.startChase(sim.randomEligibleCar());
+});
+
 // The bottom-left legend follows the color mode: the speed gradient only
 // explains By speed; By type gets kind swatches (hues match the renderer's
 // TYPE_COLORS); Per car has nothing to explain, so it hides.
@@ -132,6 +141,8 @@ const legendType =
   sw('#3987e5', 'human') + sw('#199e70', 'ACC') + sw('#d98e32', 'truck') +
   sw('#f4f7f9', 'ambulance') + `</div>`;
 let legendMode = 'speed';
+// phone-sized screen, matching the CSS breakpoint and params.js SMALL
+const SMALL = Math.min(window.innerWidth, window.innerHeight) < 500;
 
 let fpsLast = performance.now();
 setInterval(() => {
@@ -139,13 +150,17 @@ setInterval(() => {
   if (hintShowsChase !== !!renderer.chaseCar) {
     hintShowsChase = !!renderer.chaseCar;
     hintEl.innerHTML = hintShowsChase ? hintChase : hintFree;
+    chaseBtn.textContent = hintShowsChase ? '✕ Exit chase' : '🎥 Chase';
   }
   if (legendMode !== params.colorMode) {
     legendMode = params.colorMode;
-    legendEl.style.display = legendMode === 'random' ? 'none' : '';
     if (legendMode === 'speed') legendEl.innerHTML = legendSpeed;
     else if (legendMode === 'type') legendEl.innerHTML = legendType;
   }
+  // Per car has nothing to explain; on phones the centered speedometer
+  // lands where the legend sits, so it also yields during a chase there
+  legendEl.style.display =
+    legendMode === 'random' || (SMALL && renderer.chaseCar) ? 'none' : '';
   // FPS over the real time since the last tick (the interval isn't exact)
   const nowMs = performance.now();
   el.fpsRow.style.display = params.showFps ? '' : 'none';

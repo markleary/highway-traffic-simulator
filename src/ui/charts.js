@@ -34,6 +34,11 @@ export class ChartPanel {
     this.cars = this.makeChart('Cars on road', CARS_COLOR);
     this.diag = this.makeDiagram();
     this.fund = this.makeFundamental(); // below the diagram: it has its own axes, not the shared time axis
+    // apply the visibility default NOW, not on the first 250 ms tick: the
+    // boot-time camera fit (renderer.viewFit) measures this panel's rect,
+    // and on a phone a briefly-visible chart stack shoves the road far
+    // off-center before update() ever runs
+    this.el.style.display = params.showCharts ? '' : 'none';
     document.body.appendChild(this.el);
     this.history = [];
     this.incidentStarts = [];

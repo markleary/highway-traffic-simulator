@@ -101,6 +101,11 @@ branch → `main` / root**. That's it — there is nothing to build.
 - The line charts shade **red** while an incident is active and **blue** while
   it rains, so a flow collapse lines up with whatever caused it.
 
+On a phone the layout adapts: the chart panels start hidden and the control
+panel starts collapsed (both a tap away), the keyboard tips disappear, and a
+**🎥 Chase** button in the corner toggles the ride-along camera — drag on the
+screen while chasing to swing around the car.
+
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
 backwards from the merge points. Pick **ACC wave lab**, then raise the
 adaptive-cruise share and reset — the jam stripes dissolve; the 2018 Stern
@@ -125,5 +130,4 @@ with the same live rain level that drives the physics.
 
 ## Roadmap
 
-- Mobile view optimizations (e.g. no space-time diagram by default on phones)
 - Ramp metering
