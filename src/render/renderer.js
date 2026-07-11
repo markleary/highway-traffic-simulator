@@ -149,8 +149,15 @@ export class SceneRenderer {
     this.onRoadClick = null;
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.chaseCar && e.button === 0) {
+        // in chase view a left press is an orbit gesture, never a click —
+        // the chased car sits center-screen, so letting a micro-drag through
+        // the click gate below would crash the car being followed
+        this._chaseDrag = { x: e.clientX, y: e.clientY };
+        this._press = null;
+        return;
+      }
       this._press = { x: e.clientX, y: e.clientY, t: performance.now() };
-      if (this.chaseCar && e.button === 0) this._chaseDrag = { x: e.clientX, y: e.clientY };
     });
     canvas.addEventListener('pointerup', (e) => {
       this._chaseDrag = null;
