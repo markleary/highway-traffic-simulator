@@ -81,6 +81,9 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        cab + box trailer + five axles
 src/ui/panel.js        lil-gui control panel
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
+                       (hover mirrors a cursor onto the road via onHoverS; click
+                       flies the camera to that s via onPickS → renderer.focusOnS,
+                       a fixed-height overhead close-up)
                        + fundamental diagram (hand-rolled canvas 2D; heatmap columns
                        come from the per-10 m speed bins sampled into sim.history at
                        1 Hz; the fundamental diagram scatters flow vs mainline

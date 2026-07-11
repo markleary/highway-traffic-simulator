@@ -10,8 +10,10 @@ const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
 const charts = new ChartPanel();
 const speedo = new Speedometer();
-// hovering the space-time diagram highlights the matching spot on the road
+// hovering the space-time diagram highlights the matching spot on the road;
+// clicking it flies the camera there for a live overhead look
 charts.onHoverS = (s) => renderer.setRoadCursor(s);
+charts.onPickS = (s) => renderer.focusOnS(s);
 // re-fit the camera now that both side panels exist and can be measured
 renderer.setDefaultView();
 // Click a car (or the road right next to one) to crash it.
