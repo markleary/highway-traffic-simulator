@@ -724,15 +724,8 @@ export class SceneRenderer {
       wheelMat,
       MAX_CARS
     );
-    // the signature always-on light bar, a thin unlit strip sitting exactly
-    // on the hood/fascia crease, a touch wider than the face so the ends
-    // read as wrapping the corners (headlights aren't simulated; this is
-    // pure identity)
-    this.cyberBar = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(2.02, 0.05, 0.07).translate(0, 0.98, 2.29),
-      new THREE.MeshBasicMaterial({ color: 0xf2ead8 }),
-      MAX_CARS
-    );
+    // (no front light bar: it's a headlight, and no vehicle here runs
+    // headlights — lights are reserved for driver-state signals)
     // dark windshield lying on the hood plane, inset so a body-colored
     // frame (the A-pillars) borders it — the wedge face read as bare metal
     // without it. Rougher than the ambulance's vertical cab glass: this
@@ -794,7 +787,7 @@ export class SceneRenderer {
     this._meshes = [
       this.sedan, this.sedanCabin, this.hatch, this.hatchCabin, this.wheels,
       this.trailer, this.cab, this.truckWheels,
-      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberBar, this.cyberGlass,
+      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberGlass,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambWheels,
       this.strobes, this.brakeLights, this.blinkers,
     ];
@@ -889,7 +882,6 @@ export class SceneRenderer {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
-        this.cyberBar.setMatrixAt(ai, this._dummy.matrix);
         this.cyberGlass.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
@@ -934,7 +926,6 @@ export class SceneRenderer {
     this.cyber.count = ai;
     this.cyberTrim.count = ai;
     this.cyberWheels.count = ai;
-    this.cyberBar.count = ai;
     this.cyberGlass.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
@@ -1144,14 +1135,14 @@ export class SceneRenderer {
 // ACC cars: a low-poly Cybertruck-style wedge. The hood is ONE flat plane,
 // full width, running unbroken from the fascia's top edge to the roof peak
 // (an earlier corner-bevel attempt narrowed that edge and dented the sides).
-// From the front it reads: wide rectangular stance, the light bar's mount
-// line up top, a large blank stainless face below it — raked back toward the
+// From the front it reads: wide rectangular stance, a sharp hood crease up
+// top, a large blank stainless face below it — raked back toward the
 // bumper, no grille — with the lower corners clipped where the wheel-arch
 // flares (trim mesh) wrap. A subtle horizontal crease runs along each side,
 // like the real truck's. Same 4.6 m footprint as a regular car (+z = front).
 // Non-indexed triangles so computeVertexNormals yields the flat facets.
 function cybertruckGeo() {
-  const N = (s) => [s * 0.98, 0.98, 2.3];  // fascia top edge (light-bar line)
+  const N = (s) => [s * 0.98, 0.98, 2.3];  // fascia top edge / hood crease
   const C = (s) => [s * 0.98, 0.62, 2.22]; // where the lower-corner clip starts
   const A = (s) => [s * 0.8, 0.35, 2.16];  // fascia bottom, narrowed by the clips
   const S = (s) => [s * 1.0, 0.35, 1.9];   // side bottom, behind the clip
