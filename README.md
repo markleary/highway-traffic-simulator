@@ -88,8 +88,10 @@ branch → `main` / root**. That's it — there is nothing to build.
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
   drift *down-right* — the wave rolls upstream even though every car in it
-  drives forward. Ticks on the left edge mark the ramps, dark red lines mark
-  each incident's start, and hovering highlights the matching spot on the road.
+  drives forward. Ticks on the left edge mark the ramps, a red ✕ marks each
+  incident where it happened — in time *and* loop position, so you can watch
+  the jam wave spread from it — and hovering highlights the matching spot on
+  the road.
 - The **fundamental diagram** below it is the other canonical plot: flow vs
   density, one dot per second, accumulated over the whole run. Free-flowing
   traffic rides the dashed diagonal; as the road saturates, the dots bend over

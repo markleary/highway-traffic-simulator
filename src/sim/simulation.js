@@ -137,7 +137,7 @@ export class Simulation {
     this.time = 0;
     this.history = []; // 1 Hz samples of {t, v, f, n, m, inc, rain, bins} for the live charts
     this.binCount = Math.ceil(LOOP / BIN_M); // space-time diagram resolution
-    this.incidentStarts = []; // sim timestamps, one per triggered incident (chart markers)
+    this.incidentStarts = []; // {t, s} per triggered incident (space-time ✕ markers)
     this.sampleTimer = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
@@ -399,7 +399,7 @@ export class Simulation {
     this.updateLights();
     while (this.flowTimes.length && this.flowTimes[0] < this.time - 60) this.flowTimes.shift();
     // keep incident-start marks just past the charts' 5-minute window
-    while (this.incidentStarts.length && this.incidentStarts[0] < this.time - 310) {
+    while (this.incidentStarts.length && this.incidentStarts[0].t < this.time - 310) {
       this.incidentStarts.shift();
     }
     for (const st of this.rampState.values()) {
@@ -934,7 +934,7 @@ export class Simulation {
     const inc = { kind: 'breakdown', cars: [car], phase: 'pullover', phaseStart: this.time };
     car.incident = inc;
     this.incidents.push(inc);
-    this.incidentStarts.push(this.time);
+    this.incidentStarts.push({ t: this.time, s: car.s });
   }
 
   triggerAccident(car) {
@@ -957,7 +957,7 @@ export class Simulation {
       if (best) this.wreck(best, inc);
     }
     this.incidents.push(inc);
-    this.incidentStarts.push(this.time);
+    this.incidentStarts.push({ t: this.time, s: car.s });
   }
 
   wreck(car, inc) {

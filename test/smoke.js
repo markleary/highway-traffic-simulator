@@ -188,8 +188,15 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   );
   check(
     'start marks carry the trigger times',
-    Math.abs(sim.incidentStarts[0] - 10) < 0.1 && Math.abs(sim.incidentStarts[1] - 15) < 0.1,
-    `(${sim.incidentStarts.map((t) => t.toFixed(1)).join(', ')})`
+    Math.abs(sim.incidentStarts[0].t - 10) < 0.1 && Math.abs(sim.incidentStarts[1].t - 15) < 0.1,
+    `(${sim.incidentStarts.map((m) => m.t.toFixed(1)).join(', ')})`
+  );
+  check(
+    'start marks carry the incident position',
+    sim.incidentStarts.every(
+      (m) => m.s >= 0 && m.s < LOOP && sim.incidents.some((inc) => inc.cars.some((c) => Math.abs(c.s - m.s) < 60))
+    ),
+    `(s=${sim.incidentStarts.map((m) => m.s.toFixed(0)).join(', ')})`
   );
 }
 

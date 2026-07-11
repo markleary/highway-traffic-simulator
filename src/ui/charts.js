@@ -20,9 +20,9 @@ const RAIN_SHADE = 'rgba(96, 150, 230, 0.13)';
 // Empty road (no vehicle in the bin): dim green, so free-flowing *traffic*
 // shows as bright trajectories against it and jams as red bands.
 const EMPTY_COLOR = 'hsl(120, 25%, 24%)';
-// Incident-start marker on the diagram: dark solid red, kin to the line
-// charts' incident bands but distinct from the bright jam-red of the heatmap.
-const INCIDENT_START = '#8f2b2b';
+// Incident ✕ marker on the diagram: saturated red, kin to the line charts'
+// incident bands; its dark halo pass separates it from jam-red heatmap cells.
+const INCIDENT_START = '#ff4a4a';
 
 export class ChartPanel {
   constructor() {
@@ -200,17 +200,28 @@ export class ChartPanel {
       ctx.fillRect(0, y - 1, 5, 2);
     }
 
-    // incident starts: a solid dark red line per triggered incident, kin to
-    // the line charts' bands. Drawn from the sim's start-time log rather than
-    // the samples' any-incident flag, so an incident that begins while
-    // another is still live gets its own line. Clip against the displayed
-    // window start (t0), not the first sample's time — an incident triggered
-    // in the first second after a reset predates every sample but its time
-    // is still on the axis.
-    ctx.fillStyle = INCIDENT_START;
-    for (const tInc of this.incidentStarts) {
-      if (tInc >= t0 && tInc <= tNow) {
-        ctx.fillRect(xs(tInc) - 0.75, 0, 1.5, DIAG_H);
+    // incident starts: a red ✕ at each incident's (time, loop position) —
+    // where the jam wave seeds from, not just when. Drawn from the sim's
+    // start log rather than the samples' any-incident flag, so an incident
+    // that begins while another is still live gets its own mark. Clip
+    // against the displayed window start (t0), not the first sample's
+    // time — an incident triggered in the first second after a reset
+    // predates every sample but its time is still on the axis. A dark halo
+    // pass keeps the mark legible on both green and red heatmap cells.
+    for (const inc of this.incidentStarts) {
+      if (inc.t < t0 || inc.t > tNow) continue;
+      const x = xs(inc.t);
+      const y = DIAG_H * (1 - inc.s / LOOP);
+      const a = 4.5; // arm half-length
+      for (const [style, w] of [['rgba(8, 5, 5, 0.85)', 5.5], [INCIDENT_START, 2]]) {
+        ctx.strokeStyle = style;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.moveTo(x - a, y - a);
+        ctx.lineTo(x + a, y + a);
+        ctx.moveTo(x + a, y - a);
+        ctx.lineTo(x - a, y + a);
+        ctx.stroke();
       }
     }
 
