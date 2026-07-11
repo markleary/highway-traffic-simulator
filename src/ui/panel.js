@@ -290,7 +290,7 @@ function makeGui({ sim, renderer, onRebuild }) {
   );
   tip(
     fView.add(params, 'showDiagram').name('Space-time diagram'),
-    'Position × time heatmap of speeds: each column is one second, bottom to top is one lap of the loop (ticks mark the ramps). Jams appear as red bands drifting down-right — the wave rolls upstream even though every car in it drives forward.'
+    'Position × time heatmap of speeds: each column is one second, bottom to top is one lap of the loop (ticks mark the ramps). Jams appear as red bands drifting down-right — the wave rolls upstream even though every car in it drives forward. Click anywhere on it to fly the camera to that stretch of road.'
   );
   tip(
     fView.add(params, 'showFundamental').name('Fundamental diagram'),

@@ -38,6 +38,7 @@ export class ChartPanel {
     this.history = [];
     this.incidentStarts = [];
     this.onHoverS = null; // set by main.js: reports the hovered loop position (or null)
+    this.onPickS = null; // set by main.js: a clicked loop position on the diagram
   }
 
   makeChart(title, color) {
@@ -128,6 +129,14 @@ export class ChartPanel {
       d.hoverY = (e.clientY - r.top) / r.height;
     });
     canvas.addEventListener('pointerleave', () => (d.hoverT = null));
+    // click-through to the road: fly the camera to the clicked loop
+    // position and watch that stretch live (only s matters — the road can
+    // only ever show "now", whatever column was clicked)
+    canvas.addEventListener('click', (e) => {
+      if (!this.onPickS) return;
+      const r = canvas.getBoundingClientRect();
+      this.onPickS((1 - (e.clientY - r.top) / r.height) * LOOP);
+    });
     return d;
   }
 

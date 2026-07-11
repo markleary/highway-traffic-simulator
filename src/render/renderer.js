@@ -1124,6 +1124,19 @@ export class SceneRenderer {
     this.controls.target.set(shift, 0, 0);
   }
 
+  // Overhead close-up on loop position s — the space-time diagram's
+  // click-through, so a diagram cell can be inspected on the road live.
+  // Fixed height rather than road-scale-fitted: jam waves are the same
+  // physical size on every road, and they're what gets clicked on.
+  focusOnS(s) {
+    this.stopChase();
+    const mid = -((params.lanes - 1) * ROAD.laneWidth) / 2; // between the edge lines
+    pointAt(s, mid, this._pos);
+    this.camera.position.set(this._pos.x, 170, this._pos.z + 0.1);
+    this.camera.lookAt(this._pos.x, 0, this._pos.z);
+    this.controls.target.set(this._pos.x, 0, this._pos.z);
+  }
+
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
