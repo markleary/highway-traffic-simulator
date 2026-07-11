@@ -82,7 +82,8 @@ branch → `main` / root**. That's it — there is nothing to build.
     toggles; an FPS counter; a **Scenery** toggle for the landscape dressing
     (trees, hills, clouds — off for modest GPUs); overhead vs. perspective
     camera; and a **chase camera** that rides along behind a random car with a
-    working speedometer (Esc to exit)
+    working speedometer — hold the mouse to swing the camera around the car
+    (Esc to exit)
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that

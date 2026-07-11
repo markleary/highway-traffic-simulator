@@ -314,7 +314,7 @@ function makeGui({ sim, renderer, onRebuild }) {
     fView
       .add({ chase: () => renderer.startChase(sim.randomEligibleCar()) }, 'chase')
       .name('🎥 Chase a car'),
-    'Ride along behind a random car, with a live speedometer. Press again (or the C key) to switch cars; Esc or either view button returns to the free camera.'
+    'Ride along behind a random car, with a live speedometer. Hold the left mouse button to swing the camera around the car — it eases back behind on release. Press again (or the C key) to switch cars; Esc or either view button returns to the free camera.'
   );
   tip(
     fView.add({ top: () => renderer.setTopView() }, 'top').name('Overhead view'),
