@@ -1183,6 +1183,21 @@ function archGeo() {
     .rotateY(-Math.PI / 2); // shape-x → car z, extrusion depth → car x
 }
 
+// Dark backing for a wheel opening: a trapezoid matching the arch's inner
+// boundary, so its whole silhouette hides behind the band and the tire. A
+// square plate here read as a "dog house" around the wheel from the side —
+// the visible shape below the arch must be the tire, nothing else.
+function wellGeo() {
+  const s = new THREE.Shape();
+  s.moveTo(-0.62, -0.12);
+  s.lineTo(-0.24, 0.5);
+  s.lineTo(0.24, 0.5);
+  s.lineTo(0.62, -0.12);
+  s.closePath();
+  return new THREE.ExtrudeGeometry(s, { depth: 0.03, bevelEnabled: false })
+    .rotateY(-Math.PI / 2);
+}
+
 // Dark composite trim for the ACC wedge, one instance per truck riding the
 // same matrix as the body (like the wheel sets): a heavy vertically-thin
 // front bumper with clipped corners tucked under the raked fascia, a plain
@@ -1190,8 +1205,8 @@ function archGeo() {
 // cladding, a slatted tonneau cover over the bed, and the truck's signature
 // polygonal wheel-arch flares framing the fully-exposed wheels (the ACC
 // wheel set rides wider than the shell for exactly this reason). A dark
-// well plate stands behind each wheel so the opening shows tire and
-// shadow — never the body-colored side wall.
+// well trapezoid backs each opening so it shows tire and shadow — never
+// the body-colored side wall.
 function cyberTrimGeo() {
   const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
   const parts = [
@@ -1210,15 +1225,15 @@ function cyberTrimGeo() {
         .translate(0, 1.62 - 0.44 * f + 0.03, -0.25 - 2.05 * f)
     );
   }
-  // arch flare + well plate per wheel (axles at z ±1.4, y 0.38). The flare
-  // spans x 0.97–1.13, embedding into the ±1.0 side wall and running flush
-  // with the wheel's outer face; the plate sits at ±1.04, between wall and
-  // tire, well clear of both (no coplanar pairs).
+  // arch flare + well backing per wheel (axles at z ±1.4, y 0.38). The
+  // flare spans x 0.97–1.13, embedding into the ±1.0 side wall and running
+  // flush with the wheel's outer face; the well sits at ±1.02–1.05, between
+  // wall and tire, ≥2 cm clear of both (no coplanar pairs).
   for (const zc of [1.4, -1.4]) {
     for (const side of [1, -1]) {
       parts.push(
         archGeo().translate(side === 1 ? 1.13 : -0.97, 0.38, zc),
-        new THREE.BoxGeometry(0.03, 0.85, 1.2).translate(side * 1.04, 0.44, zc)
+        wellGeo().translate(side === 1 ? 1.05 : -1.02, 0.38, zc)
       );
     }
   }
