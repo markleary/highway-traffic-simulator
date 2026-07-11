@@ -110,7 +110,8 @@ const el = {
 // chase-specific set that fits beside the gauge.
 const hintEl = document.getElementById('hint');
 const hintFree = hintEl.innerHTML;
-const hintChase = 'esc exit chase &nbsp;·&nbsp; c switch car';
+// keep this short: it shares the bottom bar with the centered speedometer
+const hintChase = 'drag orbit &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
 let hintShowsChase = false;
 
 // The bottom-left legend follows the color mode: the speed gradient only

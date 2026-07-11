@@ -132,10 +132,15 @@ export class SceneRenderer {
     this._raycaster = new THREE.Raycaster();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-    // chase camera state
+    // chase camera state. Yaw/pitch are a held-drag orbit offset around the
+    // chased car (0 = the standard behind-the-car framing); on release they
+    // ease back to zero (see render) so letting go returns to the follow cam.
     this.chaseCar = null;
     this._chasePos = new THREE.Vector3();
     this._chaseAim = new THREE.Vector3();
+    this._chaseYaw = 0;
+    this._chasePitch = 0;
+    this._chaseDrag = null; // last pointer position while a chase orbit is held
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
 
@@ -144,9 +149,18 @@ export class SceneRenderer {
     this.onRoadClick = null;
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.chaseCar && e.button === 0) {
+        // in chase view a left press is an orbit gesture, never a click —
+        // the chased car sits center-screen, so letting a micro-drag through
+        // the click gate below would crash the car being followed
+        this._chaseDrag = { x: e.clientX, y: e.clientY };
+        this._press = null;
+        return;
+      }
       this._press = { x: e.clientX, y: e.clientY, t: performance.now() };
     });
     canvas.addEventListener('pointerup', (e) => {
+      this._chaseDrag = null;
       const press = this._press;
       this._press = null;
       if (!press || !this.onRoadClick) return;
@@ -163,9 +177,22 @@ export class SceneRenderer {
     this._pointer = null;
     canvas.addEventListener('pointermove', (e) => {
       this._pointer = e.buttons === 0 ? { x: e.clientX, y: e.clientY } : null;
+      if (this._chaseDrag && this.chaseCar && e.buttons & 1) {
+        // held-drag orbit: horizontal swings around the car, vertical tilts
+        this._chaseYaw += (e.clientX - this._chaseDrag.x) * 0.008;
+        if (this._chaseYaw > Math.PI) this._chaseYaw -= 2 * Math.PI; // ease-back
+        if (this._chaseYaw < -Math.PI) this._chaseYaw += 2 * Math.PI; // takes the short way
+        this._chasePitch = THREE.MathUtils.clamp(
+          this._chasePitch + (e.clientY - this._chaseDrag.y) * 0.005,
+          -0.32, // just above the pavement
+          0.9 // well short of straight down
+        );
+        this._chaseDrag = { x: e.clientX, y: e.clientY };
+      }
     });
     canvas.addEventListener('pointerleave', () => {
       this._pointer = null;
+      this._chaseDrag = null;
     });
 
     // nameplate above the hovered car (see setHoverCar)
@@ -884,6 +911,9 @@ export class SceneRenderer {
     this.chaseCar = car;
     this.controls.enabled = false;
     if (fresh) {
+      this._chaseYaw = 0;
+      this._chasePitch = 0;
+      this._chaseDrag = null;
       // snap straight to the follow position instead of flying across the map
       this.chaseGoals(this._chasePos, this._chaseAim);
       this.camera.position.copy(this._chasePos);
@@ -893,6 +923,7 @@ export class SceneRenderer {
 
   stopChase() {
     this.chaseCar = null;
+    this._chaseDrag = null;
     if (this.controls) this.controls.enabled = true;
   }
 
@@ -902,14 +933,34 @@ export class SceneRenderer {
     // the whole frame
     const back = 14 + Math.max(0, this.chaseCar.len - 4.6);
     const up = this.chaseCar.kind === 'truck' ? 8.5 : 6;
-    posOut.copy(this._pos).addScaledVector(this._tan, -back);
-    posOut.y += up;
-    aimOut.copy(this._pos).addScaledVector(this._tan, 16);
+    // spherical offset around the car: at yaw = pitch = 0 this lands exactly
+    // on the classic back/up follow position; a held drag swings it around
+    const dist = Math.hypot(back, up);
+    const el = THREE.MathUtils.clamp(Math.atan2(up, back) + this._chasePitch, 0.06, 1.35);
+    const cos = Math.cos(this._chaseYaw);
+    const sin = Math.sin(this._chaseYaw);
+    const bx = -(this._tan.x * cos - this._tan.z * sin); // -tangent rotated by yaw
+    const bz = -(this._tan.x * sin + this._tan.z * cos);
+    posOut.set(
+      this._pos.x + bx * dist * Math.cos(el),
+      this._pos.y + dist * Math.sin(el),
+      this._pos.z + bz * dist * Math.cos(el)
+    );
+    // aim ahead of the car when behind it, at the car itself when abeam, and
+    // "through" it from the front — cos(yaw) does all three
+    aimOut.copy(this._pos).addScaledVector(this._tan, 16 * cos);
     aimOut.y += 1.5;
   }
 
   render(dt = 1 / 60) {
     if (this.chaseCar) {
+      // released orbit eases back behind the car (wall-clock: camera feel,
+      // not physics, so it behaves the same at any time scale or paused)
+      if (!this._chaseDrag && (this._chaseYaw !== 0 || this._chasePitch !== 0)) {
+        const decay = Math.exp(-3.5 * dt);
+        this._chaseYaw = Math.abs(this._chaseYaw) < 0.002 ? 0 : this._chaseYaw * decay;
+        this._chasePitch = Math.abs(this._chasePitch) < 0.002 ? 0 : this._chasePitch * decay;
+      }
       this.chaseGoals(this._v1, this._v2);
       // Ease in *simulation* time so the camera keeps pace with the car at
       // any time scale (the car covers dt × timeScale of world distance per
