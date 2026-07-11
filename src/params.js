@@ -23,6 +23,7 @@ export const params = {
   // guard keeps the headless smoke test (Node) importable.
   showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800,
   showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)
+  scenery: true, // landscape dressing (trees, hills, clouds) — off for weak GPUs
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()

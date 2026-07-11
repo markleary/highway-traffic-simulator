@@ -301,6 +301,10 @@ function makeGui({ sim, renderer, onRebuild }) {
     "Show the renderer's frames per second at the bottom of the stats panel. The F key toggles this too."
   );
   tip(
+    fView.add(params, 'scenery').name('Scenery'),
+    'Landscape dressing: trees, hills, clouds. Purely cosmetic — turn it off for maximum frame rate on modest hardware.'
+  );
+  tip(
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'By type': 'type', 'Per car': 'random' })
       .name('Car colors'),

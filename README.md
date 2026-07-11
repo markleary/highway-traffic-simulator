@@ -79,9 +79,10 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **View** — color cars by speed (red = stopped → green = at desired speed),
     **by type** (human / adaptive cruise / truck, matching the legend), or per
     car; live charts, **space-time diagram**, and **fundamental diagram**
-    toggles; an FPS counter; overhead vs. perspective camera; and a **chase
-    camera** that rides along behind a random car with a working speedometer
-    (Esc to exit)
+    toggles; an FPS counter; a **Scenery** toggle for the landscape dressing
+    (trees, hills, clouds — off for modest GPUs); overhead vs. perspective
+    camera; and a **chase camera** that rides along behind a random car with a
+    working speedometer (Esc to exit)
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
@@ -112,12 +113,13 @@ work their way to the outer lane in time. Adaptive-cruise cars temper IDM with t
 constant-acceleration heuristic, so they absorb perturbations instead of
 amplifying them. Rain scales the whole driver model — slower targets, longer
 headways, less grip — which is why a stable regime tips when a storm rolls in.
-Everything is rendered with three.js (instanced meshes), so thousands of cars
-stay smooth.
+Everything is rendered with three.js (instanced meshes) — the low-poly cars,
+trucks, and golden-hour landscape included — so thousands of cars stay smooth.
+Rain grades the whole scene: the sky dome, clouds, hills, and fog all darken
+with the same live rain level that drives the physics.
 
 ## Roadmap
 
-- Better-looking vehicle models (wheels, beveled bodies, body varieties)
 - Mobile view optimizations (e.g. no space-time diagram by default on phones)
 - Figure-eight road shape with an overpass
 - Ramp metering
