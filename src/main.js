@@ -174,7 +174,8 @@ setInterval(() => {
     params.units === 'imperial'
       ? `${(s.avgSpeed / MPH).toFixed(0)} mph`
       : `${(s.avgSpeed / KMH).toFixed(0)} km/h`;
-  el.flow.textContent = `${s.flowPerMin.toFixed(1)} cars/min`;
+  // integer: a decimal ticking 4×/s jitters (and can resize) the HUD
+  el.flow.textContent = `${Math.round(s.flowPerMin)} cars/min`;
   el.inout.textContent = `${s.entered} / ${s.exited}`;
   const m = Math.floor(sim.time / 60);
   const sec = Math.floor(sim.time % 60);
