@@ -617,6 +617,7 @@ export class SceneRenderer {
     }
     const g = new THREE.Group();
     this.rampFlowEls = {};
+    this.meterSignals = []; // {rampId, group, redMat, greenMat}, driven by updateMeters
     const mat = new THREE.MeshStandardMaterial({
       color: 0x3a3d44,
       roughness: 1,
@@ -630,6 +631,7 @@ export class SceneRenderer {
       g.add(rampEdgeLine(ramp.curve, 2.7, lineMat, 0, 1));
       if (ramp.type === 'on') g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0, 0.55));
       else g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0.45, 1));
+      if (ramp.type === 'on') g.add(this.buildMeter(ramp));
 
       // Label at the ramp's outer end, nudged past the pavement.
       const el = document.createElement('div');
@@ -653,6 +655,62 @@ export class SceneRenderer {
     }
     this.rampGroup = g;
     this.scene.add(g);
+  }
+
+  // Ramp-meter dressing at an on-ramp's stop line (the start of its merge
+  // zone, mirroring the sim's held-queue wall): a painted stop bar plus a
+  // two-lamp signal on the driver's-right shoulder. Hidden unless metering
+  // is on; updateMeters drives visibility and the lamp swap every frame.
+  buildMeter(ramp) {
+    const group = new THREE.Group();
+    const u = (ramp.length - ramp.mergeZone) / ramp.length;
+    const pt = ramp.curve.getPointAt(u);
+    const tan = ramp.curve.getTangentAt(u);
+    const yaw = Math.atan2(tan.x, tan.z);
+    const side = new THREE.Vector3(tan.z, 0, -tan.x); // driver's right
+
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 0.04, 0.45),
+      new THREE.MeshBasicMaterial({ color: 0xd8dde2 })
+    );
+    bar.position.set(pt.x, 0.03, pt.z);
+    bar.rotation.y = yaw;
+    group.add(bar);
+
+    const post = new THREE.Group();
+    post.position.set(pt.x + side.x * 3.9, 0, pt.z + side.z * 3.9);
+    post.rotation.y = yaw;
+    const dark = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.85 });
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.9, 0.16), dark);
+    pole.position.y = 1.45;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.52, 1.05, 0.3), dark);
+    head.position.y = 3.2;
+    // unlit lamps read as light sources; slightly proud of the head so they
+    // show from every angle (same trick as the vehicle light bars)
+    const redMat = new THREE.MeshBasicMaterial({ color: 0xff4040 });
+    const greenMat = new THREE.MeshBasicMaterial({ color: 0x14351c });
+    const red = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), redMat);
+    red.position.y = 3.42;
+    const green = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), greenMat);
+    green.position.y = 2.98;
+    post.add(pole, head, red, green);
+    group.add(post);
+
+    group.visible = false;
+    this.meterSignals.push({ rampId: ramp.id, group, redMat, greenMat });
+    return group;
+  }
+
+  // Meter visibility + lamp state, called every frame from main.js with the sim.
+  updateMeters(sim) {
+    for (const m of this.meterSignals) {
+      m.group.visible = !!params.metering;
+      if (!m.group.visible) continue;
+      const st = sim.rampState.get(m.rampId);
+      const green = st && st.greenUntil > sim.time;
+      m.redMat.color.set(green ? 0x3a1518 : 0xff4040);
+      m.greenMat.color.set(green ? 0x3ef06a : 0x14351c);
+    }
   }
 
   // Everything that depends on the loop geometry, after a shape change.

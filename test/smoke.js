@@ -604,6 +604,65 @@ run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
   );
 }
 
+{
+  console.log('\nramp metering: one car per green, and the rush-hour rescue');
+  // Meter binds under heavy demand with a light mainline, so merging is
+  // never the constraint — admitted cars should track the set rate.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 20, truckShare: 0, onRampA: 30, onRampB: 30, offRampA: 0, offRampB: 0,
+    metering: true, meterRate: 10,
+  });
+  const sim = new Simulation();
+  for (let i = 0; i < Math.round(60 / H); i++) sim.step(H); // queues form
+  const before = sim.stats().merged;
+  let held = true;
+  for (let i = 0; i < Math.round(180 / H); i++) {
+    sim.step(H);
+    if (i % 120 === 0) {
+      // wall integrity: no car the meter still holds is past the stop line
+      for (const ramp of RAMPS) {
+        if (ramp.type !== 'on') continue;
+        const meterS = ramp.length - ramp.mergeZone;
+        for (const car of sim.rampState.get(ramp.id).cars) {
+          if (!car.meterGo && car.rampPos - car.len / 2 > meterS + 2) held = false;
+        }
+      }
+    }
+  }
+  const released = sim.stats().merged - before;
+  // 2 ramps × 10/min × 3 min = 60 expected, with settling slack
+  check('meters admit ≈ the set rate', released > 42 && released < 70, `(${released} in 3 min)`);
+  check('no held car crosses the stop line', held);
+  const queued = [...sim.rampState.values()].reduce((a, st) => a + st.cars.length, 0);
+  check('demand above the rate queues on the ramps', queued >= 6, `(${queued} waiting)`);
+
+  // The classic counterintuitive result, as a regression: metering the
+  // rush-hour flood RAISES settled mainline speed without costing flow past
+  // the start line. Thresholds sit well inside the calibrated gap
+  // (~7.3 → ~9.2 m/s at 10 min; it widens further by 25 min).
+  const rush = { initialCars: 100, onRampA: 30, onRampB: 30, offRampA: 5, offRampB: 5 };
+  const settle = (extra) => {
+    Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), rush, extra);
+    const s = new Simulation();
+    for (let i = 0; i < Math.round(600 / H); i++) s.step(H);
+    // history holds the last 300 samples — exactly the settled half
+    const avg = (k) => s.history.reduce((a, p) => a + p[k], 0) / s.history.length;
+    return { v: avg('v'), f: avg('f') };
+  };
+  const dry = settle({ metering: false });
+  const met = settle({ metering: true, meterRate: 12 });
+  check(
+    'metering rescues the rush-hour mainline',
+    met.v > dry.v + 1.0,
+    `(${met.v.toFixed(2)} vs ${dry.v.toFixed(2)} m/s)`
+  );
+  check(
+    'without losing throughput past the start',
+    met.f >= dry.f,
+    `(${met.f.toFixed(1)} vs ${dry.f.toFixed(1)} /min)`
+  );
+}
+
 // --- road shapes: exact geometry on every shape, then a full traffic run.
 // LOOP/RAMPS are live bindings that follow the active shape. Trucks are
 // pinned off so ramp-flow behavior stays deterministic (a semi heading a

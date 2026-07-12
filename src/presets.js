@@ -22,6 +22,20 @@ export const PRESETS = {
     tip: 'Both on-ramps flood at 30 cars/min with exits nearly closed. Jams grow backwards from the merges and the loop slowly chokes.',
     patch: { initialCars: 100, onRampA: 30, onRampB: 30, offRampA: 5, offRampB: 5 },
   },
+  meters: {
+    label: 'Metered rush hour',
+    tip: 'The Rush hour flood, but signals on every on-ramp release one car per green. Ramp queues grow — yet the mainline keeps moving and total throughput rises. Untick Ramp meters and watch average speed sink as the merges take over; the flow chart tells the story.',
+    patch: {
+      initialCars: 100,
+      onRampA: 30,
+      onRampB: 30,
+      offRampA: 5,
+      offRampB: 5,
+      metering: true,
+      meterRate: 12, // calibrated: +25% mainline speed over unmetered at 10 min, +31% at 25
+      showCharts: true,
+    },
+  },
   storm: {
     label: 'Accident storm',
     tip: 'Tailgating traffic (0.9 s headways) with two fresh wrecks: fragile flow collapsing. Click cars to add pileups; raise Duration to make it worse.',

@@ -212,6 +212,14 @@ function makeGui({ sim, renderer, onRebuild }) {
   // One slider per ramp that actually exists (RAMPS follows the interchange
   // knob); changing the count rebuilds the panel so this list stays true.
   const fRamps = gui.addFolder('Ramps');
+  tip(
+    fRamps.add(params, 'metering').name('🚦 Ramp meters'),
+    'Signals at every on-ramp release one car per green instead of letting platoons shove in. Queues grow on the ramps, but the mainline keeps flowing — the classic counterintuitive fix. Applies live.'
+  );
+  tip(
+    fRamps.add(params, 'meterRate', 2, 20, 1).name('Meter rate (cars/min)'),
+    'Greens per minute at each meter. Sweep it: too high and the meter never binds, too low and the ramps starve the road while queues explode.'
+  );
   const onTip = (which) =>
     `Cars per minute trying to enter at on-ramp ${which}. The map label shows how many actually merge — throughput drops when the ramp queue backs up.`;
   const offTip = (which) =>

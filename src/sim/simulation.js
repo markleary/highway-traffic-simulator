@@ -525,6 +525,7 @@ export class Simulation {
     for (const ramp of RAMPS) {
       const st = this.rampState.get(ramp.id);
       st.cars.sort((a, b) => a.rampPos - b.rampPos);
+      if (p.metering && ramp.type === 'on') this.meterTick(ramp, st);
       // Speed of mainline traffic around the merge point, for speed matching.
       let localV = null;
       if (ramp.type === 'on' && st.cars.length) {
@@ -555,9 +556,48 @@ export class Simulation {
             const needed = (car.v * car.v) / (2 * rem);
             if (needed > p.safeBrake * 0.8) acc = Math.min(acc, -needed);
           }
+          // Ramp meter: a second, releasable wall at the stop line (the
+          // start of the acceleration lane). Held cars brake for it early —
+          // comfortBrake, not the end-wall's last-moment slam — so the queue
+          // settles AT the line. Cars already past it (metering toggled on
+          // mid-flight, or a released straddler that crept through) are left
+          // alone: the wall only exists while rem says the line is ahead.
+          if (p.metering && !car.meterGo) {
+            const remM = ramp.length - ramp.mergeZone - car.rampPos - car.len / 2;
+            if (remM > -1.5) {
+              if (remM < 0.5) acc = Math.min(acc, -9);
+              else {
+                const needed = (car.v * car.v) / (2 * remM);
+                if (needed > p.comfortBrake * 0.7) acc = Math.min(acc, -needed);
+              }
+            }
+          }
         }
         car.a = acc;
       }
+    }
+  }
+
+  // One car per green: when the cycle clock allows and the head of the held
+  // queue has arrived at (or is rolling up to) the stop line, wave it
+  // through and restart the clock. An idle meter doesn't bank greens — the
+  // clock only counts down against a waiting car — so at low demand cars
+  // roll up, get their green, and barely have to stop; the meter only binds
+  // when demand outruns the rate, which is the whole point.
+  meterTick(ramp, st) {
+    st.nextGreenAt ??= 0;
+    st.greenUntil ??= 0;
+    if (this.time < st.nextGreenAt) return;
+    const meterS = ramp.length - ramp.mergeZone;
+    for (let i = st.cars.length - 1; i >= 0; i--) {
+      const car = st.cars[i];
+      if (car.meterGo || car.rampPos - car.len / 2 >= meterS) continue; // already through
+      if (meterS - car.rampPos - car.len / 2 < 14) {
+        car.meterGo = true;
+        st.nextGreenAt = this.time + 60 / Math.max(1, params.meterRate);
+        st.greenUntil = this.time + 1.0; // renderer flashes the green lamp
+      }
+      break; // only ever consider the head of the held queue
     }
   }
 

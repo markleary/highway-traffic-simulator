@@ -216,6 +216,21 @@ test/smoke.js          runs the sim headless under several parameter regimes
   corridor is emergent, and it degrades honestly with density (near capacity
   there is nowhere to move over to). Ambulances never take exits, skip
   rubbernecking, and are excluded from `randomEligibleCar`.
+- Ramp metering (`params.metering` + `params.meterRate`, Ramps panel folder;
+  live, no reset): each on-ramp gets a stop line at the start of its merge
+  zone (`ramp.length - mergeZone`). Held cars (`!car.meterGo`) brake for it
+  as a comfortBrake wall — earlier than the ramp-end wall's last-moment
+  slam, so the queue settles AT the line; `meterTick` releases one car per
+  green (`meterGo = true`) and restarts the cycle clock. Idle meters don't
+  bank greens: the clock only counts down against a waiting car, so at low
+  demand cars roll up and barely stop — the meter binds only when demand
+  outruns the rate. Cars past the line when metering toggles on are left
+  alone (the wall needs the line ahead of them). Spawn backpressure +
+  the on-ramp labels (achieved vs requested) surface the queue cost.
+  Signals (stop bar + two-lamp post, `buildMeter`/`updateMeters`) show per
+  ramp; green flashes ~1 s per release. Calibrated on the rush regime:
+  metering @12 lifts settled mainline speed ~25% at 10 min (~31% at 25 min)
+  while flow past start rises — the smoke test pins both as regressions.
 - Work zone (`sim.workZone()`, Events panel; `workZone`/`workZonePos`/
   `workZoneLen` params): cones close the INNERMOST lane over a stretch —
   ramps attach to lane 0 and exits drift there, so the inner lane is the only
@@ -271,5 +286,5 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Ramp metering signals (deprioritized: not used around Boston, foreign concept
-  to Mark — though with 2–4 meterable on-ramps it now has a stage)
+Empty — the original roadmap and every feature batch added along the way has
+shipped. New ideas start as conversations, not backlog entries.

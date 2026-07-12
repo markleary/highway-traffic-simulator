@@ -69,6 +69,8 @@ export const params = {
   offRampC: 6,
   offRampD: 6,
   rampSpeed: 40 * MPH, // m/s
+  metering: false, // signals at every on-ramp release one car per green (live, no reset)
+  meterRate: 10,   // greens per minute at each meter
 
   // events
   incidentDuration: 90, // s — how long a breakdown stays parked / a wreck blocks
