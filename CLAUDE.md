@@ -59,25 +59,38 @@ Headless physics check (no browser needed): `npm install && npm test`
 ## Architecture
 
 ```
-index.html             import map, HUD overlay (stats, legend), CSS. Phone
-                       breakpoint (min viewport dimension < 500 px, matching
-                       SMALL in params.js/main.js) hides the keyboard-tip bar,
-                       shows a 🎥 Chase toggle button, compacts the HUD, and
-                       squeezes the chart stack to the viewport (canvas hover
-                       math is fraction-based, so CSS scaling is safe); fixed
-                       panels respect notch safe areas (viewport-fit=cover)
+index.html             import map, HUD overlay (stats, legend), CSS. Legend +
+                       keyboard-tip bar share a bottom-left flex dock whose
+                       right edge clears the control-panel column, so the
+                       wrapping hint can never paint over the legend (it did
+                       on mid-width windows when both were fixed). Mid-width
+                       rules: hint hides ≤760 px; during a chase ≤930 px the
+                       legend/hint yield to the speedometer (body.chasing,
+                       set by main.js); while the panel column hangs open
+                       (body.panel-open, set by panel.js) the speedometer
+                       centers in the free strip left of it. Phone breakpoint
+                       (min viewport dimension < 500 px, matching SMALL in
+                       params.js) also hides the tip bar, shows a 🎥 Chase
+                       toggle button, compacts the HUD, and squeezes the
+                       chart stack to the viewport (canvas hover math is
+                       fraction-based, so CSS scaling is safe); fixed panels
+                       respect notch safe areas (viewport-fit=cover)
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        touch chase-toggle button, the per-frame hover pick +
                        rain hand-off to the renderer, and the 250 ms HUD tick
                        (stats, FPS readout, chase-aware hint swap, color-mode-
-                       aware legend swap; on phones the legend hides during a
-                       chase — the centered speedometer lands on it)
+                       aware legend swap, and a refitView() call when the
+                       chart stack toggles; the frame loop mirrors chase
+                       state onto body.chasing so CSS can yield the legend/
+                       hint to the speedometer on narrow windows)
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live —
                        plus DEFAULTS, a frozen factory snapshot. Chart defaults
                        are viewport-aware at boot: phones (SMALL) start with all
-                       chart panels hidden
+                       chart panels hidden, and windows under 900 px wide
+                       (NARROW) start with the chart stack hidden — the stack
+                       plus the control panel would leave no visible road
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -102,7 +115,10 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
 src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        default on phones (open state survives the units/
                        interchange/preset rebuilds), and renderer.viewFit only
-                       reserves the panel's column while it hangs open
+                       reserves the panel's column while it hangs open. Open/
+                       close (root or folders) schedules refitView() ~350 ms
+                       out — past lil-gui's height transition — and mirrors
+                       the root's open state onto body.panel-open for CSS
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
@@ -157,7 +173,10 @@ test/smoke.js          runs the sim headless under several parameter regimes
   requires a reset — `s` doesn't map across shapes or sizes); the panel then
   calls `renderer.onRoadChanged()`. Cameras frame the road from `bounds()`,
   never from hardcoded positions; fog, zoom range, and the far clip plane
-  follow the fitted height in `buildRoad()`.
+  follow the fitted height in `buildRoad()`. `viewFit()` measures the live
+  panels, and `refitView()` re-frames after a panel toggle — but only while
+  the camera is parked in an auto view (`_autoView`); a user-orbited camera
+  is never yanked.
 - Lane 0 = **outermost** lane (ramps attach to it); higher index = further inside.
   Outward = driver's right = `cross(forward, up)`: positive lateral offsets are
   outside the centerline, `laneOffset()` is negative. The outer pavement edge is

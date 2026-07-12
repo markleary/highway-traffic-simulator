@@ -57,6 +57,8 @@ function frame(now) {
     if (next) renderer.startChase(next);
     else renderer.stopChase();
   }
+  // CSS keys the speedometer/legend/hint bottom-strip layout off this class
+  document.body.classList.toggle('chasing', !!renderer.chaseCar);
   speedo.update(renderer.chaseCar);
   // hover readout: same pick path as click-to-crash, re-run every frame so
   // the nameplate follows whichever car is under the pointer right now
@@ -142,10 +144,9 @@ const legendType =
   sw('#3987e5', 'human') + sw('#199e70', 'ACC') + sw('#d98e32', 'truck') +
   sw('#f4f7f9', 'ambulance') + `</div>`;
 let legendMode = 'speed';
-// phone-sized screen, matching the CSS breakpoint and params.js SMALL
-const SMALL = Math.min(window.innerWidth, window.innerHeight) < 500;
 
 let fpsLast = performance.now();
+let chartsShown = params.showCharts;
 setInterval(() => {
   const s = sim.stats();
   if (hintShowsChase !== !!renderer.chaseCar) {
@@ -158,10 +159,9 @@ setInterval(() => {
     if (legendMode === 'speed') legendEl.innerHTML = legendSpeed;
     else if (legendMode === 'type') legendEl.innerHTML = legendType;
   }
-  // Per car has nothing to explain; on phones the centered speedometer
-  // lands where the legend sits, so it also yields during a chase there
-  legendEl.style.display =
-    legendMode === 'random' || (SMALL && renderer.chaseCar) ? 'none' : '';
+  // Per car has nothing to explain. (During a chase on narrow windows the
+  // legend also yields to the speedometer — CSS, via body.chasing.)
+  legendEl.style.display = legendMode === 'random' ? 'none' : '';
   // FPS over the real time since the last tick (the interval isn't exact)
   const nowMs = performance.now();
   el.fpsRow.style.display = params.showFps ? '' : 'none';
@@ -169,7 +169,13 @@ setInterval(() => {
   fpsFrames = 0;
   fpsLast = nowMs;
   renderer.updateRampLabels(sim.rampFlows());
-  charts.update(sim.history, sim.incidentStarts);
+  charts.update(sim.history, sim.incidentStarts); // applies showCharts to the DOM
+  // toggling the chart stack moves the free region's left edge; re-frame a
+  // parked auto view around it (measured after the update call above)
+  if (chartsShown !== params.showCharts) {
+    chartsShown = params.showCharts;
+    renderer.refitView();
+  }
   el.cars.textContent = s.count;
   el.speed.textContent =
     params.units === 'imperial'
