@@ -10,6 +10,11 @@ export const FT = 0.3048;   // ft → m (and ft/s² → m/s²)
 const SMALL =
   typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 500;
 
+// Charts also need horizontal room on desktop: the 320 px chart stack plus
+// the 245 px control panel leave a mid-width window (a half-screen laptop
+// window lands here) with no visible road at all.
+const NARROW = typeof window !== 'undefined' && window.innerWidth < 900;
+
 // Every live-tunable knob lives here. The GUI mutates this object directly and
 // the simulation reads it on every step, so changes take effect immediately.
 export const params = {
@@ -26,7 +31,7 @@ export const params = {
   // diagram additionally needs a tall window even on desktop: the full
   // panel stands ~630 px above the window bottom and the HUD owns the top
   // ~170. The window guards keep the headless smoke test (Node) importable.
-  showCharts: !SMALL,
+  showCharts: !SMALL && !NARROW,
   showDiagram: !SMALL, // space-time heatmap section of the charts panel
   showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800 && !SMALL,
   showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)

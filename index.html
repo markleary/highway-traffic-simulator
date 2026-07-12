@@ -18,16 +18,25 @@
     .hud h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; letter-spacing: 0.02em; }
     .hud .row { display: flex; justify-content: space-between; gap: 18px; }
     .hud .row span:last-child { font-variant-numeric: tabular-nums; color: #fff; }
-    .legend { left: 12px; bottom: 12px; }
+    /* bottom-left dock: the legend, then the hint pushed to the right. One
+       flex row whose right edge clears the control panel column (245px +
+       15px inset + gap), so the hint shrinks and wraps inside the row —
+       when both were independently fixed, the wrapping hint slid left and
+       painted over the legend on mid-width windows */
+    .dock {
+      position: fixed; display: flex; align-items: flex-end; gap: 8px;
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      right: max(272px, calc(env(safe-area-inset-right) + 272px));
+      pointer-events: none;
+    }
+    .dock .panel { position: static; }
     .legend .bar {
       height: 8px; width: 180px; border-radius: 4px;
       background: linear-gradient(to right, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%));
     }
     .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-top: 4px; }
-    /* sits left of the control panel column (lil-gui: 245px wide, 15px inset),
-       which otherwise paints over the hint's tail whenever it reaches the
-       bottom of the window */
-    .hint { right: 272px; bottom: 12px; font-size: 11px; color: #9fb0c0; }
+    .hint { margin-left: auto; font-size: 11px; color: #9fb0c0; }
     .map-label {
       color: #dbe4ee; background: rgba(10, 16, 14, 0.78);
       border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px;
@@ -50,6 +59,20 @@
     .speedo { left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px 8px; text-align: center; }
     .speedo canvas { display: block; width: 180px; height: 110px; }
     .speedo .cap { font-size: 11px; color: #9fb0c0; }
+    /* while the control panel hangs open (main.js/panel.js flag the body),
+       center the speedometer in the free strip left of its ~260px column —
+       viewport-centering ran it under the panel on mid-width windows and
+       clipped the caption. Phones keep viewport centering: their panel
+       collapses to a title bar, leaving the bottom strip free */
+    @media (min-width: 501px) and (min-height: 501px) {
+      body.panel-open .speedo { left: calc(50% - 130px); }
+    }
+    /* mid-width windows: during a chase the bottom strip can't fit legend +
+       hint + speedometer, and the speedometer is what chase mode is for.
+       At 930px+ all three clear each other. */
+    @media (max-width: 930px) {
+      body.chasing .legend, body.chasing .hint { display: none; }
+    }
     /* touch chase toggle: hidden on desktop (the C key and panel button
        cover it); shown by the phone breakpoint below */
     .chasebtn {
@@ -76,15 +99,15 @@
       .hud h1 { font-size: 11px; margin: 0 0 4px; }
       .hud .row { gap: 10px; }
       .legend .bar { width: 130px; }
+      .hint { display: none; } /* the dock row is too narrow for a usefully wrapped tip line */
       .charts { width: min(320px, calc(100vw - 44px)); padding: 8px 8px; }
       .charts canvas { width: 100%; }
     }
-    /* notched phones: keep fixed panels out of the sensor/home-bar areas */
+    /* notched phones: keep fixed panels out of the sensor/home-bar areas
+       (the dock carries its own insets above) */
     .hud { left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); }
-    .legend { left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); }
     .charts { left: max(12px, env(safe-area-inset-left)); }
     .speedo { bottom: max(12px, env(safe-area-inset-bottom)); }
-    .hint { bottom: max(12px, env(safe-area-inset-bottom)); }
     /* lil-gui's own fixed inset (top 0, right 15px) ignores the cutout; on
        non-notched screens env() is 0 and these collapse to its defaults */
     .lil-gui.autoPlace {
@@ -118,12 +141,13 @@
     <div class="row" id="row-fps" style="display: none"><span>FPS</span><span id="stat-fps">–</span></div>
   </div>
 
-  <div class="panel legend" id="legend">
-    <div class="bar"></div>
-    <div class="labels"><span>stopped</span><span>desired speed</span></div>
+  <div class="dock">
+    <div class="panel legend" id="legend">
+      <div class="bar"></div>
+      <div class="labels"><span>stopped</span><span>desired speed</span></div>
+    </div>
+    <div class="panel hint" id="hint">hover a car: speed &nbsp;·&nbsp; click a car: crash it &nbsp;·&nbsp; drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause &nbsp;·&nbsp; c chase &nbsp;·&nbsp; v views &nbsp;·&nbsp; f fps</div>
   </div>
-
-  <div class="panel hint" id="hint">hover a car: speed &nbsp;·&nbsp; click a car: crash it &nbsp;·&nbsp; drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; space pause &nbsp;·&nbsp; c chase &nbsp;·&nbsp; v views &nbsp;·&nbsp; f fps</div>
 
   <button class="panel chasebtn" id="chase-btn">🎥 Chase</button>
 

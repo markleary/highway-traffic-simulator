@@ -92,6 +92,10 @@ export class SceneRenderer {
     this.controls.maxPolarAngle = Math.PI * 0.49;
     this.controls.minDistance = 40;
     this.controls.maxDistance = 1400;
+    // which auto view ('default' | 'top') the camera is parked in; null once
+    // the user orbits/zooms away — refitView() only re-frames parked cameras
+    this._autoView = null;
+    this.controls.addEventListener('start', () => (this._autoView = null));
     this.setDefaultView(); // after controls exist, so the view target sticks
 
     this.hemi = new THREE.HemisphereLight(0xd8e2f2, 0x8b7a58, 1.0);
@@ -1078,6 +1082,7 @@ export class SceneRenderer {
     if (!car) return;
     const fresh = !this.chaseCar;
     this.chaseCar = car;
+    this._autoView = null;
     this.controls.enabled = false;
     if (fresh) {
       this._chaseYaw = 0;
@@ -1229,6 +1234,15 @@ export class SceneRenderer {
     return { h, hx, tH, frac, centerFrac };
   }
 
+  // A side panel toggled (charts shown/hidden, control panel opened or
+  // collapsed): the free region viewFit measures has moved, so re-frame the
+  // camera — but only if it is still parked in an auto view. A camera the
+  // user has orbited or zoomed is theirs; never yank it.
+  refitView() {
+    if (this._autoView === 'default') this.setDefaultView();
+    else if (this._autoView === 'top') this.setTopView();
+  }
+
   setDefaultView() {
     this.stopChase();
     const { h, hx, tH, frac, centerFrac } = this.viewFit();
@@ -1239,6 +1253,7 @@ export class SceneRenderer {
     this.camera.position.set(shift, dist * 0.554, dist * 0.831); // ≈34° elevation
     this.camera.lookAt(shift, 0, 0);
     if (this.controls) this.controls.target.set(shift, 0, 0);
+    this._autoView = 'default';
   }
 
   setTopView() {
@@ -1248,6 +1263,7 @@ export class SceneRenderer {
     this.camera.position.set(shift, h, 0.1);
     this.camera.lookAt(shift, 0, 0);
     this.controls.target.set(shift, 0, 0);
+    this._autoView = 'top';
   }
 
   // Overhead close-up on loop position s — the space-time diagram's
@@ -1261,6 +1277,7 @@ export class SceneRenderer {
     this.camera.position.set(this._pos.x, this._pos.y + 170, this._pos.z + 0.1);
     this.camera.lookAt(this._pos.x, this._pos.y, this._pos.z);
     this.controls.target.set(this._pos.x, this._pos.y, this._pos.z);
+    this._autoView = null; // a close-up, not a fit — panel toggles leave it be
   }
 
   onResize() {

@@ -26,6 +26,9 @@ export function buildPanel({ sim, renderer }) {
     // defer: destroying the GUI from inside its own onChange handler
     gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
     if (!open) gui.close();
+    // CSS centers the chase speedometer in the strip left of the panel
+    // column only while the column actually hangs open (index.html)
+    document.body.classList.toggle('panel-open', open);
   };
   rebuild();
 }
@@ -342,6 +345,15 @@ function makeGui({ sim, renderer, onRebuild }) {
     'Return to the default three-quarter camera.'
   );
   fView.close();
+
+  // Opening/collapsing the panel (folders too) resizes the column that
+  // renderer.viewFit reserves; re-fit a parked auto view once lil-gui's
+  // ~300 ms height transition lands so the measurement sees the final rect.
+  // Registered last: the fLc/fView.close() calls above shouldn't fire it.
+  gui.onOpenClose((changed) => {
+    if (changed === gui) document.body.classList.toggle('panel-open', !gui._closed);
+    setTimeout(() => renderer.refitView(), 350);
+  });
 
   return gui;
 }
