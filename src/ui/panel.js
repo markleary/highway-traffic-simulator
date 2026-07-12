@@ -420,9 +420,15 @@ function makeGui({ sim, renderer, onRebuild }) {
   // lil-gui parks focus on the last-touched widget — space then re-toggles
   // that checkbox (or re-fires that button) instead of pausing, and c/v/f
   // go dead until a click lands elsewhere. Hand focus back once an
-  // interaction commits; text entry keeps focus while typing (lil-gui
-  // number fields blur themselves on Enter).
+  // interaction commits — but only a POINTER-driven one: a keyboard user
+  // who tabbed in and toggled with Space keeps focus, so Tab continues
+  // from where they were (Codex review). Text entry keeps focus while
+  // typing (lil-gui number fields blur themselves on Enter).
+  let pointerDriven = false;
+  gui.domElement.addEventListener('pointerdown', () => (pointerDriven = true), true);
+  gui.domElement.addEventListener('keydown', () => (pointerDriven = false), true);
   gui.onFinishChange(() => {
+    if (!pointerDriven) return;
     const el = document.activeElement;
     if (el && gui.domElement.contains(el) && !(el.tagName === 'INPUT' && el.type === 'text')) {
       el.blur();

@@ -131,10 +131,12 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        (mouse hover on the row, touch long-press on the
                        LABEL half only — the widget half is for gestures;
                        any tap dismisses), NOT native title, which touch
-                       never shows. After a change commits, focus is handed
-                       back to the page (blur) so the keyboard shortcuts'
-                       target===body gate in main.js keeps working — text
-                       inputs excepted while typing
+                       never shows. After a POINTER-driven change commits,
+                       focus is handed back to the page (blur) so the
+                       keyboard shortcuts' target===body gate in main.js
+                       keeps working — keyboard-driven changes keep focus
+                       (tab position survives), text inputs keep it while
+                       typing
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
