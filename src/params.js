@@ -4,6 +4,12 @@ export const KMH = 1 / 3.6; // km/h → m/s
 export const MPH = 0.44704; // mph → m/s
 export const FT = 0.3048;   // ft → m (and ft/s² → m/s²)
 
+// One "phone-sized screen" signal, shared with the CSS breakpoints in
+// index.html: the smaller viewport dimension is under 500 CSS px in either
+// orientation on phones, and never on desktops/tablets.
+const SMALL =
+  typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 500;
+
 // Every live-tunable knob lives here. The GUI mutates this object directly and
 // the simulation reads it on every step, so changes take effect immediately.
 export const params = {
@@ -14,14 +20,15 @@ export const params = {
   // display
   units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
   colorMode: 'speed', // 'speed' | 'random' | 'type' (human / ACC / truck)
-  showCharts: true,
-  showDiagram: true, // space-time heatmap section of the charts panel
-  // flow × density scatter section of the charts panel. Its default is
-  // viewport-aware: the full panel stands ~630 px above the window bottom and
-  // the HUD owns the top ~170, so on shorter windows the section starts
-  // hidden (still toggleable) instead of painting over the HUD. The window
-  // guard keeps the headless smoke test (Node) importable.
-  showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800,
+  // chart defaults are viewport-aware (boot-time only; everything stays
+  // toggleable): on phones — SMALL, either orientation — the 320 px chart
+  // stack would bury the map, so all of it starts hidden. The fundamental
+  // diagram additionally needs a tall window even on desktop: the full
+  // panel stands ~630 px above the window bottom and the HUD owns the top
+  // ~170. The window guards keep the headless smoke test (Node) importable.
+  showCharts: !SMALL,
+  showDiagram: !SMALL, // space-time heatmap section of the charts panel
+  showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800 && !SMALL,
   showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)
   scenery: true, // landscape dressing (trees, hills, clouds) — off for weak GPUs
 

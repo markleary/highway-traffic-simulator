@@ -1160,7 +1160,11 @@ export class SceneRenderer {
     const charts = document.querySelector('.panel.charts');
     const gui = document.querySelector('.lil-gui.root');
     const left = charts && charts.style.display !== 'none' ? charts.getBoundingClientRect().right : 0;
-    const right = gui ? gui.getBoundingClientRect().left : w;
+    // a collapsed gui is just a title bar in the corner — don't surrender a
+    // full-height column to it (on a phone that would squeeze the road into
+    // half the screen); reserve its width only while it hangs low
+    const guiRect = gui && gui.getBoundingClientRect();
+    const right = guiRect && guiRect.bottom > window.innerHeight * 0.4 ? guiRect.left : w;
     const frac = Math.max(0.3, (right - left) / w); // usable width fraction
     const centerFrac = (left + right - w) / w; // free-region center, -1..1 of half-width
     const h = Math.max(hz / t, hx / (tH * frac)) * 1.04;

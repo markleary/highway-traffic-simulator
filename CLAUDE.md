@@ -49,15 +49,25 @@ Headless physics check (no browser needed): `npm install && npm test`
 ## Architecture
 
 ```
-index.html             import map, HUD overlay (stats, legend), CSS
+index.html             import map, HUD overlay (stats, legend), CSS. Phone
+                       breakpoint (min viewport dimension < 500 px, matching
+                       SMALL in params.js/main.js) hides the keyboard-tip bar,
+                       shows a 🎥 Chase toggle button, compacts the HUD, and
+                       squeezes the chart stack to the viewport (canvas hover
+                       math is fraction-based, so CSS scaling is safe); fixed
+                       panels respect notch safe areas (viewport-fit=cover)
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
-                       per-frame hover pick + rain hand-off to the renderer, and
-                       the 250 ms HUD tick (stats, FPS readout, chase-aware hint
-                       swap, color-mode-aware legend swap)
+                       touch chase-toggle button, the per-frame hover pick +
+                       rain hand-off to the renderer, and the 250 ms HUD tick
+                       (stats, FPS readout, chase-aware hint swap, color-mode-
+                       aware legend swap; on phones the legend hides during a
+                       chase — the centered speedometer lands on it)
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live —
-                       plus DEFAULTS, a frozen factory snapshot
+                       plus DEFAULTS, a frozen factory snapshot. Chart defaults
+                       are viewport-aware at boot: phones (SMALL) start with all
+                       chart panels hidden
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -79,7 +89,10 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        hatchback picked by a car.id bit) + matte greenhouse +
                        shared dark wheel sets; trucks are a lofted conventional
                        cab + box trailer + five axles
-src/ui/panel.js        lil-gui control panel
+src/ui/panel.js        lil-gui control panel; collapses to its title bar by
+                       default on phones (open state survives the units/
+                       interchange/preset rebuilds), and renderer.viewFit only
+                       reserves the panel's column while it hangs open
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
@@ -248,7 +261,5 @@ test/smoke.js          runs the sim headless under several parameter regimes
 
 ## Roadmap
 
-- Mobile view optimizations: hide the space-time diagram by default on small
-  screens, audit the panel/charts layout for phones.
 - Ramp metering signals (deprioritized: not used around Boston, foreign concept
   to Mark — though with 2–4 meterable on-ramps it now has a stage)
