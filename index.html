@@ -57,6 +57,8 @@
       right: max(12px, env(safe-area-inset-right));
       bottom: max(12px, env(safe-area-inset-bottom));
       pointer-events: auto; touch-action: manipulation;
+      z-index: 1002; /* above lil-gui (1001): the open panel is a full-height
+                        column on phones and would otherwise eat the taps */
     }
     /* phones, either orientation (matches SMALL in params.js): keyboard
        tips are dead weight without a keyboard, and a finger needs a chase
@@ -88,6 +90,15 @@
     .lil-gui.autoPlace {
       top: max(0px, env(safe-area-inset-top));
       right: max(15px, env(safe-area-inset-right));
+    }
+    /* portrait phones: the HUD and the panel's collapsed title bar can't
+       share the top strip (198px + 245px > 430px). Drop the app name (it's
+       branding, not data) and start the stats below the bar — overlap
+       becomes impossible no matter how wide a stat row gets. Kept last:
+       it must beat the safe-area .hud rule above. */
+    @media (max-width: 500px) {
+      .hud h1 { display: none; }
+      .hud { top: max(37px, calc(env(safe-area-inset-top) + 30px)); }
     }
   </style>
 </head>
