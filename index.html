@@ -94,11 +94,14 @@
     /* portrait phones: the HUD and the panel's collapsed title bar can't
        share the top strip (198px + 245px > 430px). Drop the app name (it's
        branding, not data) and start the stats below the bar — overlap
-       becomes impossible no matter how wide a stat row gets. Kept last:
-       it must beat the safe-area .hud rule above. */
+       becomes impossible no matter how wide a stat row gets. Clearance is
+       the TOUCH title-bar height (lil-gui touch styles: 28px + 6px·1.25 =
+       35.5px — taller than the desktop bar) plus a gap, stacked on the same
+       safe-area inset that moves the bar itself down on notched phones.
+       Kept last: it must beat the safe-area .hud rule above. */
     @media (max-width: 500px) {
       .hud h1 { display: none; }
-      .hud { top: max(37px, calc(env(safe-area-inset-top) + 30px)); }
+      .hud { top: 42px; top: calc(env(safe-area-inset-top) + 42px); }
     }
   </style>
 </head>
