@@ -43,6 +43,16 @@ Headless physics check (no browser needed): `npm install && npm test`
   geometry, wrapped `s` coordinates, and no-overlap/stability behavior.
 - For rendering/UI changes, confirm the app still runs as static GitHub Pages
   content and that controls update `params` live.
+- For phone-layout changes, size clearances for TOUCH rendering, never from
+  desktop measurements: lil-gui's touch styles grow its widgets (the collapsed
+  title bar is 35.5 px on phones vs 25 px measured in desktop Chrome), and
+  notched devices shift panels by `env(safe-area-inset-*)` — offsets must
+  stack on the same inset that moves the thing they're clearing. Verify tap
+  targets with `elementFromPoint`, not `element.click()` — synthetic clicks
+  bypass hit-testing, so a panel overlaying the target goes unnoticed (this
+  buried the chase button under the open control panel, PR #41). Watch CSS
+  order too: equal-specificity rules resolve last-wins, and the safe-area
+  block silently overrode an earlier `.hud` fix the same day.
 - Expect `npm test` to pass for PRs that touch `src/sim/`, `src/params.js`, or
   traffic-control behavior.
 
