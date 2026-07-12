@@ -28,9 +28,9 @@ branch → `main` / root**. That's it — there is nothing to build.
 ## Controls
 
 - **Scenario dropdown** (top of the panel) — one-click demo setups that stage
-  the good regimes and reset: Rush hour, Accident storm, ACC wave lab,
-  Fundamental diagram, Lane closure crunch, Sudden downpour, Ambulance run,
-  and Factory defaults. Each tooltip explains what to watch for.
+  the good regimes and reset: Rush hour, Metered rush hour, Accident storm,
+  ACC wave lab, Fundamental diagram, Lane closure crunch, Sudden downpour,
+  Ambulance run, and Factory defaults. Each tooltip explains what to watch for.
 - **Drag** to orbit, **scroll** to zoom, **Space** to pause. Keyboard: **C**
   enters the chase camera (again to switch cars), **V** cycles perspective →
   overhead → chase, **F** toggles an FPS readout, **Esc** exits the chase.
@@ -73,10 +73,15 @@ branch → `main` / root**. That's it — there is nothing to build.
     speed spread, time headway (following distance), minimum gap, acceleration,
     comfortable braking
   - **Lane changing** — politeness, incentive threshold, safety braking limit
-  - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each exit.
+  - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each
+    exit, and **ramp meters**: signals at every on-ramp that release one car
+    per green at a rate you set, instead of letting platoons shove into the
+    mainline. Queues grow on the ramps, but merges stop triggering waves —
+    the counterintuitive classic where admitting *fewer* cars moves *more*.
     The map label at each ramp shows its *measured* flow over the last minute:
-    on-ramps show achieved vs. requested (they fall behind when the merge queue
-    backs up), exits show what their share % currently amounts to in cars/min.
+    on-ramps show achieved vs. requested (they fall behind when the merge
+    queue backs up — or when the meter holds them), exits show what their
+    share % currently amounts to in cars/min.
   - **View** — color cars by speed (red = stopped → green = at desired speed),
     **by type** (human / adaptive cruise / truck, matching the legend), or per
     car; live charts, **space-time diagram**, and **fundamental diagram**
@@ -107,11 +112,13 @@ panel starts collapsed (both a tap away), the keyboard tips disappear, and a
 screen while chasing to swing around the car.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
-backwards from the merge points. Pick **ACC wave lab**, then raise the
-adaptive-cruise share and reset — the jam stripes dissolve; the 2018 Stern
-experiment, reproducible from your couch. Or pick **Sudden downpour** and watch
-a comfortably flowing road collapse into stop-and-go one minute later when the
-storm arrives.
+backwards from the merge points — then pick **Metered rush hour**: same flood,
+but the meters hold the merges to a trickle and the mainline stays alive
+(untick Ramp meters mid-run to watch it collapse). Pick **ACC wave lab**, then
+raise the adaptive-cruise share and reset — the jam stripes dissolve; the 2018
+Stern experiment, reproducible from your couch. Or pick **Sudden downpour**
+and watch a comfortably flowing road collapse into stop-and-go one minute
+later when the storm arrives.
 
 ## How it works
 
@@ -130,4 +137,5 @@ with the same live rain level that drives the physics.
 
 ## Roadmap
 
-- Ramp metering
+The original roadmap — and every feature added along the way — has shipped.
+Ideas welcome.

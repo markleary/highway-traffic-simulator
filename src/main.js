@@ -63,6 +63,7 @@ function frame(now) {
   const hoverRay = renderer.pointerRay();
   renderer.setHoverCar(hoverRay && sim.carNearRay(hoverRay, 9, true));
   renderer.setRain(sim.rainNow || 0);
+  renderer.updateMeters(sim);
   renderer.update(sim.cars);
   renderer.render(dt);
   requestAnimationFrame(frame);
