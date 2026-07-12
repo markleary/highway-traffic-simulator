@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Highway Traffic Simulator</title>
+  <meta name="description" content="Cars drive a closed-loop freeway with on-ramps, weather, wrecks and ramp meters — watch phantom jams and merge waves emerge, and turn the knobs live." />
+  <meta property="og:title" content="Highway Traffic Simulator" />
+  <meta property="og:description" content="Cars drive a closed-loop freeway with on-ramps, weather, wrecks and ramp meters — watch phantom jams and merge waves emerge, and turn the knobs live." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>" />
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #46586b; }
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -47,7 +52,10 @@
     .map-label.off { border-left: 3px solid #d9b64a; }
     .map-label.hover { border-left: 3px solid #3987e5; }
     .charts { left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px; }
-    .charts canvas { display: block; width: 320px; height: 56px; pointer-events: auto; }
+    /* touch-action none: a finger dragged across a chart scrubs the hover
+       readout instead of the browser claiming the gesture as a (nonexistent)
+       scroll and firing pointercancel */
+    .charts canvas { display: block; width: 320px; height: 56px; pointer-events: auto; touch-action: none; }
     .charts canvas.diagram, .charts canvas.fund { height: 120px; }
     .charts canvas.diagram { cursor: crosshair; } /* click-through: flies the camera to that spot */
     .charts .chart + .chart { margin-top: 6px; }
@@ -114,6 +122,18 @@
       top: max(0px, env(safe-area-inset-top));
       right: max(15px, env(safe-area-inset-right));
     }
+    /* panel tooltips (panel.js): replaces the native title attribute, which
+       touch devices never show — hover on desktop, long-press a control's
+       label on touch. Above lil-gui (1001) and the chase button (1002). */
+    .gui-tip {
+      position: fixed; z-index: 1003; display: none; max-width: 300px;
+      color: #dbe4ee; background: rgba(10, 16, 14, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px;
+      padding: 8px 10px; font: 12px/1.45 system-ui, sans-serif;
+      white-space: pre-line; pointer-events: none;
+    }
+    .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }
+    .boot-error h1 { font-size: 14px; margin: 0 0 6px; }
     /* portrait phones: the HUD and the panel's collapsed title bar can't
        share the top strip (198px + 245px > 430px). Drop the app name (it's
        branding, not data) and start the stats below the bar — overlap
@@ -150,6 +170,36 @@
   </div>
 
   <button class="panel chasebtn" id="chase-btn">🎥 Chase</button>
+
+  <noscript>
+    <div class="panel boot-error" style="display: block">
+      <h1>JavaScript is off</h1>
+      The simulator is a live 3D model — it can't run without JavaScript.
+    </div>
+  </noscript>
+  <div class="panel boot-error" id="boot-error" style="display: none">
+    <h1>Couldn't start the simulator</h1>
+    It needs WebGL and access to cdn.jsdelivr.net (three.js loads from
+    there). Check the browser console for details, then reload.
+  </div>
+  <script>
+    // Boot watchdog — a plain script, so it runs even when module loading
+    // fails. main.js publishes window.sim as it boots; if that never
+    // happens (CDN unreachable, WebGL missing, an early crash) the page is
+    // just silent slate blue, so surface the notice instead. Keeps polling
+    // in case a slow connection boots late: the notice retracts itself.
+    (function () {
+      var sawError = false;
+      window.addEventListener('error', function () { sawError = true; }, true);
+      var t0 = Date.now();
+      (function poll() {
+        var dead = (sawError && Date.now() - t0 > 3000) || Date.now() - t0 > 15000;
+        document.getElementById('boot-error').style.display =
+          !window.sim && dead ? 'block' : 'none';
+        if (!window.sim) setTimeout(poll, 500);
+      })();
+    })();
+  </script>
 
   <script type="importmap">
     {

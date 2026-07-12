@@ -1127,6 +1127,10 @@ export class SceneRenderer {
   }
 
   render(dt = 1 / 60) {
+    // window dragged to a different-density display (no resize event fires
+    // for that): re-apply the capped pixel ratio so the 3D view stays crisp
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (dpr !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(dpr);
     if (this.chaseCar) {
       // released orbit eases back behind the car (wall-clock: camera feel,
       // not physics, so it behaves the same at any time scale or paused)

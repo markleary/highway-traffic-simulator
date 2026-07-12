@@ -184,7 +184,16 @@ setInterval(() => {
   // integer: a decimal ticking 4×/s jitters (and can resize) the HUD
   el.flow.textContent = `${Math.round(s.flowPerMin)} cars/min`;
   el.inout.textContent = `${s.entered} / ${s.exited}`;
-  const m = Math.floor(sim.time / 60);
-  const sec = Math.floor(sim.time % 60);
-  el.time.textContent = `${m}:${String(sec).padStart(2, '0')}`;
+  // h:mm:ss once a sitting passes the hour (a 90-minute run read "90:12"),
+  // with the pause/time-scale state on the same line — the spacebar gives
+  // no other feedback when the panel is collapsed
+  const t = Math.floor(sim.time);
+  const pad = (n) => String(n).padStart(2, '0');
+  const hr = Math.floor(t / 3600);
+  let clock = hr
+    ? `${hr}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`
+    : `${Math.floor(t / 60)}:${pad(t % 60)}`;
+  if (params.paused) clock += ' · paused';
+  else if (params.timeScale !== 1) clock += ` · ×${+params.timeScale.toFixed(1)}`;
+  el.time.textContent = clock;
 }, 250);

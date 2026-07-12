@@ -18,11 +18,11 @@ export class Speedometer {
     this.el.className = 'panel speedo';
     this.el.style.display = 'none';
     this.canvas = document.createElement('canvas');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = W * dpr;
-    this.canvas.height = H * dpr;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.canvas.width = W * this.dpr;
+    this.canvas.height = H * this.dpr;
     this.ctx = this.canvas.getContext('2d');
-    this.ctx.scale(dpr, dpr);
+    this.ctx.scale(this.dpr, this.dpr);
     this.cap = document.createElement('div');
     this.cap.className = 'cap';
     this.el.append(this.canvas, this.cap);
@@ -37,6 +37,15 @@ export class Speedometer {
       return;
     }
     this.el.style.display = '';
+
+    // window moved to a different-density display: re-scale (see charts.js)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (dpr !== this.dpr) {
+      this.dpr = dpr;
+      this.canvas.width = W * dpr;
+      this.canvas.height = H * dpr;
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
     const imp = params.units === 'imperial';
     const unit = imp ? MPH : KMH;

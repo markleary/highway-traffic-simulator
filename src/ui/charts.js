@@ -29,6 +29,11 @@ export class ChartPanel {
   constructor() {
     this.el = document.createElement('div');
     this.el.className = 'panel charts';
+    // canvases render at the display's pixel ratio (capped for perf); every
+    // canvas registers here so a window dragged to a different-density
+    // display re-scales on the next update instead of going soft
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.canvases = [];
     this.speed = this.makeChart('Average speed', SPEED_COLOR);
     this.flow = this.makeChart('Flow past start', FLOW_COLOR);
     this.cars = this.makeChart('Cars on road', CARS_COLOR);
@@ -58,11 +63,11 @@ export class ChartPanel {
     value.textContent = '—';
     head.append(name, value);
     const canvas = document.createElement('canvas');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
+    canvas.width = W * this.dpr;
+    canvas.height = H * this.dpr;
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.scale(this.dpr, this.dpr);
+    this.canvases.push({ canvas, ctx, h: H });
     wrap.append(head, canvas);
     this.el.appendChild(wrap);
 
@@ -72,7 +77,9 @@ export class ChartPanel {
       const r = canvas.getBoundingClientRect();
       chart.hoverT = (e.clientX - r.left) / r.width; // 0..1 across the window
     });
-    canvas.addEventListener('pointerleave', () => (chart.hoverT = null));
+    const clear = () => (chart.hoverT = null);
+    canvas.addEventListener('pointerleave', clear);
+    canvas.addEventListener('pointercancel', clear); // interrupted touch drags too
     return chart;
   }
 
@@ -86,6 +93,17 @@ export class ChartPanel {
     if (!params.showCharts) {
       if (this.onHoverS) this.onHoverS(null); // don't leave a stale road marker
       return;
+    }
+    // the window moved to a display with a different pixel density: re-scale
+    // every canvas (resizing clears them; everything redraws each tick)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (dpr !== this.dpr) {
+      this.dpr = dpr;
+      for (const c of this.canvases) {
+        c.canvas.width = W * dpr;
+        c.canvas.height = c.h * dpr;
+        c.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
     }
     const imp = params.units === 'imperial';
     const spd = imp ? MPH : KMH;
@@ -117,11 +135,11 @@ export class ChartPanel {
     head.append(name, value);
     const canvas = document.createElement('canvas');
     canvas.className = 'diagram';
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = W * dpr;
-    canvas.height = DIAG_H * dpr;
+    canvas.width = W * this.dpr;
+    canvas.height = DIAG_H * this.dpr;
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.scale(this.dpr, this.dpr);
+    this.canvases.push({ canvas, ctx, h: DIAG_H });
     wrap.append(head, canvas);
     this.el.appendChild(wrap);
 
@@ -134,6 +152,7 @@ export class ChartPanel {
       d.hoverY = (e.clientY - r.top) / r.height;
     });
     canvas.addEventListener('pointerleave', () => (d.hoverT = null));
+    canvas.addEventListener('pointercancel', () => (d.hoverT = null));
     // click-through to the road: fly the camera to the clicked loop
     // position and watch that stretch live (only s matters — the road can
     // only ever show "now", whatever column was clicked)
@@ -319,11 +338,11 @@ export class ChartPanel {
     head.append(name, value);
     const canvas = document.createElement('canvas');
     canvas.className = 'fund';
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = W * dpr;
-    canvas.height = FUND_H * dpr;
+    canvas.width = W * this.dpr;
+    canvas.height = FUND_H * this.dpr;
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.scale(this.dpr, this.dpr);
+    this.canvases.push({ canvas, ctx, h: FUND_H });
     wrap.append(head, canvas);
     this.el.appendChild(wrap);
 
@@ -336,6 +355,7 @@ export class ChartPanel {
       f.hoverY = ((e.clientY - r.top) / r.height) * FUND_H;
     });
     canvas.addEventListener('pointerleave', () => (f.hoverX = null));
+    canvas.addEventListener('pointercancel', () => (f.hoverX = null));
     return f;
   }
 
