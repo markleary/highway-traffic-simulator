@@ -31,9 +31,12 @@ branch → `main` / root**. That's it — there is nothing to build.
   the good regimes and reset: Rush hour, Metered rush hour, Accident storm,
   ACC wave lab, Fundamental diagram, Lane closure crunch, Sudden downpour,
   Ambulance run, and Factory defaults. Each tooltip explains what to watch for.
-- **Drag** to orbit, **scroll** to zoom, **Space** to pause. Keyboard: **C**
+- **Drag** to orbit, **scroll** to zoom, **Space** to pause (the HUD clock
+  shows *paused*, or the ×n rate when time is scaled). Keyboard: **C**
   enters the chase camera (again to switch cars), **V** cycles perspective →
   overhead → chase, **F** toggles an FPS readout, **Esc** exits the chase.
+- Every panel control has an explainer tooltip: hover it with a mouse, or
+  **long-press its label** on a touch screen.
 - **Hover any car** for a nameplate readout: its kind and id, current speed,
   and desired speed in parens. **Click any car to crash it** — it blocks its
   lane (optionally dragging a neighbor into a 2-lane pileup) until cleared.

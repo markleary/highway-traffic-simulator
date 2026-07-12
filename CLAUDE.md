@@ -74,7 +74,12 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        toggle button, compacts the HUD, and squeezes the
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
-                       respect notch safe areas (viewport-fit=cover)
+                       respect notch safe areas (viewport-fit=cover). Also:
+                       emoji-SVG favicon + description/OG metas, .gui-tip
+                       tooltip styling, and a plain-script boot watchdog
+                       that shows a notice if window.sim never appears
+                       (CDN unreachable / WebGL missing) — plain script so
+                       it runs even when module loading fails
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        touch chase-toggle button, the per-frame hover pick +
@@ -83,7 +88,10 @@ src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        aware legend swap, and a refitView() call when the
                        chart stack toggles; the frame loop mirrors chase
                        state onto body.chasing so CSS can yield the legend/
-                       hint to the speedometer on narrow windows)
+                       hint to the speedometer on narrow windows). The HUD
+                       clock goes h:mm:ss past an hour and carries the
+                       paused / ×n time-scale state — the spacebar's only
+                       feedback when the panel is collapsed
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live —
                        plus DEFAULTS, a frozen factory snapshot. Chart defaults
@@ -118,11 +126,22 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        reserves the panel's column while it hangs open. Open/
                        close (root or folders) schedules refitView() ~350 ms
                        out — past lil-gui's height transition — and mirrors
-                       the root's open state onto body.panel-open for CSS
+                       the root's open state onto body.panel-open for CSS.
+                       Control tips are data-tip + one shared .gui-tip div
+                       (mouse hover on the row, touch long-press on the
+                       LABEL half only — the widget half is for gestures;
+                       any tap dismisses), NOT native title, which touch
+                       never shows. After a change commits, focus is handed
+                       back to the page (blur) so the keyboard shortcuts'
+                       target===body gate in main.js keeps working — text
+                       inputs excepted while typing
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
-                       a fixed-height overhead close-up)
+                       a fixed-height overhead close-up; canvases re-scale when
+                       devicePixelRatio changes — window moved across displays —
+                       and handle pointercancel + touch-action:none so touch
+                       drags scrub the readout)
                        + fundamental diagram (hand-rolled canvas 2D; heatmap columns
                        come from the per-10 m speed bins sampled into sim.history at
                        1 Hz; the fundamental diagram scatters flow vs mainline

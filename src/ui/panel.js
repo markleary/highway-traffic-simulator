@@ -22,6 +22,7 @@ export function buildPanel({ sim, renderer }) {
     if (gui) {
       open = !gui._closed;
       gui.destroy();
+      hideTip(); // the row it points at just went away
     }
     // defer: destroying the GUI from inside its own onChange handler
     gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
@@ -33,10 +34,70 @@ export function buildPanel({ sim, renderer }) {
   rebuild();
 }
 
-// Hover tooltip on a controller's whole row (name + widget).
+// --- panel tooltips ---------------------------------------------------
+// Native `title` tooltips never show on touch devices, and the tip copy is
+// half the panel's teaching value. One shared .gui-tip div instead: a mouse
+// gets a faster, wrapping hover tooltip on the whole row; touch long-presses
+// a control's LABEL (never the widget half, so it can't fight a slider
+// drag). Any tap anywhere dismisses it.
+let tipEl = null;
+let tipTimer = 0;
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  if (tipEl) tipEl.style.display = 'none';
+}
+
+function showTip(row) {
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.className = 'gui-tip';
+    document.body.appendChild(tipEl);
+    // dismiss-anywhere, for the touch path (a mouse gets pointerout).
+    // Capture phase: it runs before wireTips' pointerdown arms a new press.
+    document.addEventListener('pointerdown', hideTip, true);
+  }
+  tipEl.textContent = row.dataset.tip;
+  tipEl.style.display = 'block';
+  const r = row.getBoundingClientRect();
+  const t = tipEl.getBoundingClientRect();
+  // left of the panel row, clamped on-screen. On a phone it may overlay the
+  // panel itself — it sits above it (z-index) and any tap dismisses it.
+  tipEl.style.left = `${Math.max(8, r.left - t.width - 10)}px`;
+  tipEl.style.top = `${Math.min(Math.max(8, r.top), window.innerHeight - t.height - 8)}px`;
+}
+
+// Tag a controller's row with tip text (rendered by the listeners below).
 function tip(ctrl, text) {
-  ctrl.domElement.title = text;
+  ctrl.domElement.dataset.tip = text;
   return ctrl;
+}
+
+function wireTips(gui) {
+  const root = gui.domElement;
+  root.addEventListener('pointerover', (e) => {
+    if (e.pointerType !== 'mouse' || e.buttons) return; // no popups mid-drag
+    const row = e.target.closest('[data-tip]');
+    clearTimeout(tipTimer);
+    if (row) tipTimer = setTimeout(() => showTip(row), 350);
+  });
+  root.addEventListener('pointerout', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const row = e.target.closest('[data-tip]');
+    if (row && row.contains(e.relatedTarget)) return; // still inside the row
+    hideTip();
+  });
+  root.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const label = e.target.closest('.name');
+    const row = label && label.closest('[data-tip]');
+    if (!row) return;
+    tipTimer = setTimeout(() => showTip(row), 450); // long-press
+    const cancel = () => clearTimeout(tipTimer);
+    window.addEventListener('pointerup', cancel, { once: true });
+    window.addEventListener('pointercancel', cancel, { once: true });
+  });
+  root.addEventListener('scroll', hideTip, true); // panel scrolled under the tip
 }
 
 function makeGui({ sim, renderer, onRebuild }) {
@@ -354,6 +415,26 @@ function makeGui({ sim, renderer, onRebuild }) {
     if (changed === gui) document.body.classList.toggle('panel-open', !gui._closed);
     setTimeout(() => renderer.refitView(), 350);
   });
+
+  // The keyboard shortcuts gate on focus being off the panel (main.js), but
+  // lil-gui parks focus on the last-touched widget — space then re-toggles
+  // that checkbox (or re-fires that button) instead of pausing, and c/v/f
+  // go dead until a click lands elsewhere. Hand focus back once an
+  // interaction commits; text entry keeps focus while typing (lil-gui
+  // number fields blur themselves on Enter).
+  gui.onFinishChange(() => {
+    const el = document.activeElement;
+    if (el && gui.domElement.contains(el) && !(el.tagName === 'INPUT' && el.type === 'text')) {
+      el.blur();
+    }
+  });
+  gui.domElement.addEventListener('click', (e) => {
+    if (e.detail === 0) return; // keyboard activation: leave tab focus alone
+    // function buttons are <button>; folder/root titles are div.title[tabindex]
+    const b = e.target.closest('button, .title');
+    if (b) setTimeout(() => b.blur(), 0);
+  });
+  wireTips(gui);
 
   return gui;
 }
