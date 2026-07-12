@@ -1,4 +1,4 @@
-import { params, KMH, MPH } from './params.js';
+import { params, KMH, MPH, watchViewport } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
@@ -8,6 +8,7 @@ import { Speedometer } from './ui/speedo.js';
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
 buildPanel({ sim, renderer });
+watchViewport(); // un-owned chart defaults keep tracking breakpoint flips
 const charts = new ChartPanel();
 const speedo = new Speedometer();
 // hovering the space-time diagram highlights the matching spot on the road;

@@ -69,8 +69,8 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        set by main.js); while the panel column hangs open
                        (body.panel-open, set by panel.js) the speedometer
                        centers in the free strip left of it. Phone breakpoint
-                       (min viewport dimension < 500 px, matching SMALL in
-                       params.js) also hides the tip bar, shows a 🎥 Chase
+                       (min viewport dimension ≤ 500 px, matching MQ.small
+                       in params.js) also hides the tip bar, shows a 🎥 Chase
                        toggle button, compacts the HUD, and squeezes the
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
@@ -94,11 +94,16 @@ src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        feedback when the panel is collapsed
 src/params.js          single mutable `params` object — the GUI writes it, the sim
                        reads it every step; that is how every knob applies live —
-                       plus DEFAULTS, a frozen factory snapshot. Chart defaults
-                       are viewport-aware at boot: phones (SMALL) start with all
-                       chart panels hidden, and windows under 900 px wide
-                       (NARROW) start with the chart stack hidden — the stack
-                       plus the control panel would leave no visible road
+                       plus DEFAULTS, a frozen factory snapshot. Chart
+                       visibility is viewport-derived AND live: MQ (matchMedia
+                       small/wide/tall, the same breakpoints as the CSS)
+                       drives the boot defaults, and watchViewport() re-derives
+                       them on breakpoint flips (rotation, resize) — phones
+                       hide the whole stack, sub-900px windows hide the charts
+                       (stack + panel would leave no visible road), sub-800px-
+                       tall windows hide the fundamental. ownDisplay(key) pins
+                       a toggle against auto-tracking: called by the panel's
+                       View toggles and by presets whose patch stages a chart
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -121,8 +126,10 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        shared dark wheel sets; trucks are a lofted conventional
                        cab + box trailer + five axles
 src/ui/panel.js        lil-gui control panel; collapses to its title bar by
-                       default on phones (open state survives the units/
-                       interchange/preset rebuilds), and renderer.viewFit only
+                       default on phones, tracking the breakpoint live until
+                       the user toggles the panel themselves (open state
+                       survives the units/interchange/preset rebuilds), and
+                       renderer.viewFit only
                        reserves the panel's column while it hangs open. Open/
                        close (root or folders) schedules refitView() ~350 ms
                        out — past lil-gui's height transition — and mirrors

@@ -1,5 +1,5 @@
 import GUI from 'lil-gui';
-import { params, KMH, MPH, FT } from '../params.js';
+import { params, KMH, MPH, FT, smallScreen, onSmallScreenChange, ownDisplay } from '../params.js';
 import { SHAPES, RAMPS } from '../sim/road.js';
 import { PRESETS, applyPreset } from '../presets.js';
 
@@ -17,7 +17,9 @@ export function buildPanel({ sim, renderer }) {
   // screen buries the map and collides with the HUD. Open state survives
   // rebuilds (units/interchange/preset changes) — collapsing under the
   // finger that just moved a slider would be hostile.
-  let open = typeof window === 'undefined' || Math.min(window.innerWidth, window.innerHeight) >= 500;
+  let open = !smallScreen();
+  let touched = false; // the user toggled the panel: it's theirs now
+  let auto = false; // programmatic toggle in progress (rebuild restore, breakpoint flip)
   const rebuild = () => {
     if (gui) {
       open = !gui._closed;
@@ -25,13 +27,32 @@ export function buildPanel({ sim, renderer }) {
       hideTip(); // the row it points at just went away
     }
     // defer: destroying the GUI from inside its own onChange handler
-    gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
+    gui = makeGui({
+      sim,
+      renderer,
+      onRebuild: () => setTimeout(rebuild, 0),
+      onRootToggle: () => {
+        if (!auto) touched = true;
+      },
+    });
+    auto = true;
     if (!open) gui.close();
+    auto = false;
     // CSS centers the chase speedometer in the strip left of the panel
     // column only while the column actually hangs open (index.html)
     document.body.classList.toggle('panel-open', open);
   };
   rebuild();
+  // collapsed-on-phones keeps tracking the breakpoint (rotation, a resize
+  // across it) until the user has claimed the panel by toggling it
+  onSmallScreenChange((small) => {
+    if (touched) return;
+    open = !small;
+    auto = true;
+    if (small) gui.close();
+    else gui.open();
+    auto = false;
+  });
 }
 
 // --- panel tooltips ---------------------------------------------------
@@ -100,7 +121,7 @@ function wireTips(gui) {
   root.addEventListener('scroll', hideTip, true); // panel scrolled under the tip
 }
 
-function makeGui({ sim, renderer, onRebuild }) {
+function makeGui({ sim, renderer, onRebuild, onRootToggle }) {
   const imp = params.units === 'imperial';
   const spd = imp ? MPH : KMH; // speed display unit → m/s
   const spdU = imp ? 'mph' : 'km/h';
@@ -365,16 +386,21 @@ function makeGui({ sim, renderer, onRebuild }) {
   );
 
   const fView = gui.addFolder('View');
+  // chart toggles: .listen() so a viewport-driven auto flip (watchViewport)
+  // shows in the checkbox; .onChange claims the knob for the user for good
   tip(
-    fView.add(params, 'showCharts').name('Live charts'),
+    fView.add(params, 'showCharts').name('Live charts').listen()
+      .onChange(() => ownDisplay('showCharts')),
     'Show rolling 5-minute charts of average speed, flow, and cars on road. Red bands mark stretches where an incident was active. Hover a chart to read off a past value.'
   );
   tip(
-    fView.add(params, 'showDiagram').name('Space-time diagram'),
+    fView.add(params, 'showDiagram').name('Space-time diagram').listen()
+      .onChange(() => ownDisplay('showDiagram')),
     'Position × time heatmap of speeds: each column is one second, bottom to top is one lap of the loop (ticks mark the ramps). Jams appear as red bands drifting down-right — the wave rolls upstream even though every car in it drives forward. Click anywhere on it to fly the camera to that stretch of road.'
   );
   tip(
-    fView.add(params, 'showFundamental').name('Fundamental diagram'),
+    fView.add(params, 'showFundamental').name('Fundamental diagram').listen()
+      .onChange(() => ownDisplay('showFundamental')),
     'Flow vs density, the canonical traffic plot: one dot per second, colored by average speed and fading with age. Free-flowing dots ride the dashed diagonal (slope = desired speed); when the road saturates they break off it — flow collapsing while density keeps rising.'
   );
   tip(
@@ -412,7 +438,10 @@ function makeGui({ sim, renderer, onRebuild }) {
   // ~300 ms height transition lands so the measurement sees the final rect.
   // Registered last: the fLc/fView.close() calls above shouldn't fire it.
   gui.onOpenClose((changed) => {
-    if (changed === gui) document.body.classList.toggle('panel-open', !gui._closed);
+    if (changed === gui) {
+      document.body.classList.toggle('panel-open', !gui._closed);
+      onRootToggle?.();
+    }
     setTimeout(() => renderer.refitView(), 350);
   });
 

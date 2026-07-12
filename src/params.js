@@ -4,16 +4,35 @@ export const KMH = 1 / 3.6; // km/h → m/s
 export const MPH = 0.44704; // mph → m/s
 export const FT = 0.3048;   // ft → m (and ft/s² → m/s²)
 
-// One "phone-sized screen" signal, shared with the CSS breakpoints in
-// index.html: the smaller viewport dimension is under 500 CSS px in either
-// orientation on phones, and never on desktops/tablets.
-const SMALL =
-  typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 500;
+// Viewport signals as live matchMedia queries: watchViewport() below keeps
+// the derived defaults tracking resize/rotation the way the CSS media rules
+// in index.html always have (the old boot-time innerWidth reads froze the
+// signal at load). `small` is the same expression as the CSS phone
+// breakpoint; the min-* queries are inverted so their boundaries match the
+// old innerWidth/innerHeight checks. Null under Node (headless smoke test).
+const MQ =
+  typeof window === 'undefined'
+    ? null
+    : {
+        small: matchMedia('(max-width: 500px), (max-height: 500px)'), // phones, either orientation
+        wide: matchMedia('(min-width: 900px)'), // room for chart stack + panel + visible road
+        tall: matchMedia('(min-height: 800px)'), // room for the full stack incl. fundamental
+      };
+export const smallScreen = () => !!MQ && MQ.small.matches;
+export function onSmallScreenChange(fn) {
+  if (MQ) MQ.small.addEventListener('change', () => fn(MQ.small.matches));
+}
 
-// Charts also need horizontal room on desktop: the 320 px chart stack plus
-// the 245 px control panel leave a mid-width window (a half-screen laptop
-// window lands here) with no visible road at all.
-const NARROW = typeof window !== 'undefined' && window.innerWidth < 900;
+// Chart-visibility defaults for the current viewport: phones and narrow
+// windows would bury the map under the 320 px stack, and the fundamental
+// diagram additionally needs a tall window (the full panel stands ~630 px
+// above the window bottom and the HUD owns the top ~170). Node pretends to
+// be a big desktop — it never renders.
+const chartDefaults = () => ({
+  showCharts: !smallScreen() && (!MQ || MQ.wide.matches),
+  showDiagram: !smallScreen(), // space-time heatmap section of the charts panel
+  showFundamental: !smallScreen() && (!MQ || MQ.tall.matches),
+});
 
 // Every live-tunable knob lives here. The GUI mutates this object directly and
 // the simulation reads it on every step, so changes take effect immediately.
@@ -25,15 +44,10 @@ export const params = {
   // display
   units: 'imperial', // 'imperial' | 'metric' — display only, internals are SI
   colorMode: 'speed', // 'speed' | 'random' | 'type' (human / ACC / truck)
-  // chart defaults are viewport-aware (boot-time only; everything stays
-  // toggleable): on phones — SMALL, either orientation — the 320 px chart
-  // stack would bury the map, so all of it starts hidden. The fundamental
-  // diagram additionally needs a tall window even on desktop: the full
-  // panel stands ~630 px above the window bottom and the HUD owns the top
-  // ~170. The window guards keep the headless smoke test (Node) importable.
-  showCharts: !SMALL && !NARROW,
-  showDiagram: !SMALL, // space-time heatmap section of the charts panel
-  showFundamental: typeof window !== 'undefined' && window.innerHeight >= 800 && !SMALL,
+  // chart visibility starts viewport-derived and KEEPS tracking viewport
+  // changes via watchViewport() below — until a toggle is claimed
+  // (ownDisplay: the panel's View toggles, or a preset that stages a chart)
+  ...chartDefaults(),
   showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)
   scenery: true, // landscape dressing (trees, hills, clouds) — off for weak GPUs
 
@@ -94,3 +108,22 @@ export const params = {
 // (src/presets.js) spread this back in so every preset starts from the same
 // known stage rather than compounding on whatever the sliders last said.
 export const DEFAULTS = Object.freeze(JSON.parse(JSON.stringify(params)));
+
+// --- live viewport tracking ---------------------------------------------
+// The spread chart defaults above are AUTO values. Until a toggle is
+// claimed via ownDisplay(), a breakpoint flip re-derives it live — rotate
+// an iPad to landscape and the charts arrive, shrink a desktop window and
+// they tuck away. A claimed knob never auto-changes again this session.
+const owned = new Set();
+export function ownDisplay(key) {
+  owned.add(key);
+}
+export function watchViewport() {
+  if (!MQ) return;
+  const apply = () => {
+    for (const [key, val] of Object.entries(chartDefaults())) {
+      if (!owned.has(key)) params[key] = val;
+    }
+  };
+  for (const mq of Object.values(MQ)) mq.addEventListener('change', apply);
+}

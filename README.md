@@ -113,8 +113,10 @@ On a phone the layout adapts: the chart panels start hidden and the control
 panel starts collapsed (both a tap away), the keyboard tips disappear, and a
 **🎥 Chase** button in the corner toggles the ride-along camera — drag on the
 screen while chasing to swing around the car. Mid-size windows adapt too:
-charts start hidden below ~900 px so the road keeps the screen, and the
-camera re-frames itself around whichever panels are actually open.
+charts hide below ~900 px so the road keeps the screen, the defaults keep
+re-deriving as you resize or rotate (once you flip a toggle yourself, your
+setting wins), and the camera re-frames itself around whichever panels are
+actually open.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
 backwards from the merge points — then pick **Metered rush hour**: same flood,

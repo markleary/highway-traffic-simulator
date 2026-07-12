@@ -1,4 +1,4 @@
-import { params, DEFAULTS } from './params.js';
+import { params, DEFAULTS, ownDisplay } from './params.js';
 
 // Scenario presets: one-click parameter setups that stage the good demos.
 // The parameter space (shape × scale × interchanges × lanes × traffic knobs ×
@@ -125,6 +125,9 @@ export function applyPreset(key, sim) {
   const keep = {};
   for (const k of KEEP) keep[k] = params[k];
   Object.assign(params, DEFAULTS, keep, preset.patch);
+  // a preset that stages a chart owns that toggle: the demo lives in it, so
+  // a later viewport flip must not auto-hide it (params.watchViewport)
+  for (const k of Object.keys(preset.patch)) if (k.startsWith('show')) ownDisplay(k);
   params.paused = false; // a demo that starts frozen looks broken
   sim.reset();
   preset.after?.(sim);
