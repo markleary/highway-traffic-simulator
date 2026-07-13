@@ -96,7 +96,8 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        reads it every step; that is how every knob applies live —
                        plus DEFAULTS, a frozen factory snapshot. Chart
                        visibility is viewport-derived AND live: MQ (matchMedia
-                       small/wide/tall, the same breakpoints as the CSS)
+                       small/wide/tall — small shares the CSS 500 px phone
+                       breakpoint; wide/tall are JS-only 900/800 px lines)
                        drives the boot defaults, and watchViewport() re-derives
                        them on breakpoint flips (rotation, resize) — phones
                        hide the whole stack, sub-900px windows hide the charts
