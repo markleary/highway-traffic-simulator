@@ -59,7 +59,7 @@ export const params = {
 
   // traffic mix
   truckShare: 5,  // % of vehicles that are semi trucks (new spawns / reset)
-  accShare: 20,   // % of cars (trucks excluded) driving on adaptive cruise control
+  accShare: 5,    // % of cars (trucks excluded) driving on adaptive cruise control
 
   // driver model (IDM)
   desiredSpeed: 70 * MPH, // m/s
