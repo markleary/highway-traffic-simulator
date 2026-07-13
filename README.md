@@ -2,12 +2,15 @@
 
 A real-time, browser-based highway traffic simulator. Cars drive around a closed
 loop of freeway with 2–4 interchanges (off-ramp + on-ramp each). You control the
-knobs — inflow at each on-ramp, share of cars taking each exit, desired speed,
-following distance, driver aggressiveness, even the weather — and watch traffic
+knobs; inflow at each on-ramp, share of cars taking each exit, desired speed,
+following distance, driver aggressiveness, even the weather - and watch traffic
 flow respond live: merge friction, stop-and-go waves, and full-blown phantom jams.
 
-Based on an idea from childhood: *what actually causes highway traffic?* Now
-answerable by turning a slider instead of writing Pascal.
+Based on an idea from my childhood: *what actually causes highway traffic?* I
+thought about this often, and always wanted to build a simulator like this, but
+as a teenager with moderate experience programming in BASIC and Pascal, that
+seemed like (and in fact was) an incredibly daunting task. Now, AI has enabled
+me to bring my idea to life with a few simple prompts.
 
 ## Running
 
