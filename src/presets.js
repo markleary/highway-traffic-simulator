@@ -20,7 +20,11 @@ export const PRESETS = {
   rush: {
     label: 'Rush hour',
     tip: 'Both on-ramps flood at 30 cars/min with exits nearly closed. Jams grow backwards from the merges and the loop slowly chokes.',
-    patch: { initialCars: 100, onRampA: 30, onRampB: 30, offRampA: 5, offRampB: 5 },
+    // mix pinned (with meters, its A/B partner): the demo's drama was
+    // calibrated at 0% ACC — at the ambient 20% default, ACC wave-damping
+    // absorbs the jams metering exists to fix and the comparison goes flat
+    patch: { initialCars: 100, onRampA: 30, onRampB: 30, offRampA: 5, offRampB: 5,
+             truckShare: 10, accShare: 0 },
   },
   meters: {
     label: 'Metered rush hour',
@@ -31,6 +35,8 @@ export const PRESETS = {
       onRampB: 30,
       offRampA: 5,
       offRampB: 5,
+      truckShare: 10, // pinned with rush — see note there
+      accShare: 0,
       metering: true,
       meterRate: 12, // calibrated: +25% mainline speed over unmetered at 10 min, +31% at 25
       showCharts: true,

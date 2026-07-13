@@ -58,8 +58,8 @@ export const params = {
   lanes: 3,
 
   // traffic mix
-  truckShare: 10, // % of vehicles that are semi trucks (new spawns / reset)
-  accShare: 0,    // % of cars (trucks excluded) driving on adaptive cruise control
+  truckShare: 5,  // % of vehicles that are semi trucks (new spawns / reset)
+  accShare: 20,   // % of cars (trucks excluded) driving on adaptive cruise control
 
   // driver model (IDM)
   desiredSpeed: 70 * MPH, // m/s
