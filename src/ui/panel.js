@@ -19,7 +19,6 @@ export function buildPanel({ sim, renderer }) {
   // finger that just moved a slider would be hostile.
   let open = !smallScreen();
   let touched = false; // the user toggled the panel: it's theirs now
-  let auto = false; // programmatic toggle in progress (rebuild restore, breakpoint flip)
   const rebuild = () => {
     if (gui) {
       open = !gui._closed;
@@ -27,17 +26,14 @@ export function buildPanel({ sim, renderer }) {
       hideTip(); // the row it points at just went away
     }
     // defer: destroying the GUI from inside its own onChange handler
-    gui = makeGui({
-      sim,
-      renderer,
-      onRebuild: () => setTimeout(rebuild, 0),
-      onRootToggle: () => {
-        if (!auto) touched = true;
-      },
-    });
-    auto = true;
+    gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
+    // user toggles claim the panel. Watch the title CLICK, not onOpenClose:
+    // lil-gui routes taps and keyboard Enter/Space through $title.click(),
+    // while programmatic open()/close() (rebuild restore, breakpoint flip)
+    // dispatch no click — so intent is read at its source and programmatic
+    // toggles can never claim the panel by accident
+    gui.$title.addEventListener('click', () => { touched = true; });
     if (!open) gui.close();
-    auto = false;
     // CSS centers the chase speedometer in the strip left of the panel
     // column only while the column actually hangs open (index.html)
     document.body.classList.toggle('panel-open', open);
@@ -47,11 +43,9 @@ export function buildPanel({ sim, renderer }) {
   // across it) until the user has claimed the panel by toggling it
   onSmallScreenChange((small) => {
     if (touched) return;
-    open = !small;
-    auto = true;
+    hideTip(); // no tap accompanies a breakpoint flip, so dismiss it here
     if (small) gui.close();
     else gui.open();
-    auto = false;
   });
 }
 
@@ -121,7 +115,7 @@ function wireTips(gui) {
   root.addEventListener('scroll', hideTip, true); // panel scrolled under the tip
 }
 
-function makeGui({ sim, renderer, onRebuild, onRootToggle }) {
+function makeGui({ sim, renderer, onRebuild }) {
   const imp = params.units === 'imperial';
   const spd = imp ? MPH : KMH; // speed display unit → m/s
   const spdU = imp ? 'mph' : 'km/h';
@@ -438,10 +432,7 @@ function makeGui({ sim, renderer, onRebuild, onRootToggle }) {
   // ~300 ms height transition lands so the measurement sees the final rect.
   // Registered last: the fLc/fView.close() calls above shouldn't fire it.
   gui.onOpenClose((changed) => {
-    if (changed === gui) {
-      document.body.classList.toggle('panel-open', !gui._closed);
-      onRootToggle?.();
-    }
+    if (changed === gui) document.body.classList.toggle('panel-open', !gui._closed);
     setTimeout(() => renderer.refitView(), 350);
   });
 
