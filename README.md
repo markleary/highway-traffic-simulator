@@ -1,5 +1,9 @@
 # Highway Traffic Simulator
 
+[![A jammed loop of freeway at golden hour — cars colored by speed, the on-ramp queue backed up solid red](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
+
+**[▶ Try it live](https://markleary.github.io/highway-traffic-simulator/)** — no install, works on phones.
+
 A real-time, browser-based highway traffic simulator. Cars drive around a closed
 loop of freeway with 2–4 interchanges (off-ramp + on-ramp each). You control the
 knobs; inflow at each on-ramp, share of cars taking each exit, desired speed,

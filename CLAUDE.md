@@ -80,6 +80,10 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        that shows a notice if window.sim never appears
                        (CDN unreachable / WebGL missing) — plain script so
                        it runs even when module loading fails
+assets/social.png      1200×630 social-preview card — og:image in index.html
+                       (absolute URL; unfurlers don't resolve relative paths)
+                       and the README hero. Regenerate by staging a jam and
+                       exporting the WebGL canvas at 2400×1260, then halving
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        touch chase-toggle button, the per-frame hover pick +
