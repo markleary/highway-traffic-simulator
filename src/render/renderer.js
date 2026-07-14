@@ -92,6 +92,12 @@ export class SceneRenderer {
     this.controls.maxPolarAngle = Math.PI * 0.49;
     this.controls.minDistance = 40;
     this.controls.maxDistance = 1400;
+    // pan along the ground plane, never in screen space: vertical panning
+    // drags controls.target below grade, and then the polar clamp above
+    // happily holds the camera underground relative to it. Desktop mice
+    // rarely find the pan gesture, but touchscreens with nonstandard event
+    // mappings (Tesla's browser) trip it with a plain drag.
+    this.controls.screenSpacePanning = false;
     // which auto view ('default' | 'top') the camera is parked in; null once
     // the user orbits/zooms away — refitView() only re-frames parked cameras
     this._autoView = null;
@@ -1099,6 +1105,20 @@ export class SceneRenderer {
     this.chaseCar = null;
     this._chaseDrag = null;
     if (this.controls) this.controls.enabled = true;
+  }
+
+  // Leaving a chase (esc, the touch button, the chased car despawning):
+  // plain stopChase() would strand the camera in the low follow shot while
+  // controls.target still points at the stale pre-chase spot — the next
+  // controls.update() swings around to face empty ground. Land on the
+  // focusOnS overhead close-up of where the chase ended instead, the same
+  // view as the space-time diagram's click-through. The view-cycle setters
+  // keep calling stopChase() directly — they reposition the camera
+  // themselves.
+  exitChase() {
+    const car = this.chaseCar;
+    this.stopChase();
+    if (car) this.focusOnS(car.s);
   }
 
   chaseGoals(posOut, aimOut) {
