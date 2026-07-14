@@ -87,10 +87,15 @@ function wireSelectFallback(gui) {
       const row = document.createElement('div');
       row.textContent = name;
       if (i === ctrl.$select.selectedIndex) row.classList.add('selected');
-      // click, not pointerdown: a scroll drag on a long menu must not commit
+      // click, not pointerdown: a scroll drag on a long menu must not commit.
+      // Re-picking the current value dispatches nothing — native selects
+      // don't fire change when the value is unchanged, and Shape's change
+      // path resets the whole sim (Codex review)
       row.addEventListener('click', () => {
-        ctrl.$select.selectedIndex = i;
-        ctrl.$select.dispatchEvent(new Event('change'));
+        if (i !== ctrl.$select.selectedIndex) {
+          ctrl.$select.selectedIndex = i;
+          ctrl.$select.dispatchEvent(new Event('change'));
+        }
         close();
       });
       menu.appendChild(row);
