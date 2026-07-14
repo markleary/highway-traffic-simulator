@@ -122,7 +122,10 @@ function wireSelectFallback(gui) {
       else open(ctrl);
     });
   }
-  gui.domElement.addEventListener('scroll', close, true); // panel scrolled under it
+  // panel scrolled under the menu — but the menu scrolling ITSELF (rows past
+  // max-height) must stay open: scroll doesn't bubble, yet capture-phase
+  // ancestors still see descendants' scrolls (Codex review)
+  gui.domElement.addEventListener('scroll', (e) => { if (e.target !== menu) close(); }, true);
 }
 
 // --- panel tooltips ---------------------------------------------------
