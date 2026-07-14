@@ -56,7 +56,7 @@ function frame(now) {
   if (renderer.chaseCar && !sim.cars.includes(renderer.chaseCar)) {
     const next = sim.randomEligibleCar();
     if (next) renderer.startChase(next);
-    else renderer.stopChase();
+    else renderer.exitChase(); // nobody left to follow: overhead close-up instead
   }
   // CSS keys the speedometer/legend/hint bottom-strip layout off this class
   document.body.classList.toggle('chasing', !!renderer.chaseCar);
@@ -88,7 +88,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     params.paused = !params.paused;
   }
-  if (e.code === 'Escape') renderer.stopChase();
+  if (e.code === 'Escape') renderer.exitChase();
   // letter shortcuts: never while typing in the panel or chorded with a
   // browser shortcut (cmd/ctrl+F is find, not our FPS toggle)
   if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -126,7 +126,7 @@ let hintShowsChase = false;
 // the HUD tick below.
 const chaseBtn = document.getElementById('chase-btn');
 chaseBtn.addEventListener('click', () => {
-  if (renderer.chaseCar) renderer.stopChase();
+  if (renderer.chaseCar) renderer.exitChase();
   else renderer.startChase(sim.randomEligibleCar());
 });
 

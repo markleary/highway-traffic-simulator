@@ -86,7 +86,11 @@ assets/social.png      1200×630 social-preview card — og:image in index.html
                        exporting the WebGL canvas at 2400×1260, then halving
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
-                       touch chase-toggle button, the per-frame hover pick +
+                       touch chase-toggle button (chase exits — esc, the
+                       button, chased car despawning with no successor — go
+                       through renderer.exitChase, which lands on the
+                       focusOnS close-up where the chase ended rather than
+                       stranding the camera), the per-frame hover pick +
                        rain hand-off to the renderer, and the 250 ms HUD tick
                        (stats, FPS readout, chase-aware hint swap, color-mode-
                        aware legend swap, and a refitView() call when the
