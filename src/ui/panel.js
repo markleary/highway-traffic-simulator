@@ -49,6 +49,85 @@ export function buildPanel({ sim, renderer }) {
   });
 }
 
+// --- Tesla dropdown fallback -------------------------------------------
+// Tesla's in-car browser is Chromium inside Tesla's own UI shell, and the
+// shell never renders the native <select> picker — so tapping lil-gui's
+// dropdowns (a transparent <select> stacked over a styled display div)
+// does nothing there. Stand in a small in-page menu instead: its rows
+// drive the real <select> (selectedIndex + a change event), so lil-gui's
+// whole pipeline — onChange, onFinishChange, updateDisplay — runs
+// untouched. `?tesla` forces it on for testing in a normal browser.
+const SELECT_FALLBACK =
+  /Tesla/.test(navigator.userAgent) || new URLSearchParams(location.search).has('tesla');
+
+function wireSelectFallback(gui) {
+  if (!SELECT_FALLBACK) return;
+  let menu = null;
+  let owner = null; // the option controller whose menu is open
+  const close = () => {
+    if (!menu) return;
+    menu.remove();
+    owner.$display.classList.remove('focus');
+    menu = owner = null;
+    document.removeEventListener('pointerdown', onOutside, true);
+  };
+  // dismiss-anywhere; the owner's own select toggles itself closed instead
+  // (this capture listener runs first, so skipping it here avoids a
+  // close-then-reopen on the same tap)
+  const onOutside = (e) => {
+    if (!menu.contains(e.target) && e.target !== owner.$select) close();
+  };
+  const open = (ctrl) => {
+    close();
+    const r = ctrl.$widget.getBoundingClientRect();
+    menu = document.createElement('div');
+    menu.className = 'gui-menu';
+    menu.style.minWidth = `${r.width}px`;
+    ctrl._names.forEach((name, i) => {
+      const row = document.createElement('div');
+      row.textContent = name;
+      if (i === ctrl.$select.selectedIndex) row.classList.add('selected');
+      // click, not pointerdown: a scroll drag on a long menu must not commit.
+      // Re-picking the current value dispatches nothing — native selects
+      // don't fire change when the value is unchanged, and Shape's change
+      // path resets the whole sim (Codex review)
+      row.addEventListener('click', () => {
+        if (i !== ctrl.$select.selectedIndex) {
+          ctrl.$select.selectedIndex = i;
+          ctrl.$select.dispatchEvent(new Event('change'));
+        }
+        close();
+      });
+      menu.appendChild(row);
+    });
+    // parented inside the gui root: inherits lil-gui's theme variables, and
+    // a panel rebuild destroys it with everything else. position:fixed still
+    // measures against the viewport (lil-gui never transforms its root).
+    gui.domElement.appendChild(menu);
+    const m = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - m.width - 8))}px`;
+    menu.style.top =
+      r.bottom + 2 + m.height > window.innerHeight - 8
+        ? `${Math.max(8, r.top - m.height - 2)}px` // no room below: open upward
+        : `${r.bottom + 2}px`;
+    ctrl.$display.classList.add('focus'); // the halo the select would get
+    owner = ctrl;
+    document.addEventListener('pointerdown', onOutside, true);
+  };
+  for (const ctrl of gui.controllersRecursive()) {
+    if (!ctrl.$select) continue;
+    ctrl.$select.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); // no native picker attempt, no focus grab
+      if (owner === ctrl) close();
+      else open(ctrl);
+    });
+  }
+  // panel scrolled under the menu — but the menu scrolling ITSELF (rows past
+  // max-height) must stay open: scroll doesn't bubble, yet capture-phase
+  // ancestors still see descendants' scrolls (Codex review)
+  gui.domElement.addEventListener('scroll', (e) => { if (e.target !== menu) close(); }, true);
+}
+
 // --- panel tooltips ---------------------------------------------------
 // Native `title` tooltips never show on touch devices, and the tip copy is
 // half the panel's teaching value. One shared .gui-tip div instead: a mouse
@@ -461,6 +540,7 @@ function makeGui({ sim, renderer, onRebuild }) {
     if (b) setTimeout(() => b.blur(), 0);
   });
   wireTips(gui);
+  wireSelectFallback(gui);
 
   return gui;
 }

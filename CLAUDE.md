@@ -152,7 +152,12 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        keyboard shortcuts' target===body gate in main.js
                        keeps working — keyboard-driven changes keep focus
                        (tab position survives), text inputs keep it while
-                       typing
+                       typing. On Tesla's in-car browser (UA-sniffed; `?tesla`
+                       forces it for testing) dropdowns swap in an in-page
+                       .gui-menu — Tesla's shell never renders the native
+                       <select> picker — whose rows drive the real select
+                       (selectedIndex + change) so lil-gui's pipeline is
+                       untouched
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
