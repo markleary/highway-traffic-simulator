@@ -138,6 +138,22 @@
       padding: 8px 10px; font: 12px/1.45 system-ui, sans-serif;
       white-space: pre-line; pointer-events: none;
     }
+    /* Tesla dropdown fallback (panel.js): in-page menu standing in for the
+       native <select> picker, which Tesla's browser shell never renders.
+       Lives inside .lil-gui so it inherits the panel theme variables. */
+    .lil-gui .gui-menu {
+      position: fixed; z-index: 1003;
+      background: var(--background-color);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+      padding: 3px; max-height: 60vh; overflow-y: auto;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    }
+    .lil-gui .gui-menu div {
+      padding: 7px 12px; border-radius: 4px; cursor: pointer;
+      color: var(--text-color); white-space: nowrap;
+    }
+    .lil-gui .gui-menu div.selected { background: var(--widget-color); color: var(--number-color); }
+    .lil-gui .gui-menu div:hover { background: var(--hover-color); }
     .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }
     .boot-error h1 { font-size: 14px; margin: 0 0 6px; }
     /* portrait phones: the HUD and the panel's collapsed title bar can't
