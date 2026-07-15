@@ -1,5 +1,5 @@
 import GUI from 'lil-gui';
-import { params, KMH, MPH, FT, smallScreen, onSmallScreenChange, ownDisplay, FORCED_TESLA, TESLA_BROWSER } from '../params.js';
+import { params, KMH, MPH, FT, smallScreen, onSmallScreenChange, ownDisplay, TESLA_BROWSER } from '../params.js';
 import { SHAPES, RAMPS } from '../sim/road.js';
 import { PRESETS, applyPreset } from '../presets.js';
 
@@ -59,12 +59,11 @@ export function buildPanel({ sim, renderer }) {
 // untouched. `?tesla` forces it on for testing in a normal browser.
 //
 // Build 2 made the select inert (pointer-events: none) with the tap caught
-// on the plain widget div, toggling on `click` — proven working in the car
-// under `?tesla`. Build 3 fixed WHY it never fired on its own: 2026 Tesla
-// firmware ships a bare desktop-Linux UA (no Tesla/ token), so detection is
-// capability-based now and lives in params.js (TESLA_BROWSER). The `?tesla`
-// badge doubles as a signal readout — the car has no devtools, so a photo
-// of it is how ground truth (UA, touch signals) gets off the screen.
+// on the plain widget div, toggling on `click`. Build 3 fixed WHY build 1
+// never fired on its own: 2026 Tesla firmware ships a bare desktop-Linux UA
+// (no Tesla/ token), so detection is capability-based now and lives in
+// params.js (TESLA_BROWSER) — confirmed working end-to-end in the car. The
+// diagnostic readout that guided the hunt lives on as main.js's ?debug panel.
 const SELECT_FALLBACK = TESLA_BROWSER;
 
 function wireSelectFallback(gui) {
@@ -134,26 +133,6 @@ function wireSelectFallback(gui) {
       if (owner === ctrl) close();
       else open(ctrl);
     });
-  }
-  if (FORCED_TESLA && !document.getElementById('tesla-badge')) {
-    const badge = document.createElement('div');
-    badge.id = 'tesla-badge';
-    badge.textContent = 'dropdown fallback active · build 3';
-    for (const text of [
-      navigator.userAgent,
-      `touch ${navigator.maxTouchPoints}` +
-        ` · coarse ${matchMedia('(pointer: coarse)').matches}` +
-        ` · no-hover ${matchMedia('(hover: none)').matches}` +
-        ` · screen ${screen.width}×${screen.height}` +
-        ` · vp ${window.innerWidth}×${window.innerHeight}` +
-        ` · dpr ${window.devicePixelRatio}`,
-    ]) {
-      const line = document.createElement('div');
-      line.className = 'diag';
-      line.textContent = text;
-      badge.appendChild(line);
-    }
-    document.body.appendChild(badge);
   }
   // panel scrolled under the menu — but the menu scrolling ITSELF (rows past
   // max-height) must stay open: scroll doesn't bubble, yet capture-phase

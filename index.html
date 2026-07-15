@@ -174,20 +174,20 @@
     }
     .lil-gui .gui-menu div.selected { background: var(--widget-color); color: var(--number-color); }
     .lil-gui .gui-menu div:hover { background: var(--hover-color); }
-    /* ?tesla diagnostic badge (panel.js): confirms fresh code is running in
-       the car, where there are no devtools — stale cache shows no badge —
-       and reads out the UA + touch signals so a photo of the screen carries
-       the ground truth the capability detection is built on */
-    #tesla-badge {
+    /* ?debug diagnostic panel (main.js; ?tesla implies it): build stamp,
+       latest-main commit, detection verdicts, UA + touch signals, GPU — on
+       devices without devtools (the car) a photo of this is the ground
+       truth. Observability only; it never changes behavior. */
+    #debug-panel {
       position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
       transform: translateX(-50%); z-index: 1003; pointer-events: none;
       color: #dbe4ee; background: rgba(10, 16, 14, 0.85);
       border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
       padding: 5px 12px; font: 11px system-ui, sans-serif;
-      max-width: min(92vw, 760px); text-align: center;
+      max-width: min(92vw, 760px);
     }
-    #tesla-badge .diag {
-      color: #9fb0c0; font-size: 10px; text-align: left;
+    #debug-panel div {
+      color: #9fb0c0; font-size: 10px;
       word-break: break-all; margin-top: 3px;
     }
     .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }
