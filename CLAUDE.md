@@ -153,11 +153,17 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        keeps working — keyboard-driven changes keep focus
                        (tab position survives), text inputs keep it while
                        typing. On Tesla's in-car browser (UA-sniffed; `?tesla`
-                       forces it for testing) dropdowns swap in an in-page
-                       .gui-menu — Tesla's shell never renders the native
-                       <select> picker — whose rows drive the real select
-                       (selectedIndex + change) so lil-gui's pipeline is
-                       untouched
+                       forces it for testing AND paints a build badge — in-car
+                       there are no devtools, so the badge is how a test tells
+                       stale cache from fresh-but-broken) dropdowns swap in an
+                       in-page .gui-menu — Tesla's shell never renders the
+                       native <select> picker — whose rows drive the real
+                       select (selectedIndex + change) so lil-gui's pipeline
+                       is untouched. The select itself is inert in fallback
+                       mode (pointer-events: none) and the widget div takes
+                       the click: build 1 listened on the select and still
+                       died in the car — the shell likely swallows form-
+                       control taps before the page sees any event
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,

@@ -57,8 +57,17 @@ export function buildPanel({ sim, renderer }) {
 // drive the real <select> (selectedIndex + a change event), so lil-gui's
 // whole pipeline — onChange, onFinishChange, updateDisplay — runs
 // untouched. `?tesla` forces it on for testing in a normal browser.
-const SELECT_FALLBACK =
-  /Tesla/.test(navigator.userAgent) || new URLSearchParams(location.search).has('tesla');
+//
+// Build 2: the first build listened on the <select> itself and still did
+// nothing in the car. The suspicion is the shell special-cases taps on
+// form controls before the page sees any event (it hit-tests its way to
+// the picker layer it doesn't have) — so the select is made inert
+// (pointer-events: none) and the tap is caught on the plain widget div
+// around it, which nothing special-cases; the toggle rides `click`, the
+// one event every environment delivers. `?tesla` also paints a build
+// badge so an in-car test can tell stale cache from fresh-but-broken.
+const FORCED_FALLBACK = new URLSearchParams(location.search).has('tesla');
+const SELECT_FALLBACK = FORCED_FALLBACK || /tesla|qtcarbrowser/i.test(navigator.userAgent);
 
 function wireSelectFallback(gui) {
   if (!SELECT_FALLBACK) return;
@@ -70,12 +79,15 @@ function wireSelectFallback(gui) {
     owner.$display.classList.remove('focus');
     menu = owner = null;
     document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('click', onOutside, true);
   };
-  // dismiss-anywhere; the owner's own select toggles itself closed instead
+  // dismiss-anywhere; the owner's own widget toggles itself closed instead
   // (this capture listener runs first, so skipping it here avoids a
-  // close-then-reopen on the same tap)
+  // close-then-reopen on the same tap). Registered for both pointerdown
+  // and click: environments that swallow one still deliver the other.
   const onOutside = (e) => {
-    if (!menu.contains(e.target) && e.target !== owner.$select) close();
+    if (!menu) return; // the click after a pointerdown that already closed
+    if (!menu.contains(e.target) && !owner.$widget.contains(e.target)) close();
   };
   const open = (ctrl) => {
     close();
@@ -113,14 +125,23 @@ function wireSelectFallback(gui) {
     ctrl.$display.classList.add('focus'); // the halo the select would get
     owner = ctrl;
     document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('click', onOutside, true);
   };
   for (const ctrl of gui.controllersRecursive()) {
     if (!ctrl.$select) continue;
-    ctrl.$select.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); // no native picker attempt, no focus grab
+    // the select can't be tapped at all in fallback mode (see build 2 note);
+    // keyboard focus/arrows still reach it and fire change like anywhere else
+    ctrl.$select.style.pointerEvents = 'none';
+    ctrl.$widget.addEventListener('click', () => {
       if (owner === ctrl) close();
       else open(ctrl);
     });
+  }
+  if (FORCED_FALLBACK && !document.getElementById('tesla-badge')) {
+    const badge = document.createElement('div');
+    badge.id = 'tesla-badge';
+    badge.textContent = 'dropdown fallback active · build 2';
+    document.body.appendChild(badge);
   }
   // panel scrolled under the menu — but the menu scrolling ITSELF (rows past
   // max-height) must stay open: scroll doesn't bubble, yet capture-phase
