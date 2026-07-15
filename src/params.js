@@ -33,25 +33,23 @@ export function onSmallScreenChange(fn) {
 // screen is BIG — it keeps the desktop layout (charts, open panel) and only
 // the keyboard and native-picker assumptions change.
 //
-// Query flags: `?tesla` FORCES the Tesla treatment anywhere — the car no
-// longer needs it, desktop testing of the fallback still does. `?debug`
-// paints main.js's diagnostic panel WITHOUT changing behavior (a diagnostic
-// that alters what it measures is no diagnostic); ?tesla implies the panel,
-// so the in-car bookmark from the detection hunt keeps working.
+// Query flag: `?debug` paints main.js's diagnostic panel WITHOUT changing
+// behavior — a diagnostic that alters what it measures is no diagnostic.
+// (A ?tesla flag that FORCED the Tesla treatment existed during the
+// detection hunt; removed once detection was proven in-car. To stage the
+// Tesla path on a desktop, use DevTools device emulation with an
+// X11-Linux UA override — the real detection below fires.)
 const QUERY = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
-export const FORCED_TESLA = !!QUERY && QUERY.has('tesla');
-export const DEBUG_PANEL = FORCED_TESLA || (!!QUERY && QUERY.has('debug'));
+export const DEBUG_PANEL = !!QUERY && QUERY.has('debug');
 const NAV = typeof navigator === 'undefined' ? null : navigator;
 const TOUCH_INPUT =
   !!NAV &&
   (NAV.maxTouchPoints > 0 ||
     (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches));
-// the pure heuristic verdict, force excluded — the debug panel reports this
-export const DETECTED_TESLA =
+export const TESLA_BROWSER =
   !!NAV &&
   (/tesla|qtcarbrowser/i.test(NAV.userAgent) ||
     (/X11; Linux x86_64/.test(NAV.userAgent) && !/android/i.test(NAV.userAgent) && TOUCH_INPUT));
-export const TESLA_BROWSER = FORCED_TESLA || DETECTED_TESLA;
 // Touch-first UI (chase button instead of keyboard tips) for any screen
 // whose PRIMARY pointer is a finger — iPads masquerade as desktop Macs but
 // report a coarse pointer. Windows touch laptops stay desktop: their primary

@@ -1,4 +1,4 @@
-import { params, KMH, MPH, watchViewport, TOUCH_UI, DEBUG_PANEL, DETECTED_TESLA, FORCED_TESLA } from './params.js';
+import { params, KMH, MPH, watchViewport, TOUCH_UI, DEBUG_PANEL, TESLA_BROWSER } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
@@ -32,15 +32,14 @@ renderer.onRoadClick = (ray) => {
 
 // ?debug diagnostic panel (grew out of the Tesla dropdown hunt — the car has
 // no devtools, so a screenshot of this is how ground truth gets off the
-// screen). Observability only: it never changes behavior — ?tesla is the
-// separate flag that forces the Tesla treatment (and implies this panel).
-// "build" is the served page's Last-Modified — the Pages deploy time of the
-// HTML actually running — while "latest main" is fetched from the GitHub
-// API, so the pair separates stale-cache from fresh-code at a glance.
+// screen). Observability only: it never changes behavior. "build" is the
+// served page's Last-Modified — the Pages deploy time of the HTML actually
+// running — while "latest main" is fetched from the GitHub API, so the
+// pair separates stale-cache from fresh-code at a glance.
 if (DEBUG_PANEL) {
   const el = document.createElement('div');
   el.id = 'debug-panel';
-  el.textContent = FORCED_TESLA ? 'debug · tesla mode FORCED' : 'debug';
+  el.textContent = 'debug';
   const line = (text) => {
     const d = document.createElement('div');
     d.textContent = text;
@@ -57,9 +56,7 @@ if (DEBUG_PANEL) {
     .catch(() => {
       gitLine.textContent = 'latest main: unavailable (offline or rate-limited)';
     });
-  // pure detection verdicts (the force excluded — the title flags that);
-  // the panel diagnoses what WOULD happen on this device with no flags
-  line(`detected: tesla ${DETECTED_TESLA} · touch-ui ${DETECTED_TESLA || matchMedia('(pointer: coarse)').matches}`);
+  line(`detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI}`);
   line(navigator.userAgent);
   line(
     `touch ${navigator.maxTouchPoints}` +

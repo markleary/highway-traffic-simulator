@@ -107,7 +107,7 @@ src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        state onto body.chasing so CSS can yield the legend/
                        hint to the speedometer on narrow windows; boot sets
                        body.touch-ui from params.js TOUCH_UI and, under
-                       ?debug/?tesla, builds the #debug-panel readout —
+                       ?debug, builds the #debug-panel readout —
                        build stamp = document.lastModified i.e. the Pages
                        deploy time of the RUNNING html, latest-main commit
                        from the GitHub API so the pair separates stale cache
@@ -129,16 +129,16 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        tall windows hide the fundamental. ownDisplay(key) pins
                        a toggle against auto-tracking: called by the panel's
                        View toggles and by presets whose patch stages a chart.
-                       Also exports the device signals: DETECTED_TESLA (2026
+                       Also exports the device signals: TESLA_BROWSER (2026
                        firmware ships a BARE desktop-Linux UA — no Tesla/
                        token — so detection is capability-based: X11 Linux +
                        touch input − Android, confirmed firing in-car; false
                        positives are Linux touch desktops, which the same
-                       treatment suits), TESLA_BROWSER (that, or FORCED_TESLA
-                       = ?tesla, the force-for-testing flag), TOUCH_UI
+                       treatment suits; stage it on a desktop via DevTools
+                       device emulation + X11-Linux UA override), TOUCH_UI
                        (Tesla, or a coarse primary pointer — iPads), and
-                       DEBUG_PANEL (?debug or ?tesla → main.js's diagnostic
-                       panel; observability only, never changes behavior)
+                       DEBUG_PANEL (?debug → main.js's diagnostic panel;
+                       observability only, never changes behavior)
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -179,8 +179,8 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        keeps working — keyboard-driven changes keep focus
                        (tab position survives), text inputs keep it while
                        typing. On Tesla's in-car browser (TESLA_BROWSER from
-                       params.js; ?tesla forces it for desktop testing)
-                       dropdowns swap in an in-page .gui-menu — Tesla's shell
+                       params.js) dropdowns swap in an in-page .gui-menu —
+                       Tesla's shell
                        never renders the native <select> picker — whose rows
                        drive the real select (selectedIndex + change) so
                        lil-gui's pipeline is untouched. The select itself is

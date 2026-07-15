@@ -56,7 +56,8 @@ export function buildPanel({ sim, renderer }) {
 // does nothing there. Stand in a small in-page menu instead: its rows
 // drive the real <select> (selectedIndex + a change event), so lil-gui's
 // whole pipeline — onChange, onFinishChange, updateDisplay — runs
-// untouched. `?tesla` forces it on for testing in a normal browser.
+// untouched. (Stage it on a desktop with DevTools device emulation plus an
+// X11-Linux UA override — the params.js detection fires for real.)
 //
 // Build 2 made the select inert (pointer-events: none) with the tap caught
 // on the plain widget div, toggling on `click`. Build 3 fixed WHY build 1
