@@ -89,7 +89,10 @@ export const params = {
   offRampD: 6,
   rampSpeed: 40 * MPH, // m/s
   metering: false, // signals at every on-ramp release one car per green (live, no reset)
-  meterRate: 10,   // greens per minute at each meter
+  meterRate: 8,    // greens per minute at each meter — the calibrated rush-flood
+                   // rate (see the meters preset / smoke test). Higher rates
+                   // (the old default 10–12) barely bind against a 30/min flood
+                   // and stop shaping demand — the meter never gets ahead of it.
 
   // events
   incidentDuration: 90, // s — how long a breakdown stays parked / a wreck blocks

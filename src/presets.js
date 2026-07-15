@@ -28,7 +28,7 @@ export const PRESETS = {
   },
   meters: {
     label: 'Metered rush hour',
-    tip: 'The Rush hour flood, but signals on every on-ramp release one car per green. Ramp queues grow — yet the mainline keeps moving and total throughput rises. Untick Ramp meters and watch average speed sink as the merges take over; the flow chart tells the story.',
+    tip: 'The Rush hour flood, but signals on every on-ramp release one car per green. Ramp queues grow — yet the mainline runs faster and throughput holds. Give it a few minutes: the gain builds over the run (small at first, clearest past ~15 min). Untick Ramp meters and watch average speed sag as the merges take back over; the flow chart tells the story.',
     patch: {
       initialCars: 100,
       onRampA: 30,
@@ -38,7 +38,13 @@ export const PRESETS = {
       truckShare: 10, // pinned with rush — see note there
       accShare: 0,
       metering: true,
-      meterRate: 12, // calibrated: +25% mainline speed over unmetered at 10 min, +31% at 25
+      // 8/min recalibrated (issue #49): the old 12/min sat so close to the
+      // flood's own merge rate it barely shaped demand — a seed lottery that
+      // averaged flat. At 8 the rescue is robust across seeds: settled
+      // mainline speed ~+14% at 25 min (~+5% and noisier at 10 min), flow
+      // holding. It's a distribution, not a fixed number — some seeds win big,
+      // a minority don't; the long horizon is where it reliably shows.
+      meterRate: 8,
       showCharts: true,
     },
   },

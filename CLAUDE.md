@@ -295,9 +295,14 @@ test/smoke.js          runs the sim headless under several parameter regimes
   alone (the wall needs the line ahead of them). Spawn backpressure +
   the on-ramp labels (achieved vs requested) surface the queue cost.
   Signals (stop bar + two-lamp post, `buildMeter`/`updateMeters`) show per
-  ramp; green flashes ~1 s per release. Calibrated on the rush regime:
-  metering @12 lifts settled mainline speed ~25% at 10 min (~31% at 25 min)
-  while flow past start rises — the smoke test pins both as regressions.
+  ramp; green flashes ~1 s per release. Calibrated on the rush regime at
+  `meterRate` 8 (issue #49 — the earlier 12 sat so near the flood's own merge
+  rate it barely shaped demand and averaged flat across seeds): metering lifts
+  settled mainline speed ~14% at 25 min (~+5% and noisier at 10 min) with flow
+  holding, measured as a cross-seed mean, not a single trajectory. It's a
+  distribution — most seeds win, a minority don't, and the effect builds with
+  the horizon. The smoke test pins a small multi-seed 20-min mean (NOT one
+  recorded run — that masked the effect drifting flat before) as the regression.
 - Work zone (`sim.workZone()`, Events panel; `workZone`/`workZonePos`/
   `workZoneLen` params): cones close the INNERMOST lane over a stretch —
   ramps attach to lane 0 and exits drift there, so the inner lane is the only
