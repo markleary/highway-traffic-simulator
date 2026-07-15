@@ -79,8 +79,11 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        device signals: coarse-primary pointer or Tesla) makes
                        just the phone rule's two keyboard swaps — tip bar
                        hidden, 🎥 Chase shown — on touch-first screens of ANY
-                       size (Tesla, iPads), without the small-screen layout.
-                       Also:
+                       size (Tesla, iPads), without the small-screen layout;
+                       while the panel column hangs open on those screens the
+                       button slides left of it (it floats above lil-gui, a
+                       phone necessity, and the open desktop column can reach
+                       the corner it lives in). Also:
                        emoji-SVG favicon + description/OG metas, .gui-tip
                        tooltip styling, and a plain-script boot watchdog
                        that shows a notice if window.sim never appears

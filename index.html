@@ -113,6 +113,18 @@
        boot by main.js from the device signals in params.js */
     body.touch-ui .hint { display: none; }
     body.touch-ui .chasebtn { display: block; }
+    /* ...but the button floats ABOVE lil-gui (z 1002 — a phone necessity,
+       see .chasebtn), and on these desktop-size screens the panel hangs
+       open and its column can reach the bottom-right corner, so the button
+       would eat taps on the lowest controls. While the column is open,
+       slide the button left of it — same clearance as the dock (Codex
+       review). Phones keep the corner: their open panel is full-height
+       anyway and the floating button is the lesser evil there. */
+    @media (min-width: 501px) and (min-height: 501px) {
+      body.touch-ui.panel-open .chasebtn {
+        right: max(272px, calc(env(safe-area-inset-right) + 272px));
+      }
+    }
     /* narrow screens: compact HUD (it must coexist with the 245 px control
        panel), and the chart stack squeezes to the viewport if re-enabled
        (canvas hover math is fraction-based, so scaling is safe) */
