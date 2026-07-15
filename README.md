@@ -120,7 +120,11 @@ branch → `main` / root**. That's it — there is nothing to build.
 On a phone the layout adapts: the chart panels start hidden and the control
 panel starts collapsed (both a tap away), the keyboard tips disappear, and a
 **🎥 Chase** button in the corner toggles the ride-along camera — drag on the
-screen while chasing to swing around the car. Mid-size windows adapt too:
+screen while chasing to swing around the car. Big touch-first screens that
+report themselves as desktops (iPads, the Tesla in-car browser) keep the full
+desktop layout but make the same two swaps — Chase button in, keyboard tips
+out — and in the Tesla browser, which can't show native dropdown pickers, the
+panel's dropdowns open a built-in menu instead. Mid-size windows adapt too:
 charts hide below ~900 px so the road keeps the screen, the defaults keep
 re-deriving as you resize or rotate (once you flip a toggle yourself, your
 setting wins), and the camera re-frames itself around whichever panels are

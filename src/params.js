@@ -23,6 +23,36 @@ export function onSmallScreenChange(fn) {
   if (MQ) MQ.small.addEventListener('change', () => fn(MQ.small.matches));
 }
 
+// --- device signals -------------------------------------------------------
+// Tesla's in-car browser (2026 firmware) presents as plain desktop Linux
+// Chrome — the Tesla/ UA token older firmware carried is gone — so the car
+// is detected by capability instead: a touch-driven X11-Linux browser is a
+// car, or a Linux touchscreen desktop, which the same treatment suits. This
+// is deliberately separate from MQ.small: the car's screen is BIG — it keeps
+// the desktop layout (charts, open panel) and only the keyboard and
+// native-picker assumptions change. `?tesla` forces both flags for testing
+// anywhere (and makes panel.js paint a diagnostic badge).
+export const FORCED_TESLA =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).has('tesla');
+const NAV = typeof navigator === 'undefined' ? null : navigator;
+const TOUCH_INPUT =
+  !!NAV &&
+  (NAV.maxTouchPoints > 0 ||
+    (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches));
+export const TESLA_BROWSER =
+  FORCED_TESLA ||
+  (!!NAV &&
+    (/tesla|qtcarbrowser/i.test(NAV.userAgent) ||
+      (/X11; Linux x86_64/.test(NAV.userAgent) && !/android/i.test(NAV.userAgent) && TOUCH_INPUT)));
+// Touch-first UI (chase button instead of keyboard tips) for any screen
+// whose PRIMARY pointer is a finger — iPads masquerade as desktop Macs but
+// report a coarse pointer. Windows touch laptops stay desktop: their primary
+// pointer is the mouse, and maxTouchPoints alone never flips this (it only
+// feeds the Tesla arm above, gated on the X11-Linux UA). Phones pass too,
+// redundantly with the CSS phone breakpoint.
+export const TOUCH_UI =
+  TESLA_BROWSER || (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
+
 // Chart-visibility defaults for the current viewport: phones and narrow
 // windows would bury the map under the 320 px stack, and the fundamental
 // diagram additionally needs a tall window (the full panel stands ~630 px

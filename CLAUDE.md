@@ -74,7 +74,16 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        toggle button, compacts the HUD, and squeezes the
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
-                       respect notch safe areas (viewport-fit=cover). Also:
+                       respect notch safe areas (viewport-fit=cover).
+                       body.touch-ui (set at boot by main.js from params.js
+                       device signals: coarse-primary pointer or Tesla) makes
+                       just the phone rule's two keyboard swaps — tip bar
+                       hidden, 🎥 Chase shown — on touch-first screens of ANY
+                       size (Tesla, iPads), without the small-screen layout;
+                       while the panel column hangs open on those screens the
+                       button slides left of it (it floats above lil-gui, a
+                       phone necessity, and the open desktop column can reach
+                       the corner it lives in). Also:
                        emoji-SVG favicon + description/OG metas, .gui-tip
                        tooltip styling, and a plain-script boot watchdog
                        that shows a notice if window.sim never appears
@@ -96,7 +105,8 @@ src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        aware legend swap, and a refitView() call when the
                        chart stack toggles; the frame loop mirrors chase
                        state onto body.chasing so CSS can yield the legend/
-                       hint to the speedometer on narrow windows). The HUD
+                       hint to the speedometer on narrow windows; boot sets
+                       body.touch-ui from params.js TOUCH_UI). The HUD
                        clock goes h:mm:ss past an hour and carries the
                        paused / ×n time-scale state — the spacebar's only
                        feedback when the panel is collapsed
@@ -112,7 +122,14 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        (stack + panel would leave no visible road), sub-800px-
                        tall windows hide the fundamental. ownDisplay(key) pins
                        a toggle against auto-tracking: called by the panel's
-                       View toggles and by presets whose patch stages a chart
+                       View toggles and by presets whose patch stages a chart.
+                       Also exports the device signals: TESLA_BROWSER (2026
+                       firmware ships a BARE desktop-Linux UA — no Tesla/
+                       token — so detection is capability-based: X11 Linux +
+                       touch input − Android; false positives are Linux touch
+                       desktops, which the same treatment suits), TOUCH_UI
+                       (that, or a coarse primary pointer — iPads), and
+                       FORCED_TESLA (?tesla, forces both + the panel.js badge)
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -152,18 +169,18 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        keyboard shortcuts' target===body gate in main.js
                        keeps working — keyboard-driven changes keep focus
                        (tab position survives), text inputs keep it while
-                       typing. On Tesla's in-car browser (UA-sniffed; `?tesla`
-                       forces it for testing AND paints a build badge — in-car
-                       there are no devtools, so the badge is how a test tells
-                       stale cache from fresh-but-broken) dropdowns swap in an
-                       in-page .gui-menu — Tesla's shell never renders the
-                       native <select> picker — whose rows drive the real
-                       select (selectedIndex + change) so lil-gui's pipeline
-                       is untouched. The select itself is inert in fallback
-                       mode (pointer-events: none) and the widget div takes
-                       the click: build 1 listened on the select and still
-                       died in the car — the shell likely swallows form-
-                       control taps before the page sees any event
+                       typing. On Tesla's in-car browser (TESLA_BROWSER from
+                       params.js; `?tesla` forces it AND paints a badge that
+                       reads out the UA/touch signals — no devtools in the
+                       car, a photo of the screen is the ground truth)
+                       dropdowns swap in an in-page .gui-menu — Tesla's shell
+                       never renders the native <select> picker — whose rows
+                       drive the real select (selectedIndex + change) so
+                       lil-gui's pipeline is untouched. The select itself is
+                       inert in fallback mode (pointer-events: none) and the
+                       widget div takes the click — proven in-car under
+                       ?tesla (build 1's UA sniff was what never fired: the
+                       Tesla/ token is gone from 2026 firmware)
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
