@@ -154,6 +154,15 @@
     }
     .lil-gui .gui-menu div.selected { background: var(--widget-color); color: var(--number-color); }
     .lil-gui .gui-menu div:hover { background: var(--hover-color); }
+    /* ?tesla diagnostic badge (panel.js): confirms fresh code is running in
+       the car, where there are no devtools — stale cache shows no badge */
+    #tesla-badge {
+      position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
+      transform: translateX(-50%); z-index: 1003; pointer-events: none;
+      color: #dbe4ee; background: rgba(10, 16, 14, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px;
+      padding: 4px 12px; font: 11px system-ui, sans-serif;
+    }
     .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }
     .boot-error h1 { font-size: 14px; margin: 0 0 6px; }
     /* portrait phones: the HUD and the panel's collapsed title bar can't
