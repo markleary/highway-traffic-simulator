@@ -128,8 +128,10 @@ actually open.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
 backwards from the merge points — then pick **Metered rush hour**: same flood,
-but the meters hold the merges to a trickle and the mainline stays alive
-(untick Ramp meters mid-run to watch it collapse). Pick **ACC wave lab**, then
+but the meters hold the merges to a trickle and the mainline runs faster. Give
+it a few minutes — the gain builds over the run — then untick Ramp meters
+mid-run and watch average speed sag as the merges take back over. Pick
+**ACC wave lab**, then
 raise the adaptive-cruise share and reset — the jam stripes dissolve; the 2018
 Stern experiment, reproducible from your couch. Or pick **Sudden downpour**
 and watch a comfortably flowing road collapse into stop-and-go one minute
