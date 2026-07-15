@@ -1,9 +1,15 @@
-import { params, KMH, MPH, watchViewport } from './params.js';
+import { params, KMH, MPH, watchViewport, TOUCH_UI } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
 import { ChartPanel } from './ui/charts.js';
 import { Speedometer } from './ui/speedo.js';
+
+// touch-first screens of ANY size (the Tesla browser presents as a desktop,
+// iPads as Macs): keyboard tips are dead weight and a finger needs the chase
+// toggle — CSS keys off this class the same way it keys off the phone
+// breakpoint, without dragging in the rest of the small-screen layout
+document.body.classList.toggle('touch-ui', TOUCH_UI);
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));

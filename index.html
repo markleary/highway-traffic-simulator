@@ -105,6 +105,14 @@
       .chasebtn { display: block; }
       .speedo canvas { width: 150px; height: 92px; } /* clears the chase button */
     }
+    /* touch-primary screens of ANY size — the Tesla browser reports itself
+       as a desktop, iPads as Macs — get the same two adjustments as the
+       phone rule above (no keyboard: tips are dead weight, a finger needs
+       the chase toggle) WITHOUT the rest of the small-screen layout: the
+       big screen keeps its charts and open panel. body.touch-ui is set at
+       boot by main.js from the device signals in params.js */
+    body.touch-ui .hint { display: none; }
+    body.touch-ui .chasebtn { display: block; }
     /* narrow screens: compact HUD (it must coexist with the 245 px control
        panel), and the chart stack squeezes to the viewport if re-enabled
        (canvas hover math is fraction-based, so scaling is safe) */
@@ -155,13 +163,20 @@
     .lil-gui .gui-menu div.selected { background: var(--widget-color); color: var(--number-color); }
     .lil-gui .gui-menu div:hover { background: var(--hover-color); }
     /* ?tesla diagnostic badge (panel.js): confirms fresh code is running in
-       the car, where there are no devtools — stale cache shows no badge */
+       the car, where there are no devtools — stale cache shows no badge —
+       and reads out the UA + touch signals so a photo of the screen carries
+       the ground truth the capability detection is built on */
     #tesla-badge {
       position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
       transform: translateX(-50%); z-index: 1003; pointer-events: none;
       color: #dbe4ee; background: rgba(10, 16, 14, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px;
-      padding: 4px 12px; font: 11px system-ui, sans-serif;
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      padding: 5px 12px; font: 11px system-ui, sans-serif;
+      max-width: min(92vw, 760px); text-align: center;
+    }
+    #tesla-badge .diag {
+      color: #9fb0c0; font-size: 10px; text-align: left;
+      word-break: break-all; margin-top: 3px;
     }
     .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }
     .boot-error h1 { font-size: 14px; margin: 0 0 6px; }
