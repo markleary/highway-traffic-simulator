@@ -27,23 +27,29 @@ export function onSmallScreenChange(fn) {
 // Tesla's in-car browser (2026 firmware) presents as plain desktop Linux
 // Chrome — the Tesla/ UA token older firmware carried is gone — so the car
 // is detected by capability instead: a touch-driven X11-Linux browser is a
-// car, or a Linux touchscreen desktop, which the same treatment suits. This
-// is deliberately separate from MQ.small: the car's screen is BIG — it keeps
-// the desktop layout (charts, open panel) and only the keyboard and
-// native-picker assumptions change. `?tesla` forces both flags for testing
-// anywhere (and makes panel.js paint a diagnostic badge).
-export const FORCED_TESLA =
-  typeof location !== 'undefined' && new URLSearchParams(location.search).has('tesla');
+// car, or a Linux touchscreen desktop, which the same treatment suits.
+// Confirmed firing in-car (2026 Model Y): the car fakes the UA but not its
+// touch signals. This is deliberately separate from MQ.small: the car's
+// screen is BIG — it keeps the desktop layout (charts, open panel) and only
+// the keyboard and native-picker assumptions change.
+//
+// Query flag: `?debug` paints main.js's diagnostic panel WITHOUT changing
+// behavior — a diagnostic that alters what it measures is no diagnostic.
+// (A ?tesla flag that FORCED the Tesla treatment existed during the
+// detection hunt; removed once detection was proven in-car. To stage the
+// Tesla path on a desktop, use DevTools device emulation with an
+// X11-Linux UA override — the real detection below fires.)
+const QUERY = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
+export const DEBUG_PANEL = !!QUERY && QUERY.has('debug');
 const NAV = typeof navigator === 'undefined' ? null : navigator;
 const TOUCH_INPUT =
   !!NAV &&
   (NAV.maxTouchPoints > 0 ||
     (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches));
 export const TESLA_BROWSER =
-  FORCED_TESLA ||
-  (!!NAV &&
-    (/tesla|qtcarbrowser/i.test(NAV.userAgent) ||
-      (/X11; Linux x86_64/.test(NAV.userAgent) && !/android/i.test(NAV.userAgent) && TOUCH_INPUT)));
+  !!NAV &&
+  (/tesla|qtcarbrowser/i.test(NAV.userAgent) ||
+    (/X11; Linux x86_64/.test(NAV.userAgent) && !/android/i.test(NAV.userAgent) && TOUCH_INPUT));
 // Touch-first UI (chase button instead of keyboard tips) for any screen
 // whose PRIMARY pointer is a finger — iPads masquerade as desktop Macs but
 // report a coarse pointer. Windows touch laptops stay desktop: their primary

@@ -27,6 +27,11 @@ python3 -m http.server 8000
 
 (Opening `index.html` via `file://` won't work because the app uses ES modules.)
 
+Append **`?debug`** to the URL for a small diagnostics readout: the deploy
+timestamp of the running build, the latest `main` commit, device-detection
+verdicts, and the UA/touch/GPU details. It changes no behavior — it exists
+for devices without devtools (it's how Tesla in-car support was debugged).
+
 ## Deploying to GitHub Pages
 
 Push this repository to GitHub, then: **Settings → Pages → Source: Deploy from a

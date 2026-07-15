@@ -1,4 +1,4 @@
-import { params, KMH, MPH, watchViewport, TOUCH_UI } from './params.js';
+import { params, KMH, MPH, watchViewport, TOUCH_UI, DEBUG_PANEL, TESLA_BROWSER } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { buildPanel } from './ui/panel.js';
@@ -29,6 +29,55 @@ renderer.onRoadClick = (ray) => {
   const car = sim.carNearRay(ray);
   if (car) sim.triggerAccident(car);
 };
+
+// ?debug diagnostic panel (grew out of the Tesla dropdown hunt — the car has
+// no devtools, so a screenshot of this is how ground truth gets off the
+// screen). Observability only: it never changes behavior. "build" is the
+// served page's Last-Modified — the Pages deploy time of the HTML actually
+// running — while "latest main" is fetched from the GitHub API, so the
+// pair separates stale-cache from fresh-code at a glance.
+if (DEBUG_PANEL) {
+  const el = document.createElement('div');
+  el.id = 'debug-panel';
+  el.textContent = 'debug';
+  const line = (text) => {
+    const d = document.createElement('div');
+    d.textContent = text;
+    el.appendChild(d);
+    return d;
+  };
+  line(`build (this page): ${document.lastModified}`);
+  const gitLine = line('latest main: fetching…');
+  fetch('https://api.github.com/repos/markleary/highway-traffic-simulator/commits/main')
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((c) => {
+      gitLine.textContent = `latest main: ${c.sha.slice(0, 7)} · ${c.commit.committer.date}`;
+    })
+    .catch(() => {
+      gitLine.textContent = 'latest main: unavailable (offline or rate-limited)';
+    });
+  line(`detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI}`);
+  line(navigator.userAgent);
+  line(
+    `touch ${navigator.maxTouchPoints}` +
+      ` · coarse ${matchMedia('(pointer: coarse)').matches}` +
+      ` · no-hover ${matchMedia('(hover: none)').matches}` +
+      ` · screen ${screen.width}×${screen.height}` +
+      ` · vp ${window.innerWidth}×${window.innerHeight}` +
+      ` · dpr ${window.devicePixelRatio}`
+  );
+  try {
+    // same-type getContext returns three's existing context; the debug ext
+    // is absent in browsers that already unmask RENDERER (newer Chromium)
+    const canvas = document.querySelector('#app canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    line(`gpu: ${gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)}`);
+  } catch {
+    line('gpu: unavailable');
+  }
+  document.body.appendChild(el);
+}
 
 // console access for poking at the live simulation
 window.sim = sim;

@@ -106,7 +106,13 @@ src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        chart stack toggles; the frame loop mirrors chase
                        state onto body.chasing so CSS can yield the legend/
                        hint to the speedometer on narrow windows; boot sets
-                       body.touch-ui from params.js TOUCH_UI). The HUD
+                       body.touch-ui from params.js TOUCH_UI and, under
+                       ?debug, builds the #debug-panel readout —
+                       build stamp = document.lastModified i.e. the Pages
+                       deploy time of the RUNNING html, latest-main commit
+                       from the GitHub API so the pair separates stale cache
+                       from fresh code, detection verdicts, UA + touch
+                       signals, GPU string). The HUD
                        clock goes h:mm:ss past an hour and carries the
                        paused / ×n time-scale state — the spacebar's only
                        feedback when the panel is collapsed
@@ -126,10 +132,13 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        Also exports the device signals: TESLA_BROWSER (2026
                        firmware ships a BARE desktop-Linux UA — no Tesla/
                        token — so detection is capability-based: X11 Linux +
-                       touch input − Android; false positives are Linux touch
-                       desktops, which the same treatment suits), TOUCH_UI
-                       (that, or a coarse primary pointer — iPads), and
-                       FORCED_TESLA (?tesla, forces both + the panel.js badge)
+                       touch input − Android, confirmed firing in-car; false
+                       positives are Linux touch desktops, which the same
+                       treatment suits; stage it on a desktop via DevTools
+                       device emulation + X11-Linux UA override), TOUCH_UI
+                       (Tesla, or a coarse primary pointer — iPads), and
+                       DEBUG_PANEL (?debug → main.js's diagnostic panel;
+                       observability only, never changes behavior)
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -170,17 +179,15 @@ src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        keeps working — keyboard-driven changes keep focus
                        (tab position survives), text inputs keep it while
                        typing. On Tesla's in-car browser (TESLA_BROWSER from
-                       params.js; `?tesla` forces it AND paints a badge that
-                       reads out the UA/touch signals — no devtools in the
-                       car, a photo of the screen is the ground truth)
-                       dropdowns swap in an in-page .gui-menu — Tesla's shell
+                       params.js) dropdowns swap in an in-page .gui-menu —
+                       Tesla's shell
                        never renders the native <select> picker — whose rows
                        drive the real select (selectedIndex + change) so
                        lil-gui's pipeline is untouched. The select itself is
                        inert in fallback mode (pointer-events: none) and the
-                       widget div takes the click — proven in-car under
-                       ?tesla (build 1's UA sniff was what never fired: the
-                       Tesla/ token is gone from 2026 firmware)
+                       widget div takes the click — proven in-car (build 1's
+                       UA sniff was what never fired: the Tesla/ token is
+                       gone from 2026 firmware)
 src/ui/charts.js       rolling 5-min speed/flow/cars-on-road charts + space-time diagram
                        (hover mirrors a cursor onto the road via onHoverS; click
                        flies the camera to that s via onPickS → renderer.focusOnS,
