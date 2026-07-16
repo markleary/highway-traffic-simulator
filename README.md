@@ -105,7 +105,9 @@ branch → `main` / root**. That's it — there is nothing to build.
     (trees, hills, clouds — off for modest GPUs); overhead vs. perspective
     camera; and a **chase camera** that rides along behind a random car with a
     working speedometer — hold the mouse to swing the camera around the car
-    (Esc to exit)
+    (Esc to exit). Chase view also shows the vehicle art up close: faceted
+    paint, real window panes, low-poly hubs, mirrors, trim, dormant lamp lenses,
+    and contact shadows that keep every vehicle planted on the road.
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
@@ -158,7 +160,10 @@ amplifying them. Rain scales the whole driver model — slower targets, longer
 headways, less grip — which is why a stable regime tips when a storm rolls in.
 Everything is rendered with three.js (instanced meshes) — the low-poly cars,
 trucks, and golden-hour landscape included — so thousands of cars stay smooth.
-Rain grades the whole scene: the sky dome, clouds, hills, and fog all darken
+The landscape uses sparse, broad faceted ground relief, faint wheel-wear
+ribbons, and a polygonal sun halo to keep the diorama graphic without looking
+busy. Rain
+grades the whole scene: the sky dome, terrain, clouds, hills, and fog all darken
 with the same live rain level that drives the physics.
 
 ## Roadmap
