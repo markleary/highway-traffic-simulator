@@ -8,6 +8,7 @@ import { params, KMH, MPH } from '../params.js';
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
 const MAX_AMB = 8; // sim.spawnAmbulance caps at the same count (MAX_AMBULANCES)
+const MAX_SHADOWS = MAX_CARS * 3 + MAX_TRUCKS + MAX_AMB; // every render pool combined
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
 // 'By type' color mode: the charts' categorical trio (speed/flow/cars series
@@ -17,7 +18,9 @@ const TYPE_COLORS = {
   acc: new THREE.Color(0x199e70),
   truck: new THREE.Color(0xd98e32),
 };
-const MAX_LIGHTS = MAX_CARS + MAX_TRUCKS;
+// Brake lamps are paired on every conventional vehicle, and a signaling car
+// can also contribute a front/rear blinker pair in the same frame.
+const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_AMB) * 2;
 const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
 const RAIN_HEIGHT = 260;
 
@@ -36,6 +39,9 @@ const CLOUD_DRY = new THREE.Color(0xf2efe7);
 const CLOUD_WET = new THREE.Color(0x525c66);
 const HILL_DRY = new THREE.Color(0x77866f); // pre-hazed: hills skip the fog
 const HILL_WET = new THREE.Color(0x424c55);
+const GROUND_DRY = new THREE.Color(0x5c6a49);
+const GROUND_WET = new THREE.Color(0x39464a);
+const GLASS_TINT = new THREE.Color(0x263d4c);
 const _sky = new THREE.Color(); // applyWeather scratch
 
 // Light mount points per vehicle kind, in the car's local frame (+z = front,
@@ -44,19 +50,43 @@ const _sky = new THREE.Color(); // applyWeather scratch
 // picks the loft in update().
 const LIGHT_DIMS = {
   car: [
-    { rear: -2.3, front: 2.3, halfW: 0.58, y: 0.6, brakeW: 1.15 }, // sedan
-    { rear: -2.19, front: 2.19, halfW: 0.62, y: 0.64, brakeW: 1.3 }, // hatchback
+    {
+      rear: -2.3, front: 2.3, halfW: 0.58, y: 0.6,
+      brakeZ: -2.435, brakeY: 0.82, brakeHalfW: 0.58, brakeW: 0.32, brakeH: 0.11,
+      blinkZR: -2.423, blinkYR: 0.6, blinkHalfWR: 0.58,
+      blinkWR: 0.32, blinkHR: 0.11, blinkDepthR: 0.025,
+      blinkZF: 2.423, blinkYF: 0.78, blinkHalfWF: 0.58,
+      blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
+    }, // sedan
+    {
+      rear: -2.19, front: 2.19, halfW: 0.62, y: 0.64,
+      brakeZ: -2.325, brakeY: 0.86, brakeHalfW: 0.58, brakeW: 0.32, brakeH: 0.11,
+      blinkZR: -2.313, blinkYR: 0.64, blinkHalfWR: 0.58,
+      blinkWR: 0.32, blinkHR: 0.11, blinkDepthR: 0.025,
+      blinkZF: 2.313, blinkYF: 0.78, blinkHalfWF: 0.58,
+      blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
+    }, // hatchback
   ],
   // acc overrides the shared mount fields: the brake light is a thin
   // full-width strip along the top of the tailgate, and the blinkers are
   // thin low strips — just above the front bumper, riding the rear one
   acc: {
     rear: -2.33, front: 2.2, halfW: 0.62, y: 1.0,
-    brakeY: 1.12, brakeW: 1.72, brakeH: 0.07,
+    brakeZ: -2.39, brakeY: 1.12, brakeW: 1.72, brakeH: 0.07,
     blinkYF: 0.48, blinkYR: 0.3, blinkW: 0.5, blinkH: 0.07,
   },
-  truck: { rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95, brakeW: 2.1 }, // front = hood flanks
-  ambulance: { rear: -2.69, front: 2.69, halfW: 0.85, y: 1.0, brakeW: 1.9 },
+  truck: {
+    rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95,
+    brakeZ: -7.895, brakeY: 0.72, brakeHalfW: 0.88, brakeW: 0.36, brakeH: 0.15,
+    blinkZR: -7.895, blinkYR: 0.98, blinkHalfWR: 0.88,
+    blinkWR: 0.36, blinkHR: 0.12, blinkDepthR: 0.025,
+    blinkZF: 8.278, blinkYF: 1.15, blinkHalfWF: 0.75,
+    blinkWF: 0.28, blinkHF: 0.09, blinkDepthF: 0.025,
+  }, // front = hood flanks
+  ambulance: {
+    rear: -2.69, front: 2.69, halfW: 0.85, y: 1.0,
+    brakeZ: -2.785, brakeY: 0.74, brakeHalfW: 0.68, brakeW: 0.36, brakeH: 0.14,
+  },
 };
 
 export class SceneRenderer {
@@ -64,6 +94,11 @@ export class SceneRenderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // A gentle filmic shoulder keeps the low sun and pale vehicle roofs from
+    // clipping while preserving the deliberately saturated toy-diorama palette.
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.08;
     container.appendChild(this.renderer.domElement);
 
     // DOM overlay for map labels: crisp, constant screen size at any zoom
@@ -110,9 +145,14 @@ export class SceneRenderer {
     this.sun.position.copy(SUN_DIR).multiplyScalar(450);
     this.scene.add(this.sun);
 
+    this.groundMat = new THREE.MeshStandardMaterial({
+      color: GROUND_DRY,
+      roughness: 1,
+      vertexColors: true,
+    });
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(4000, 64).rotateX(-Math.PI / 2), // reaches the hill ring
-      new THREE.MeshStandardMaterial({ color: 0x5c6a49, roughness: 1 })
+      facetedGroundGeo(), // the sole ground surface: no coplanar overlay to flicker
+      this.groundMat
     );
     ground.position.y = -0.15;
     this.scene.add(ground);
@@ -147,7 +187,6 @@ export class SceneRenderer {
     this._dummy.rotation.order = 'YXZ'; // yaw first, then pitch about the car's own right axis
     this._slope = 0; // current car's road grade (bridge approaches), set per car in update
     this._bodyColor = new THREE.Color();
-    this._cabinColor = new THREE.Color();
     this._raycaster = new THREE.Raycaster();
 
     // chase camera state. Yaw/pitch are a held-drag orbit offset around the
@@ -314,6 +353,32 @@ export class SceneRenderer {
       g.add(line);
     }
 
+    // Two subtle wheel-polished ribbons per lane break up the perfectly flat
+    // asphalt. They are one merged mesh, so the extra road detail costs a
+    // single draw call regardless of lane count or loop size.
+    const wear = [];
+    for (let l = 0; l < params.lanes; l++) {
+      const center = -l * ROAD.laneWidth;
+      for (const track of [-0.78, 0.78]) {
+        wear.push(loopStrip(center + track + 0.16, center + track - 0.16, 0.045));
+      }
+    }
+    g.add(
+      new THREE.Mesh(
+        mergeGeometries(wear),
+        new THREE.MeshBasicMaterial({
+          color: 0x1c2025,
+          transparent: true,
+          opacity: 0.16,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+          side: THREE.DoubleSide,
+        })
+      )
+    );
+
     this.buildBridgeInto(g); // concrete under any elevated span (figure eight)
 
     this.roadGroup = g;
@@ -408,6 +473,11 @@ export class SceneRenderer {
     this.cloudMat.color.copy(_sky).multiplyScalar(0.5);
     this.cloudMat.emissive.copy(_sky).multiplyScalar(0.62);
     this.hillMat.color.copy(HILL_DRY).lerp(HILL_WET, r);
+    this.groundMat.color.copy(GROUND_DRY).lerp(GROUND_WET, r);
+    if (this.terrainReliefMat) {
+      this.terrainReliefMat.color.copy(GROUND_DRY).lerp(GROUND_WET, r);
+    }
+    this.sunHalo.material.opacity = 0.16 * Math.max(0, 1 - r * 1.8);
     if (this.rainPts) {
       this.rainPts.visible = r > 0.03;
       this.rainPts.material.opacity = 0.45 * r;
@@ -457,10 +527,21 @@ export class SceneRenderer {
       })
     );
     this.sunDisc.position.copy(SUN_DIR).multiplyScalar(3900); // inside the dome
+    this.sunHalo = new THREE.Mesh(
+      new THREE.CircleGeometry(310, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd5a0,
+        fog: false,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+      })
+    );
+    this.sunHalo.position.copy(SUN_DIR).multiplyScalar(3895);
 
     // dome + sun ride along with the camera so the horizon never shows a seam
     this.skyGroup = new THREE.Group();
-    this.skyGroup.add(this.skyDome, this.sunDisc);
+    this.skyGroup.add(this.skyDome, this.sunHalo, this.sunDisc);
     this.scene.add(this.skyGroup);
 
     // clouds: merged icosahedron puffs, instanced, on a slow carousel spin.
@@ -507,9 +588,9 @@ export class SceneRenderer {
     this.scene.add(this.hillMesh);
   }
 
-  // Trees, bushes and rocks scattered around (and inside) the loop, with a
-  // keep-out corridor along the pavement and every ramp. Rebuilt on road
-  // changes — the corridor moves with the geometry.
+  // Broad ground relief plus trees, bushes and rocks scattered around (and
+  // inside) the loop, with a keep-out corridor along the pavement and every
+  // ramp. Rebuilt on road changes — the corridor moves with the geometry.
   buildScenery() {
     if (this.greenGroup) {
       this.greenGroup.traverse((o) => {
@@ -542,13 +623,20 @@ export class SceneRenderer {
     };
     const b = bounds();
     const R = Math.max(b.halfX, b.halfZ) + 420; // scatter square half-size
-    const scatter = (count, dRoad, dRamp) => {
+    const scatter = (count, dRoad, dRamp, dOther = 0) => {
       const out = [];
       let guard = count * 12; // rejection sampling; dense shapes just get fewer
       while (out.length < count && guard-- > 0) {
         const x = (Math.random() * 2 - 1) * R;
         const z = (Math.random() * 2 - 1) * R;
-        if (clearOf(road, x, z, dRoad) && clearOf(ramps, x, z, dRamp)) out.push([x, z]);
+        const separate = !dOther || out.every(([ox, oz]) => (
+          (ox - x) ** 2 + (oz - z) ** 2 >= dOther ** 2
+        ));
+        if (
+          separate
+          && clearOf(road, x, z, dRoad)
+          && clearOf(ramps, x, z, dRamp)
+        ) out.push([x, z]);
       }
       return out;
     };
@@ -583,6 +671,42 @@ export class SceneRenderer {
     plant(broadleafGeo(), scatter(120, 30, 18), 0.7, 0.6, true);
     plant(bushGeo(), scatter(70, 21, 12), 0.8, 0.9);
     plant(rockGeo(), scatter(30, 19, 12), 0.6, 1.0);
+
+    // Sparse, broad mounds make the landscape visibly dimensional from the
+    // normal overview without bringing back the coplanar patch overlay that
+    // flickered. One low-poly InstancedMesh adds a single draw call. The
+    // generous center keep-out exceeds the largest mound radius, leaving a
+    // clear verge around roads, ramps and both levels of the eight crossing.
+    const moundSpots = scatter(
+      Math.min(44, Math.max(26, Math.round(R / 24))),
+      115,
+      95,
+      100
+    );
+    this.terrainReliefMat = new THREE.MeshStandardMaterial({
+      color: GROUND_DRY.clone().lerp(GROUND_WET, this._rain),
+      roughness: 1,
+      flatShading: true,
+    });
+    const mounds = new THREE.InstancedMesh(
+      terrainMoundGeo(),
+      this.terrainReliefMat,
+      moundSpots.length
+    );
+    moundSpots.forEach(([x, z], i) => {
+      const sx = 38 + Math.random() * 24;
+      const sz = sx * (0.8 + Math.random() * 0.4);
+      d.position.set(x, -0.15, z);
+      d.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      d.scale.set(sx, 22 + Math.random() * 8, sz);
+      d.updateMatrix();
+      mounds.setMatrixAt(i, d.matrix);
+      const v = 0.98 + Math.random() * 0.03;
+      tint.setRGB(v, v, v);
+      mounds.setColorAt(i, tint);
+    });
+    mounds.frustumCulled = false;
+    g.add(mounds);
     this.greenGroup = g;
     g.visible = !!params.scenery;
     this.scene.add(g);
@@ -791,19 +915,43 @@ export class SceneRenderer {
 
   buildCars() {
     // DoubleSide forgives winding parity on the hand-built lofts (see loft())
-    const mat = () =>
-      new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide });
+    const bodyMat = new THREE.MeshStandardMaterial({
+      roughness: 0.5,
+      metalness: 0.25,
+      side: THREE.DoubleSide,
+    });
     const wheelMat = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.9 });
-    // matte greenhouse: sloped glass under the low sun flares bright with the
-    // body's specular response, reading like an open trunk from chase view
-    const cabinMat = () =>
-      new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide });
+    const hubMat = new THREE.MeshStandardMaterial({ color: 0xaeb8bf, roughness: 0.42, metalness: 0.55 });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: GLASS_TINT,
+      roughness: 0.48,
+      metalness: 0.08,
+      side: THREE.DoubleSide,
+    });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x2d3237, roughness: 0.82 });
+    const frontLensMat = new THREE.MeshStandardMaterial({
+      color: 0xc6b987,
+      roughness: 0.38,
+      metalness: 0.12,
+    });
+    const indicatorLensMat = new THREE.MeshStandardMaterial({
+      color: 0x8a5d16,
+      roughness: 0.45,
+      metalness: 0.08,
+    });
+    const rearLensMat = new THREE.MeshStandardMaterial({ color: 0x761c22, roughness: 0.42 });
     // passenger cars: two lofted body styles — car.id picks one for life —
-    // each a beveled shell plus a darker greenhouse so glass reads at a glance
-    this.sedan = new THREE.InstancedMesh(loft(SEDAN_BODY), mat(), MAX_CARS);
-    this.sedanCabin = new THREE.InstancedMesh(loft(SEDAN_CABIN), cabinMat(), MAX_CARS);
-    this.hatch = new THREE.InstancedMesh(loft(HATCH_BODY), mat(), MAX_CARS);
-    this.hatchCabin = new THREE.InstancedMesh(loft(HATCH_CABIN), cabinMat(), MAX_CARS);
+    // each a painted shell/roof, tinted greenhouse and restrained dark trim.
+    this.sedan = new THREE.InstancedMesh(passengerBodyGeo(SEDAN_BODY, false), bodyMat, MAX_CARS);
+    this.sedanCabin = new THREE.InstancedMesh(loft(SEDAN_CABIN), glassMat, MAX_CARS);
+    this.sedanTrim = new THREE.InstancedMesh(passengerTrimGeo(false), trimMat, MAX_CARS);
+    this.sedanIndicators = new THREE.InstancedMesh(passengerIndicatorGeo(false), indicatorLensMat, MAX_CARS);
+    this.sedanRearLenses = new THREE.InstancedMesh(passengerBrakeLensGeo(false), rearLensMat, MAX_CARS);
+    this.hatch = new THREE.InstancedMesh(passengerBodyGeo(HATCH_BODY, true), bodyMat, MAX_CARS);
+    this.hatchCabin = new THREE.InstancedMesh(loft(HATCH_CABIN), glassMat, MAX_CARS);
+    this.hatchTrim = new THREE.InstancedMesh(passengerTrimGeo(true), trimMat, MAX_CARS);
+    this.hatchIndicators = new THREE.InstancedMesh(passengerIndicatorGeo(true), indicatorLensMat, MAX_CARS);
+    this.hatchRearLenses = new THREE.InstancedMesh(passengerBrakeLensGeo(true), rearLensMat, MAX_CARS);
     // one four-wheel set serves the sedans and hatchbacks. Track width keeps
     // the outer faces proud of the widest shell (hw 0.95): dead flush and
     // the coplanar faces z-fight — flickering rear wheels.
@@ -812,17 +960,30 @@ export class SceneRenderer {
       wheelMat,
       MAX_CARS
     );
+    this.hubs = new THREE.InstancedMesh(
+      hubcapsGeo([[0.84, 1.4], [-0.84, 1.4], [0.84, -1.4], [-0.84, -1.4]], 0.34, 0.26),
+      hubMat,
+      MAX_CARS
+    );
     // semi trucks: conventional-cab tractor loft, box trailer, five axles
     const trailerGeo = new THREE.BoxGeometry(2.45, 3.1, 11.8).translate(0, 1.85, -1.85);
-    this.trailer = new THREE.InstancedMesh(trailerGeo, mat(), MAX_TRUCKS);
-    this.cab = new THREE.InstancedMesh(loft(TRUCK_CAB), mat(), MAX_TRUCKS);
+    const truckWheelSpots = [7.3, 4.55, 3.55, -6.15, -7.15]
+      .flatMap((z) => [[0.98, z], [-0.98, z]]);
+    this.trailer = new THREE.InstancedMesh(trailerGeo, bodyMat, MAX_TRUCKS);
+    this.cab = new THREE.InstancedMesh(loft(TRUCK_CAB), bodyMat, MAX_TRUCKS);
+    this.truckGlass = new THREE.InstancedMesh(truckGlassGeo(), glassMat, MAX_TRUCKS);
+    this.truckTrim = new THREE.InstancedMesh(truckTrimGeo(), trimMat, MAX_TRUCKS);
+    this.truckFrontLenses = new THREE.InstancedMesh(truckFrontLensGeo(), frontLensMat, MAX_TRUCKS);
+    this.truckRearLenses = new THREE.InstancedMesh(truckTailLensGeo(), rearLensMat, MAX_TRUCKS);
+    this.truckIndicators = new THREE.InstancedMesh(truckIndicatorGeo(), indicatorLensMat, MAX_TRUCKS);
     this.truckWheels = new THREE.InstancedMesh(
-      wheelsGeo(
-        [7.3, 4.55, 3.55, -6.15, -7.15].flatMap((z) => [[0.98, z], [-0.98, z]]),
-        0.5,
-        0.42
-      ),
+      wheelsGeo(truckWheelSpots, 0.5, 0.42),
       wheelMat,
+      MAX_TRUCKS
+    );
+    this.truckHubs = new THREE.InstancedMesh(
+      hubcapsGeo(truckWheelSpots, 0.5, 0.42),
+      hubMat,
       MAX_TRUCKS
     );
     // ACC cars: an angular stainless wedge — unmistakable from above — plus
@@ -846,15 +1007,23 @@ export class SceneRenderer {
       wheelMat,
       MAX_CARS
     );
+    this.cyberHubs = new THREE.InstancedMesh(
+      hubcapsGeo([[0.98, 1.4], [-0.98, 1.4], [0.98, -1.4], [-0.98, -1.4]], 0.38, 0.28),
+      hubMat,
+      MAX_CARS
+    );
     // (no front light bar: it's a headlight, and no vehicle here runs
-    // headlights — lights are reserved for driver-state signals)
-    // dark windshield lying on the hood plane, inset so a body-colored
-    // frame (the A-pillars) borders it — the wedge face read as bare metal
-    // without it. Rougher than the ambulance's vertical cab glass: this
-    // pane tilts at the sky, and a glossy finish washes white in the sun.
+    // headlights — lights are reserved for driver-state signals). The glass
+    // set adds a broad windshield and two polygonal side panes per flank;
+    // those dark side windows are a major part of the Cybertruck silhouette.
     this.cyberGlass = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.48, 0.03, 1.34).rotateX(0.246).translate(0, 1.431, 0.57),
-      new THREE.MeshStandardMaterial({ color: 0x161e26, roughness: 0.55, metalness: 0.15 }),
+      cyberGlassGeo(),
+      glassMat,
+      MAX_CARS
+    );
+    this.cyberRearLens = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1.76, 0.08, 0.035).translate(0, 1.12, -2.34),
+      rearLensMat,
       MAX_CARS
     );
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
@@ -863,27 +1032,31 @@ export class SceneRenderer {
     // the module. Roof strobes are separate unlit instances whose red/blue
     // swap sides on the hazard blink clock, so the bar reads as flashing
     // from any angle.
-    const ambBodyGeo = mergeGeometries([
+    const ambBodyGeo = mergeSolids([
       new THREE.BoxGeometry(2.3, 2.15, 3.0).translate(0, 1.42, -1.2), // patient module
       new THREE.BoxGeometry(2.05, 1.5, 1.35).translate(0, 1.1, 0.92), // cab
       new THREE.BoxGeometry(1.9, 0.85, 1.2).translate(0, 0.78, 2.1), // hood
     ]);
-    const stripeGeo = new THREE.BoxGeometry(2.36, 0.32, 3.0).translate(0, 1.16, -1.2);
-    const glassGeo = new THREE.BoxGeometry(2.09, 0.5, 1.1).translate(0, 1.52, 0.98);
-    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, mat(), MAX_AMB);
+    const stripeGeo = ambulanceStripeGeo();
+    const ambWheelSpots = [[1.02, 1.85], [-1.02, 1.85], [1.02, -1.6], [-1.02, -1.6]];
+    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, bodyMat, MAX_AMB);
     this.ambStripe = new THREE.InstancedMesh(
       stripeGeo,
       new THREE.MeshStandardMaterial({ color: 0xc63a30, roughness: 0.5, metalness: 0.25 }),
       MAX_AMB
     );
-    this.ambGlass = new THREE.InstancedMesh(
-      glassGeo,
-      new THREE.MeshStandardMaterial({ color: 0x1d2731, roughness: 0.25, metalness: 0.4 }),
+    this.ambGlass = new THREE.InstancedMesh(ambulanceGlassGeo(), glassMat, MAX_AMB);
+    this.ambTrim = new THREE.InstancedMesh(ambulanceTrimGeo(), trimMat, MAX_AMB);
+    this.ambFrontLenses = new THREE.InstancedMesh(ambulanceLensGeo(true), frontLensMat, MAX_AMB);
+    this.ambRearLenses = new THREE.InstancedMesh(ambulanceLensGeo(false), rearLensMat, MAX_AMB);
+    this.ambWheels = new THREE.InstancedMesh(
+      wheelsGeo(ambWheelSpots, 0.4, 0.32),
+      wheelMat,
       MAX_AMB
     );
-    this.ambWheels = new THREE.InstancedMesh(
-      wheelsGeo([[0.86, 1.85], [-0.86, 1.85], [0.86, -1.6], [-0.86, -1.6]], 0.4, 0.32),
-      wheelMat,
+    this.ambHubs = new THREE.InstancedMesh(
+      hubcapsGeo(ambWheelSpots, 0.4, 0.32),
+      hubMat,
       MAX_AMB
     );
     this.strobes = new THREE.InstancedMesh(
@@ -892,9 +1065,9 @@ export class SceneRenderer {
       MAX_AMB * 2
     );
 
-    // driver-communication lights: red brake bars and amber blinkers, placed
-    // per frame at per-kind mount points (unlit materials so they read as
-    // light sources); a unit cube scaled per instance
+    // Driver-communication lights: paired red lamps (the ACC keeps its thin
+    // tailgate strip) and amber blinkers, placed per frame at per-kind mounts.
+    // Unlit materials make the scaled unit cubes read as light sources.
     const lightGeo = new THREE.BoxGeometry(1, 1, 1);
     this.brakeLights = new THREE.InstancedMesh(
       lightGeo,
@@ -906,12 +1079,31 @@ export class SceneRenderer {
       new THREE.MeshBasicMaterial({ color: 0xffb226 }),
       MAX_LIGHTS
     );
+    // One instanced, translucent footprint pool grounds every vehicle. Each
+    // matrix supplies its own width/length, avoiding a mesh per vehicle kind.
+    this.contactShadows = new THREE.InstancedMesh(
+      contactShadowGeo(),
+      new THREE.MeshBasicMaterial({
+        color: 0x11151a,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+      MAX_SHADOWS
+    );
     this._meshes = [
-      this.sedan, this.sedanCabin, this.hatch, this.hatchCabin, this.wheels,
-      this.trailer, this.cab, this.truckWheels,
-      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberGlass,
-      this.ambBody, this.ambStripe, this.ambGlass, this.ambWheels,
-      this.strobes, this.brakeLights, this.blinkers,
+      this.sedan, this.sedanCabin, this.sedanTrim, this.sedanIndicators, this.sedanRearLenses,
+      this.hatch, this.hatchCabin, this.hatchTrim, this.hatchIndicators, this.hatchRearLenses,
+      this.wheels, this.hubs,
+      this.trailer, this.cab, this.truckGlass, this.truckTrim,
+      this.truckFrontLenses, this.truckRearLenses, this.truckIndicators,
+      this.truckWheels, this.truckHubs,
+      this.cyber, this.cyberTrim, this.cyberWheels, this.cyberHubs,
+      this.cyberGlass, this.cyberRearLens,
+      this.ambBody, this.ambStripe, this.ambGlass, this.ambTrim,
+      this.ambFrontLenses, this.ambRearLenses, this.ambWheels, this.ambHubs,
+      this.contactShadows, this.strobes, this.brakeLights, this.blinkers,
     ];
     for (const m of this._meshes) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -924,6 +1116,8 @@ export class SceneRenderer {
       this.scene.add(m);
     }
     this._lightDummy = new THREE.Object3D();
+    this._shadowDummy = new THREE.Object3D();
+    this._shadowDummy.rotation.order = 'YXZ';
   }
 
   // Place one light: the car's local-frame offset rotated into the world.
@@ -953,6 +1147,7 @@ export class SceneRenderer {
     let ai = 0; // next free ACC-car instance
     let mi = 0; // next free ambulance instance
     let wi = 0; // next free car wheel-set instance (sedans + hatches)
+    let sh = 0; // next shared contact-shadow instance
     let si = 0; // next free strobe instance
     let li = 0; // next free brake-light instance
     let ki = 0; // next free blinker instance
@@ -974,6 +1169,20 @@ export class SceneRenderer {
       this._dummy.rotation.set(this._slope === 0 ? 0 : -Math.atan(this._slope), rotY, 0);
       this._dummy.updateMatrix();
 
+      if (sh < MAX_SHADOWS) {
+        const d = this._shadowDummy;
+        const pitch = this._slope === 0 ? 0 : -Math.atan(this._slope);
+        d.position.set(this._pos.x, this._pos.y + 0.045, this._pos.z);
+        d.rotation.set(pitch, rotY, 0);
+        d.scale.set(
+          truck ? 1.22 : ambu ? 1.17 : acc ? 1.02 : 0.92,
+          1,
+          truck ? 7.75 : ambu ? 2.48 : 2.12
+        );
+        d.updateMatrix();
+        this.contactShadows.setMatrixAt(sh++, d.matrix);
+      }
+
       if (car.incident) {
         this._bodyColor.set(blinkOn ? 0xffa726 : 0x5c3a12); // amber hazards
       } else if (params.colorMode === 'speed') {
@@ -984,14 +1193,18 @@ export class SceneRenderer {
       } else {
         this._bodyColor.setHSL(car.hue, 0.65, 0.55);
       }
-      this._cabinColor.copy(this._bodyColor).multiplyScalar(0.45);
-
       if (truck) {
         this.trailer.setMatrixAt(ti, this._dummy.matrix);
         this.cab.setMatrixAt(ti, this._dummy.matrix);
+        this.truckGlass.setMatrixAt(ti, this._dummy.matrix);
+        this.truckTrim.setMatrixAt(ti, this._dummy.matrix);
+        this.truckFrontLenses.setMatrixAt(ti, this._dummy.matrix);
+        this.truckRearLenses.setMatrixAt(ti, this._dummy.matrix);
+        this.truckIndicators.setMatrixAt(ti, this._dummy.matrix);
         this.truckWheels.setMatrixAt(ti, this._dummy.matrix);
+        this.truckHubs.setMatrixAt(ti, this._dummy.matrix);
         this.trailer.setColorAt(ti, this._bodyColor);
-        this.cab.setColorAt(ti, this._cabinColor);
+        this.cab.setColorAt(ti, this._bodyColor);
         ti++;
       } else if (ambu) {
         // white rig regardless of color mode; incidents keep the amber blink
@@ -999,7 +1212,11 @@ export class SceneRenderer {
         this.ambBody.setMatrixAt(mi, this._dummy.matrix);
         this.ambStripe.setMatrixAt(mi, this._dummy.matrix);
         this.ambGlass.setMatrixAt(mi, this._dummy.matrix);
+        this.ambTrim.setMatrixAt(mi, this._dummy.matrix);
+        this.ambFrontLenses.setMatrixAt(mi, this._dummy.matrix);
+        this.ambRearLenses.setMatrixAt(mi, this._dummy.matrix);
         this.ambWheels.setMatrixAt(mi, this._dummy.matrix);
+        this.ambHubs.setMatrixAt(mi, this._dummy.matrix);
         this.ambBody.setColorAt(mi, this._bodyColor);
         mi++;
         if (!car.incident && si + 1 < MAX_AMB * 2) {
@@ -1014,55 +1231,109 @@ export class SceneRenderer {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberHubs.setMatrixAt(ai, this._dummy.matrix);
         this.cyberGlass.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberRearLens.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
       } else {
         const body = hatch ? this.hatch : this.sedan;
         const cabin = hatch ? this.hatchCabin : this.sedanCabin;
+        const trim = hatch ? this.hatchTrim : this.sedanTrim;
+        const indicators = hatch ? this.hatchIndicators : this.sedanIndicators;
+        const rearLenses = hatch ? this.hatchRearLenses : this.sedanRearLenses;
         const idx = hatch ? hi++ : ci++;
         body.setMatrixAt(idx, this._dummy.matrix);
         cabin.setMatrixAt(idx, this._dummy.matrix);
+        trim.setMatrixAt(idx, this._dummy.matrix);
+        indicators.setMatrixAt(idx, this._dummy.matrix);
+        rearLenses.setMatrixAt(idx, this._dummy.matrix);
         body.setColorAt(idx, this._bodyColor);
-        cabin.setColorAt(idx, this._cabinColor);
-        if (wi < MAX_CARS) this.wheels.setMatrixAt(wi++, this._dummy.matrix);
+        if (wi < MAX_CARS) {
+          this.wheels.setMatrixAt(wi, this._dummy.matrix);
+          this.hubs.setMatrixAt(wi++, this._dummy.matrix);
+        }
       }
 
       // brake lights + blinkers (incident cars blink their whole body amber)
       if (!car.incident) {
         const L = car.kind === 'car' ? LIGHT_DIMS.car[car.id & 1] : LIGHT_DIMS[car.kind];
-        if (car.brakeLit && li < MAX_LIGHTS) {
-          this.placeLight(
-            this.brakeLights, li++, rotY,
-            0, L.brakeY ?? L.y, L.rear,
-            L.brakeW, L.brakeH ?? 0.16, 0.1
-          );
+        if (car.brakeLit) {
+          if (L.brakeHalfW != null && li + 1 < MAX_LIGHTS) {
+            // Conventional paired lamps sit directly over the dormant red
+            // lenses. The actual lens geometry now carries the live state;
+            // there is no separate full-width brake bar to cross rear seams.
+            for (const side of [-1, 1]) {
+              this.placeLight(
+                this.brakeLights, li++, rotY,
+                side * L.brakeHalfW, L.brakeY, L.brakeZ,
+                L.brakeW, L.brakeH, 0.025
+              );
+            }
+          } else if (li < MAX_LIGHTS) {
+            // ACC keeps its thin signature tailgate strip.
+            this.placeLight(
+              this.brakeLights, li++, rotY,
+              0, L.brakeY ?? L.y, L.brakeZ ?? L.rear,
+              L.brakeW, L.brakeH ?? 0.16, 0.025
+            );
+          }
         }
         if (car.signal !== 0 && blinkOn && ki + 1 < MAX_LIGHTS) {
-          const sx = car.signal > 0 ? L.halfW : -L.halfW; // +x local = driver's left
+          const dir = car.signal > 0 ? 1 : -1; // +x local = driver's left
+          const sxRear = dir * (L.blinkHalfWR ?? L.halfW);
+          const sxFront = dir * (L.blinkHalfWF ?? L.halfW);
           const bw = L.blinkW ?? 0.22;
           const bh = L.blinkH ?? 0.2;
-          this.placeLight(this.blinkers, ki++, rotY, sx, L.blinkYR ?? L.y, L.rear, bw, bh, 0.14);
-          this.placeLight(this.blinkers, ki++, rotY, sx, L.blinkYF ?? L.y, L.front, bw, bh, 0.14);
+          this.placeLight(
+            this.blinkers, ki++, rotY,
+            sxRear, L.blinkYR ?? L.y, L.blinkZR ?? L.rear,
+            L.blinkWR ?? bw, L.blinkHR ?? bh, L.blinkDepthR ?? 0.14
+          );
+          this.placeLight(
+            this.blinkers, ki++, rotY,
+            sxFront, L.blinkYF ?? L.y, L.blinkZF ?? L.front,
+            L.blinkWF ?? bw, L.blinkHF ?? bh, L.blinkDepthF ?? 0.14
+          );
         }
       }
     }
     this.sedan.count = ci;
     this.sedanCabin.count = ci;
+    this.sedanTrim.count = ci;
+    this.sedanIndicators.count = ci;
+    this.sedanRearLenses.count = ci;
     this.hatch.count = hi;
     this.hatchCabin.count = hi;
+    this.hatchTrim.count = hi;
+    this.hatchIndicators.count = hi;
+    this.hatchRearLenses.count = hi;
     this.wheels.count = wi;
+    this.hubs.count = wi;
     this.trailer.count = ti;
     this.cab.count = ti;
+    this.truckGlass.count = ti;
+    this.truckTrim.count = ti;
+    this.truckFrontLenses.count = ti;
+    this.truckRearLenses.count = ti;
+    this.truckIndicators.count = ti;
     this.truckWheels.count = ti;
+    this.truckHubs.count = ti;
     this.cyber.count = ai;
     this.cyberTrim.count = ai;
     this.cyberWheels.count = ai;
+    this.cyberHubs.count = ai;
     this.cyberGlass.count = ai;
+    this.cyberRearLens.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
     this.ambGlass.count = mi;
+    this.ambTrim.count = mi;
+    this.ambFrontLenses.count = mi;
+    this.ambRearLenses.count = mi;
     this.ambWheels.count = mi;
+    this.ambHubs.count = mi;
+    this.contactShadows.count = sh;
     this.strobes.count = si;
     this.brakeLights.count = li;
     this.blinkers.count = ki;
@@ -1177,6 +1448,7 @@ export class SceneRenderer {
     // sun disc re-billboards because the offset to it changes as we move
     this.skyGroup.position.set(this.camera.position.x, 0, this.camera.position.z);
     this.sunDisc.lookAt(this.camera.position);
+    this.sunHalo.lookAt(this.camera.position);
     // scenery toggle applies live (panel writes params, we read — as ever)
     const scenery = !!params.scenery;
     if (this.greenGroup.visible !== scenery) {
@@ -1312,39 +1584,144 @@ export class SceneRenderer {
   }
 }
 
-// ACC cars: a low-poly Cybertruck-style wedge. The hood is ONE flat plane,
-// full width, running unbroken from the fascia's top edge to the roof peak
-// (an earlier corner-bevel attempt narrowed that edge and dented the sides).
-// From the front it reads: wide rectangular stance, a sharp hood crease up
-// top, a large blank stainless face below it — raked back toward the
-// bumper, no grille — with the lower corners clipped where the wheel-arch
-// flares (trim mesh) wrap. A subtle horizontal crease runs along each side,
-// like the real truck's. Same 4.6 m footprint as a regular car (+z = front).
-// Non-indexed triangles so computeVertexNormals yields the flat facets.
+// A single colored ground surface replaces the old stack of patch planes.
+// Every triangle owns its three color vertices, so each cell can carry a
+// restrained value shift without another depth layer (and therefore without
+// z-fighting at long camera distances). The jittered grid avoids a conspicuous
+// radial fan or checkerboard while remaining deterministic between reloads.
+function facetedGroundGeo() {
+  const radius = 4000;
+  const divisions = 45;
+  const step = (radius * 2) / divisions;
+  const points = [];
+  const hash = (x, z, salt = 0) => {
+    const n = Math.sin(x * 127.1 + z * 311.7 + salt * 73.3) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  for (let iz = 0; iz <= divisions; iz++) {
+    const row = [];
+    for (let ix = 0; ix <= divisions; ix++) {
+      const edge = ix === 0 || iz === 0 || ix === divisions || iz === divisions;
+      const jitter = edge ? 0 : step * 0.15;
+      row.push([
+        -radius + ix * step + (hash(ix, iz, 1) - 0.5) * jitter,
+        0,
+        -radius + iz * step + (hash(ix, iz, 2) - 0.5) * jitter,
+      ]);
+    }
+    points.push(row);
+  }
+
+  const positions = [];
+  const colors = [];
+  const normals = [];
+  const addTriangle = (a, b, c, value) => {
+    positions.push(...a, ...b, ...c);
+    for (let i = 0; i < 3; i++) {
+      colors.push(value, value, value);
+      normals.push(0, 1, 0);
+    }
+  };
+  for (let iz = 0; iz < divisions; iz++) {
+    for (let ix = 0; ix < divisions; ix++) {
+      const cx = -radius + (ix + 0.5) * step;
+      const cz = -radius + (iz + 0.5) * step;
+      if (cx * cx + cz * cz > (radius + step * 0.65) ** 2) continue;
+      const a = points[iz][ix];
+      const b = points[iz][ix + 1];
+      const c = points[iz + 1][ix];
+      const d = points[iz + 1][ix + 1];
+      const base = 0.97
+        + 0.035 * Math.sin(ix * 0.58 + iz * 0.31)
+        + 0.02 * Math.sin(ix * 0.17 - iz * 0.49);
+      const split = (hash(ix, iz, 3) - 0.5) * 0.014;
+      if ((ix + iz) & 1) {
+        addTriangle(a, c, b, base + split);
+        addTriangle(b, c, d, base - split);
+      } else {
+        addTriangle(a, d, b, base + split);
+        addTriangle(a, c, d, base - split);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+// ACC cars: a low-poly Cybertruck-style wedge. The broad lower flank is now
+// one genuinely planar panel from the clipped nose to the tail. The previous
+// triangle fan converged on the front axle and created a large shaded chevron
+// that read as a dent. Above that clean belt line, a few intentional planes
+// form the stainless shoulder, roof peak and sloping bed cover.
 function cybertruckGeo() {
-  const N = (s) => [s * 0.98, 0.98, 2.3];  // fascia top edge / hood crease
-  const C = (s) => [s * 0.98, 0.62, 2.22]; // where the lower-corner clip starts
-  const A = (s) => [s * 0.8, 0.35, 2.16];  // fascia bottom, narrowed by the clips
-  const S = (s) => [s * 1.0, 0.35, 1.9];   // side bottom, behind the clip
-  const P = (s) => [s * 0.8, 1.62, -0.25]; // roof peak (sides taper inward)
-  const T = (s) => [s * 0.9, 1.18, -2.3];  // tail top
-  const B = (s) => [s * 1.0, 0.35, -2.3];  // tail bottom
+  const N = (s) => [s * 0.98, 0.98, 2.3];   // fascia top / hood crease
+  const C = (s) => [s * 0.98, 0.62, 2.22];  // clipped front shoulder
+  const A = (s) => [s * 0.92, 0.35, 2.16];  // mild chamfer, not an inset corner
+  const F = (s) => [s, 0.35, 1.9];           // lower flank, front
+  const D = (s) => [s, 0.78, 1.9];           // belt line, front
+  const M = (s) => [s, 0.78, -0.25];         // belt line, roof peak
+  const R = (s) => [s, 0.78, -2.3];          // belt line, tail
+  const P = (s) => [s * 0.82, 1.62, -0.25]; // roof peak
+  const T = (s) => [s * 0.92, 1.18, -2.3];  // tail top
+  const B = (s) => [s, 0.35, -2.3];          // tail bottom
   const tris = [
-    // fascia: one blank six-cornered face, fanned from N(-1)
+    // Blank stainless fascia and the two signature top planes.
     [N(-1), N(1), C(1)], [N(-1), C(1), A(1)], [N(-1), A(1), A(-1)], [N(-1), A(-1), C(-1)],
-    [N(-1), N(1), P(1)], [N(-1), P(1), P(-1)], // the flat hood, one plane to the peak
-    [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)], // bed cover
-    [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)], // tail face
-    [C(1), A(1), S(1)], [C(-1), S(-1), A(-1)], // lower-corner clip planes
-    [S(1), B(1), T(1)], [S(1), T(1), P(1)], [S(1), P(1), N(1)], [S(1), N(1), C(1)], // right side
-    [S(-1), T(-1), B(-1)], [S(-1), P(-1), T(-1)], [S(-1), N(-1), P(-1)], [S(-1), C(-1), N(-1)], // left side
-    [A(1), A(-1), S(-1)], [A(1), S(-1), S(1)], // underside, nose section
-    [S(1), S(-1), B(-1)], [S(1), B(-1), B(1)], // underside, main run
+    [N(-1), N(1), P(1)], [N(-1), P(1), P(-1)],
+    [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)],
+    [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)],
+    // Right: clipped fender, flat lower door/bed panel, then upper facets.
+    [C(1), A(1), F(1)], [C(1), F(1), D(1)],
+    [F(1), B(1), R(1)], [F(1), R(1), D(1)],
+    [D(1), M(1), P(1)], [D(1), P(1), N(1)], [D(1), N(1), C(1)],
+    [M(1), R(1), T(1)], [M(1), T(1), P(1)],
+    // Left: same panels with winding mirrored.
+    [C(-1), F(-1), A(-1)], [C(-1), D(-1), F(-1)],
+    [F(-1), R(-1), B(-1)], [F(-1), D(-1), R(-1)],
+    [D(-1), P(-1), M(-1)], [D(-1), N(-1), P(-1)], [D(-1), C(-1), N(-1)],
+    [M(-1), T(-1), R(-1)], [M(-1), P(-1), T(-1)],
+    // Closed underside.
+    [A(1), A(-1), F(-1)], [A(1), F(-1), F(1)],
+    [F(1), F(-1), B(-1)], [F(1), B(-1), B(1)],
   ];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
-  geo.computeVertexNormals(); // DoubleSide material corrects any face parity
+  geo.computeVertexNormals();
   return geo;
+}
+
+function triangleSurfaceGeo(tris) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function cyberGlassGeo() {
+  const parts = [
+    // Broad dark windshield inset into the front roof plane.
+    new THREE.BoxGeometry(1.48, 0.03, 1.34).rotateX(0.246).translate(0, 1.431, 0.57),
+  ];
+  for (const side of [-1, 1]) {
+    const x = (n) => side * n;
+    const front = [
+      [x(1.018), 0.84, 1.48], [x(0.965), 1.16, 1.45],
+      [x(0.89), 1.47, 0.38], [x(1.018), 0.84, 0.38],
+    ];
+    const rear = [
+      [x(1.018), 0.84, 0.29], [x(0.885), 1.49, 0.29],
+      [x(0.84), 1.56, -0.18], [x(1.018), 0.84, -0.38],
+    ];
+    parts.push(
+      triangleSurfaceGeo([[front[0], front[1], front[2]], [front[0], front[2], front[3]]]),
+      triangleSurfaceGeo([[rear[0], rear[1], rear[2]], [rear[0], rear[2], rear[3]]])
+    );
+  }
+  return mergeSolids(parts);
 }
 
 // One cohesive polygonal wheel-arch flare: a hexagonal band hugging the
@@ -1394,9 +1771,10 @@ function wellGeo() {
 function cyberTrimGeo() {
   const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
   const parts = [
-    new THREE.BoxGeometry(1.96, 0.16, 0.22).translate(0, 0.27, 2.2), // front bumper
-    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(0.7).translate(0.9, 0.27, 2.06),
-    new THREE.BoxGeometry(0.55, 0.16, 0.2).rotateY(-0.7).translate(-0.9, 0.27, 2.06),
+    // A single blunt bumper reinforces the broad fascia. The former rotated
+    // corner blocks projected into the front three-quarter silhouette and
+    // made the chamfer above them look like a dent.
+    new THREE.BoxGeometry(1.9, 0.16, 0.22).translate(0, 0.27, 2.2),
     new THREE.BoxGeometry(1.7, 0.16, 0.14).translate(0, 0.27, -2.26), // rear bumper
     new THREE.BoxGeometry(2.02, 0.15, 2.1).translate(0, 0.3, 0), // rocker cladding
     // tonneau: a recessed panel lying on the bed plane, ribbed with slats
@@ -1424,6 +1802,186 @@ function cyberTrimGeo() {
   // ExtrudeGeometry is non-indexed while the boxes are indexed; normalize
   // so mergeGeometries accepts the mix
   return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+}
+
+// Normalize hand-built and primitive geometry before merging: loft() carries
+// no UVs while three.js primitives do. These models use flat colors, so UVs
+// would only prevent otherwise compatible parts from becoming one draw mesh.
+function mergeSolids(parts) {
+  return mergeGeometries(
+    parts.map((g) => {
+      const out = g.index ? g.toNonIndexed() : g;
+      out.deleteAttribute('uv');
+      return out;
+    })
+  );
+}
+
+function passengerBodyGeo(sections, hatch) {
+  const roof = hatch
+    ? new THREE.BoxGeometry(1.34, 0.06, 1.55).translate(0, 1.49, -0.5)
+    : new THREE.BoxGeometry(1.3, 0.06, 0.94).translate(0, 1.46, -0.25);
+  return mergeSolids([loft(sections), roof]);
+}
+
+// Dark trim is deliberately chunky: at simulator camera distances a real
+// one-inch molding disappears, while these toy-scale bumpers, rockers and
+// mirrors preserve the front/back silhouette without breaking the low-poly
+// language.
+function passengerTrimGeo(hatch) {
+  const front = hatch ? 2.19 : 2.3;
+  const rear = hatch ? -2.19 : -2.3;
+  return mergeSolids([
+    new THREE.BoxGeometry(1.58, 0.14, 0.14).translate(0, 0.43, front),
+    new THREE.BoxGeometry(1.62, 0.14, 0.14).translate(0, 0.43, rear),
+    new THREE.BoxGeometry(0.1, 0.12, 2.65).translate(0.94, 0.36, -0.08),
+    new THREE.BoxGeometry(0.1, 0.12, 2.65).translate(-0.94, 0.36, -0.08),
+    new THREE.BoxGeometry(0.62, 0.16, 0.05).translate(0, 0.61, front + 0.08),
+    new THREE.BoxGeometry(0.18, 0.1, 0.26).translate(1.04, 1.03, 0.62),
+    new THREE.BoxGeometry(0.18, 0.1, 0.26).translate(-1.04, 1.03, 0.62),
+  ]);
+}
+
+function passengerBrakeLensGeo(hatch) {
+  const z = hatch ? -2.265 : -2.375;
+  const y = hatch ? 0.86 : 0.82;
+  return mergeSolids([
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, y, z),
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, y, z),
+  ]);
+}
+
+// Front and rear amber lenses share one per-style instance, keeping both ends
+// of the car visually consistent without adding another draw call. Live
+// blinker cubes sit just proud of these same rectangles (LIGHT_DIMS).
+function passengerIndicatorGeo(hatch) {
+  const frontZ = hatch ? 2.265 : 2.375;
+  const rearZ = hatch ? -2.265 : -2.375;
+  const rearY = hatch ? 0.64 : 0.6;
+  return mergeSolids([
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, 0.78, frontZ),
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, 0.78, frontZ),
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, rearY, rearZ),
+    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, rearY, rearZ),
+  ]);
+}
+
+function truckGlassGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(1.76, 1.14, 0.045)
+      .rotateX(-0.33)
+      .translate(0, 2.25, 6.54),
+    new THREE.BoxGeometry(0.045, 0.82, 0.86).translate(1.115, 2.27, 5.92),
+    new THREE.BoxGeometry(0.045, 0.82, 0.86).translate(-1.115, 2.27, 5.92),
+  ]);
+}
+
+function truckTrimGeo() {
+  const parts = [
+    new THREE.BoxGeometry(2.02, 0.22, 0.24).translate(0, 0.44, 8.12), // bumper
+    new THREE.BoxGeometry(1.62, 0.64, 0.06).translate(0, 1.15, 8.13), // grille
+    new THREE.BoxGeometry(1.15, 0.24, 11.0).translate(0, 0.46, -1.45), // chassis
+    new THREE.BoxGeometry(0.12, 0.18, 10.4).translate(1.25, 0.73, -1.85),
+    new THREE.BoxGeometry(0.12, 0.18, 10.4).translate(-1.25, 0.73, -1.85),
+    new THREE.BoxGeometry(0.2, 0.14, 0.34).translate(1.28, 2.4, 6.3), // mirrors
+    new THREE.BoxGeometry(0.2, 0.14, 0.34).translate(-1.28, 2.4, 6.3),
+    new THREE.BoxGeometry(0.08, 2.45, 0.05).translate(0, 1.82, -7.775), // rear door seam
+  ];
+  for (const side of [-1, 1]) {
+    parts.push(
+      new THREE.CylinderGeometry(0.34, 0.34, 1.18, 8)
+        .rotateX(Math.PI / 2)
+        .translate(side * 1.08, 0.64, 5.25)
+    );
+  }
+  return mergeSolids(parts);
+}
+
+function truckTailLensGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(0.42, 0.2, 0.07).translate(0.88, 0.72, -7.82),
+    new THREE.BoxGeometry(0.42, 0.2, 0.07).translate(-0.88, 0.72, -7.82),
+  ]);
+}
+
+function truckFrontLensGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(0.46, 0.2, 0.07).translate(0.66, 1.38, 8.23),
+    new THREE.BoxGeometry(0.46, 0.2, 0.07).translate(-0.66, 1.38, 8.23),
+  ]);
+}
+
+function truckIndicatorGeo() {
+  return mergeSolids([
+    // Small amber elements tuck beneath the pale front lamp rectangles.
+    new THREE.BoxGeometry(0.32, 0.12, 0.07).translate(0.75, 1.15, 8.23),
+    new THREE.BoxGeometry(0.32, 0.12, 0.07).translate(-0.75, 1.15, 8.23),
+    // Rear indicators stack above the red brake lenses as one tidy cluster.
+    new THREE.BoxGeometry(0.42, 0.16, 0.07).translate(0.88, 0.98, -7.82),
+    new THREE.BoxGeometry(0.42, 0.16, 0.07).translate(-0.88, 0.98, -7.82),
+  ]);
+}
+
+function ambulanceStripeGeo() {
+  // The old stripe was a box wrapped around an equally long module. Their
+  // rear faces occupied exactly the same plane, so depth precision chose a
+  // different winner as the camera moved. Separate side and rear belts keep
+  // a visible air gap from the white body at every face.
+  return mergeSolids([
+    new THREE.BoxGeometry(0.035, 0.32, 2.94).translate(1.18, 1.16, -1.19),
+    new THREE.BoxGeometry(0.035, 0.32, 2.94).translate(-1.18, 1.16, -1.19),
+    new THREE.BoxGeometry(2.36, 0.32, 0.03).translate(0, 1.16, -2.735),
+  ]);
+}
+
+function ambulanceGlassGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(1.72, 0.54, 0.045).translate(0, 1.59, 1.615),
+    new THREE.BoxGeometry(0.045, 0.54, 0.72).translate(1.035, 1.59, 0.98),
+    new THREE.BoxGeometry(0.045, 0.54, 0.72).translate(-1.035, 1.59, 0.98),
+  ]);
+}
+
+function ambulanceTrimGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(2.02, 0.18, 0.18).translate(0, 0.43, 2.67),
+    new THREE.BoxGeometry(2.2, 0.2, 0.18).translate(0, 0.46, -2.68),
+    new THREE.BoxGeometry(0.74, 0.26, 0.05).translate(0, 0.8, 2.705),
+    new THREE.BoxGeometry(0.12, 0.14, 3.7).translate(1.19, 0.46, -0.52),
+    new THREE.BoxGeometry(0.12, 0.14, 3.7).translate(-1.19, 0.46, -0.52),
+    new THREE.BoxGeometry(0.05, 1.72, 0.025).translate(0, 1.45, -2.77),
+    new THREE.BoxGeometry(0.2, 0.12, 0.28).translate(1.16, 1.58, 1.3),
+    new THREE.BoxGeometry(0.2, 0.12, 0.28).translate(-1.16, 1.58, 1.3),
+  ]);
+}
+
+function ambulanceLensGeo(front) {
+  const z = front ? 2.72 : -2.72;
+  const y = front ? 0.84 : 0.74;
+  return mergeSolids([
+    new THREE.BoxGeometry(0.42, 0.18, 0.06).translate(0.68, y, z),
+    new THREE.BoxGeometry(0.42, 0.18, 0.06).translate(-0.68, y, z),
+  ]);
+}
+
+// Bright polygon hubs on the outward tire faces make the wheels legible at
+// a glance while leaving the tire geometry itself matte and nearly black.
+function hubcapsGeo(spots, r, w) {
+  return mergeGeometries(
+    spots.map(([x, z]) =>
+      new THREE.CylinderGeometry(r * 0.48, r * 0.48, 0.04, 8)
+        .rotateZ(Math.PI / 2)
+        .translate(x + Math.sign(x) * (w / 2 + 0.025), r, z)
+    )
+  );
+}
+
+// Soft-edged shadows would fight the graphic style; a twelve-sided translucent
+// footprint grounds each vehicle and remains cheap enough to instance by kind.
+function contactShadowGeo() {
+  return new THREE.CircleGeometry(1, 12)
+    .rotateX(-Math.PI / 2)
+    .translate(0, 0.002, 0);
 }
 
 // Low-poly vehicle shell: a loft of rectangular cross-sections along the
@@ -1553,6 +2111,37 @@ function rockGeo() {
     new THREE.DodecahedronGeometry(1.0, 0).scale(1, 0.7, 1).translate(0, 0.45, 0),
     0x969a92
   );
+}
+
+// A broad, shallow irregular dome with two rings of deliberately flat faces.
+// Instance scaling turns this small template into rolling 50–100 m features;
+// its perimeter sits below the base ground so no edge seam can flicker.
+function terrainMoundGeo() {
+  const segments = 9;
+  const outer = [];
+  const inner = [];
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const ro = 0.96 + 0.08 * Math.sin(i * 2.37);
+    const ri = 0.49 + 0.05 * Math.cos(i * 1.91);
+    outer.push([Math.cos(a) * ro, -0.04, Math.sin(a) * ro]);
+    inner.push([
+      Math.cos(a + 0.1) * ri,
+      0.09 + 0.018 * Math.sin(i * 2.11),
+      Math.sin(a + 0.1) * ri,
+    ]);
+  }
+  const peak = [0.08, 0.18, -0.04];
+  const tris = [];
+  for (let i = 0; i < segments; i++) {
+    const n = (i + 1) % segments;
+    tris.push(
+      [outer[i], inner[i], outer[n]],
+      [outer[n], inner[i], inner[n]],
+      [inner[i], peak, inner[n]]
+    );
+  }
+  return triangleSurfaceGeo(tris);
 }
 
 // One cloud: a few squashed icosahedron puffs merged into a single clump;
