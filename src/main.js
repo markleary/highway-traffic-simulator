@@ -101,6 +101,11 @@ function frame(now) {
     acc += dt * params.timeScale;
     let steps = 0;
     while (acc >= H && steps < 30) {
+      // Preserve the pose immediately before the final fixed step. Rendering
+      // interpolates from it using the leftover accumulator fraction, which
+      // removes the hold/jump judder that looks like a doubled vehicle at
+      // freeway speeds (especially on high-refresh displays).
+      renderer.captureCarPoses(sim.cars);
       sim.step(H);
       acc -= H;
       steps++;
@@ -116,13 +121,14 @@ function frame(now) {
   // CSS keys the speedometer/legend/hint bottom-strip layout off this class
   document.body.classList.toggle('chasing', !!renderer.chaseCar);
   speedo.update(renderer.chaseCar);
+  const renderAlpha = params.paused ? 1 : Math.max(0, Math.min(1, acc / H));
+  renderer.setRain(sim.rainNow || 0);
+  renderer.updateMeters(sim);
+  renderer.update(sim.cars, renderAlpha);
   // hover readout: same pick path as click-to-crash, re-run every frame so
   // the nameplate follows whichever car is under the pointer right now
   const hoverRay = renderer.pointerRay();
   renderer.setHoverCar(hoverRay && sim.carNearRay(hoverRay, 9, true));
-  renderer.setRain(sim.rainNow || 0);
-  renderer.updateMeters(sim);
-  renderer.update(sim.cars);
   renderer.render(dt);
   requestAnimationFrame(frame);
 }

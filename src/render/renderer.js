@@ -188,6 +188,11 @@ export class SceneRenderer {
     this._slope = 0; // current car's road grade (bridge approaches), set per car in update
     this._bodyColor = new THREE.Color();
     this._raycaster = new THREE.Raycaster();
+    // Previous fixed-step poses, reused rather than allocated per frame.
+    // Physics remains authoritative; this cache only smooths presentation
+    // between its 60 Hz steps (see captureCarPoses / carPose).
+    this._previousCarPoses = new WeakMap();
+    this._renderAlpha = 1;
 
     // chase camera state. Yaw/pitch are a held-drag orbit offset around the
     // chased car (0 = the standard behind-the-car framing); on release they
@@ -1138,7 +1143,26 @@ export class SceneRenderer {
     mesh.setMatrixAt(idx, d.matrix);
   }
 
-  update(cars) {
+  // Called immediately before each fixed simulation step. If a display frame
+  // runs several steps, later captures overwrite earlier ones, leaving the
+  // state directly before the final step—the correct interpolation endpoint.
+  captureCarPoses(cars) {
+    for (const car of cars) {
+      let pose = this._previousCarPoses.get(car);
+      if (!pose) {
+        pose = {};
+        this._previousCarPoses.set(car, pose);
+      }
+      pose.state = car.state;
+      pose.ramp = car.ramp;
+      pose.s = car.s;
+      pose.renderLane = car.renderLane;
+      pose.rampPos = car.rampPos;
+    }
+  }
+
+  update(cars, renderAlpha = 1) {
+    this._renderAlpha = THREE.MathUtils.clamp(renderAlpha, 0, 1);
     const desired = params.desiredSpeed;
     const blinkOn = Math.floor(performance.now() / 400) % 2 === 0; // hazard flashers
     let ci = 0; // next free sedan instance
@@ -1158,13 +1182,13 @@ export class SceneRenderer {
       const hatch = car.kind === 'car' && (car.id & 1) === 1; // stable body style per car
       if (truck ? ti >= MAX_TRUCKS : ambu ? mi >= MAX_AMB : (acc ? ai : hatch ? hi : ci) >= MAX_CARS)
         continue;
-      this.carPose(car, this._pos, this._tan);
+      const poseS = this.carPose(car, this._pos, this._tan);
       let rotY = Math.atan2(this._tan.x, this._tan.z);
       if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
       // grade: pitch the body up/down the bridge approaches (rotation order
       // is YXZ so pitch turns about the yawed, car-local right axis); the
       // slope also corrects the light mounts' height in placeLight
-      this._slope = car.ramp ? 0 : (elevAt(car.s + 3) - elevAt(car.s - 3)) / 6;
+      this._slope = car.ramp ? 0 : (elevAt(poseS + 3) - elevAt(poseS - 3)) / 6;
       this._dummy.position.set(this._pos.x, this._pos.y, this._pos.z);
       this._dummy.rotation.set(this._slope === 0 ? 0 : -Math.atan(this._slope), rotY, 0);
       this._dummy.updateMatrix();
@@ -1345,13 +1369,37 @@ export class SceneRenderer {
 
   // World position and travel direction of a car, whatever it is doing.
   carPose(car, pos, tan) {
+    const prev = this._previousCarPoses.get(car);
+    // Never interpolate across a mainline/ramp transition: the coordinates
+    // belong to different curves and blending them would cut across terrain.
+    const continuous = prev && prev.state === car.state && prev.ramp === car.ramp;
     if (car.ramp) {
-      const u = THREE.MathUtils.clamp(car.rampPos / car.ramp.length, 0, 1);
+      const rampPos = continuous
+        ? THREE.MathUtils.lerp(prev.rampPos, car.rampPos, this._renderAlpha)
+        : car.rampPos;
+      const u = THREE.MathUtils.clamp(rampPos / car.ramp.length, 0, 1);
       car.ramp.curve.getPointAt(u, pos);
       car.ramp.curve.getTangentAt(u, tan);
+      return null;
     } else {
-      pointAt(car.s, -car.renderLane * ROAD.laneWidth, pos);
-      forwardAt(car.s, tan);
+      let s = car.s;
+      let renderLane = car.renderLane;
+      if (continuous) {
+        // Wrapped loop coordinates need the short signed displacement; a
+        // naïve lerp near s=0 would sweep the vehicle around the whole loop.
+        let ds = car.s - prev.s;
+        if (ds > LOOP / 2) ds -= LOOP;
+        else if (ds < -LOOP / 2) ds += LOOP;
+        s = wrap(prev.s + ds * this._renderAlpha);
+        renderLane = THREE.MathUtils.lerp(
+          prev.renderLane,
+          car.renderLane,
+          this._renderAlpha
+        );
+      }
+      pointAt(s, -renderLane * ROAD.laneWidth, pos);
+      forwardAt(s, tan);
+      return s;
     }
   }
 
