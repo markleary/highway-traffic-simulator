@@ -95,6 +95,9 @@ assets/social.png      1200×630 social-preview card — og:image in index.html
                        exporting the WebGL canvas at 2400×1260, then halving
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
+                       desktop right-click-to-chase picker (the exact visible
+                       vehicle, including ramps/incidents/ambulances; left-click
+                       remains click-to-crash), the
                        touch chase-toggle button (chase exits — esc, the
                        button, chased car despawning with no successor — go
                        through renderer.exitChase, which lands on the
@@ -153,6 +156,10 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        and trees/bushes/rocks scattered by rejection sampling
                        against a road+ramp keep-out corridor (re-run on shape
                        changes; `params.scenery` hides the dressing live).
+                       Canvas pointer routing arms crash picks only for the
+                       primary button; a button-2 `contextmenu` pick delegates
+                       exact-vehicle chase to main.js and handles the gesture
+                       when a vehicle was actually selected.
                        applyWeather lerps the whole palette — sky uniforms, fog,
                        lights, clouds, hills — from sim.rainNow. Vehicles are
                        per-kind InstancedMeshes: lofted low-poly shells (loft()
@@ -359,7 +366,9 @@ test/smoke.js          runs the sim headless under several parameter regimes
   hit point misses cars on the eight's bridge, and at its crossing both
   levels share x/z; a small depth penalty makes the upper (visible) car win
   when the ray threads both. The chase speedometer caption also shows the
-  chased car's desired speed.
+  chased car's desired speed. On desktop, right-clicking a visible vehicle uses
+  the same elevation-aware ray to chase that exact object; left-click remains
+  click-to-crash, and touch long-press does not trigger the button-2 gesture.
 - Vehicle kinds: `car.kind` is 'car', 'truck', or 'acc' (shares set by the
   Trucks and Adaptive-cruise knobs at spawn/reset). Trucks are 16.5 m, ~20%
   slower with less spread, and scale the global IDM knobs via per-car factors

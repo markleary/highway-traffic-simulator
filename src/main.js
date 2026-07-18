@@ -23,11 +23,18 @@ charts.onHoverS = (s) => renderer.setRoadCursor(s);
 charts.onPickS = (s) => renderer.focusOnS(s);
 // re-fit the camera now that both side panels exist and can be measured
 renderer.setDefaultView();
-// Click a car (or the road right next to one) to crash it. Picking is ray-
-// based so cars on the figure eight's bridge deck pick correctly.
+// Left-click a car (or the road right next to one) to crash it. Right-click a
+// specific visible vehicle to chase it. Both picks are ray-based so vehicles
+// on the figure eight's bridge deck select correctly.
 renderer.onRoadClick = (ray) => {
   const car = sim.carNearRay(ray);
   if (car) sim.triggerAccident(car);
+};
+renderer.onRoadRightClick = (ray) => {
+  const car = sim.carNearRay(ray, 9, true);
+  if (!car) return false;
+  renderer.startChase(car);
+  return true;
 };
 
 // ?debug diagnostic panel (grew out of the Tesla dropdown hunt — the car has

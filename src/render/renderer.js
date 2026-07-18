@@ -24,6 +24,13 @@ const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_AMB) * 2;
 const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
 const RAIN_HEIGHT = 260;
 
+// Browsers report a physical secondary mouse button as button 2. macOS also
+// exposes Control-click as a context gesture while retaining button 0, so both
+// event shapes must bypass click-to-crash and enter the chase path.
+export function isSecondaryClick(event) {
+  return event.button === 2 || (event.button === 0 && event.ctrlKey);
+}
+
 // Late-afternoon low-poly diorama palette. Every DRY color lerps toward its
 // WET partner as sim.rainNow rises (applyWeather), so a storm grades the
 // whole scene — sky, fog, hills, clouds — not just the lighting.
@@ -206,11 +213,20 @@ export class SceneRenderer {
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
 
-    // Click detection (as opposed to an orbit drag): small movement, quick
-    // release. main.js assigns onRoadClick to receive the ground-plane point.
+    // Primary-click detection (as opposed to an orbit drag): small movement,
+    // quick release. main.js assigns onRoadClick to crash a picked car and
+    // onRoadRightClick to chase a specifically picked car.
     this.onRoadClick = null;
+    this.onRoadRightClick = null;
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
+      // Only the primary button owns click-to-crash. Secondary clicks arrive
+      // through `contextmenu` below; without this gate their pointerup used to
+      // crash the car before the chase action could run.
+      if (e.button !== 0 || isSecondaryClick(e)) {
+        this._press = null;
+        return;
+      }
       if (this.chaseCar && e.button === 0) {
         // in chase view a left press is an orbit gesture, never a click —
         // the chased car sits center-screen, so letting a micro-drag through
@@ -230,6 +246,15 @@ export class SceneRenderer {
       const dy = e.clientY - press.y;
       if (dx * dx + dy * dy > 36 || performance.now() - press.t > 500) return;
       this.onRoadClick(this.pickRay(e.clientX, e.clientY));
+    });
+    canvas.addEventListener('contextmenu', (e) => {
+      // A touch long-press may synthesize contextmenu with the primary button;
+      // only button 2 or macOS Control-click count as desktop secondary clicks.
+      if (!isSecondaryClick(e) || !this.onRoadRightClick) return;
+      const handled = this.onRoadRightClick(this.pickRay(e.clientX, e.clientY));
+      // Claim the context gesture when a vehicle was picked. OrbitControls
+      // retains its existing context-menu behavior for empty-road pan input.
+      if (handled) e.preventDefault();
     });
 
     // Hover position for the car readout: buttons pressed means an orbit
