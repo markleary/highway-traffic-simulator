@@ -668,20 +668,51 @@ rngState = emergencyTestRngState;
   const siren = new Car({ s: 100, lane: 2, v: 28, v0Factor: 1.55, kind: 'ambulance' });
   siren.ambDist = 1e9;
   siren.lcCooldown = 999;
+  // This police car is closer overall, but in a lane unrelated to the
+  // yielding car or its receiving lane. It must not mask the ambulance.
+  const closerAdjacent = new Car({ s: 120, lane: 0, v: 28, kind: 'police' });
+  closerAdjacent.emergencyDist = 1e9;
+  closerAdjacent.lcCooldown = 999;
   const yielding = new Car({ s: 140, lane: 2, v: 20 });
   yielding.lcCooldown = 0;
   const follower = new Car({ s: 115.4, lane: 1, v: 22 });
   const leader = new Car({ s: 200, lane: 1, v: 22 });
   follower.lcCooldown = leader.lcCooldown = 999;
-  clearing.cars = [siren, yielding, follower, leader];
-  clearing._ambs = [siren];
+  clearing.cars = [siren, closerAdjacent, yielding, follower, leader];
+  clearing._emergencyVehicles = [closerAdjacent, siren];
+  clearing._ambs = clearing._emergencyVehicles;
+  check(
+    'nearer adjacent responder does not mask same-lane siren slowdown',
+    clearing.effectiveV0(yielding) < clearing.v0(yielding)
+  );
   clearing.applyLaneChanges(clearing.buildLaneIndex());
   check(
-    'vehicle ahead accepts an assertive gap to clear the siren lane',
+    'vehicle clears the same-lane siren despite a closer adjacent responder',
     yielding.lane === 1,
     `(lane=${yielding.lane})`
   );
   assertSane(clearing, 'assertive move-over');
+
+  // The inverse case matters too: after finding the same-lane ambulance, the
+  // car must still notice a different responder in its candidate target lane.
+  // A same-lane-only shortcut would clear it directly into the police corridor.
+  const protectedTarget = new Simulation();
+  const target = new Car({ s: 200, lane: 2, v: 20 });
+  target.lcCooldown = 0;
+  const fartherSameLane = new Car({ s: 100, lane: 2, v: 30, kind: 'ambulance' });
+  const nearerTargetLane = new Car({ s: 140, lane: 1, v: 20, kind: 'police' });
+  fartherSameLane.lcCooldown = nearerTargetLane.lcCooldown = 999;
+  fartherSameLane.emergencyDist = nearerTargetLane.emergencyDist = 1e9;
+  protectedTarget.cars = [nearerTargetLane, fartherSameLane, target];
+  protectedTarget._emergencyVehicles = [nearerTargetLane, fartherSameLane];
+  protectedTarget._ambs = protectedTarget._emergencyVehicles;
+  protectedTarget.applyLaneChanges(protectedTarget.buildLaneIndex());
+  check(
+    'yielding car does not merge into another responder corridor',
+    target.lane === 2,
+    `(lane=${target.lane})`
+  );
+  assertSane(protectedTarget, 'independent responder corridors');
 }
 
 {

@@ -273,7 +273,7 @@ export class Simulation {
       !isEmergencyVehicle(car.kind) &&
       (this._emergencyVehicles?.length || this._ambs?.length)
     ) {
-      const near = this.emergencyBehind(car);
+      const near = this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, car.lane);
       // Only the siren's OWN lane slows, bleeding speed as it closes (down
       // to a floor the responder can still weave around): merging out into
       // same-speed neighbors is feasible where merging out of a fast lane is
@@ -281,7 +281,7 @@ export class Simulation {
       // lanes are deliberately left alone: capping them slows a 220 m zone
       // that TRAVELS WITH the responder, compressing the receiving lanes
       // into a clot that walls in both the corridor cars and the responder.
-      if (near && car.lane === near.emergency.lane) {
+      if (near) {
         v0 = Math.min(
           v0,
           this.v0(car) * (0.65 + 0.35 * (near.dist / EMERGENCY_SIREN_RANGE))
@@ -663,8 +663,10 @@ export class Simulation {
         // being in its lane makes leaving near-mandatory, and nobody moves
         // INTO its lane inside the corridor.
         const emergency = isEmergencyVehicle(car.kind);
-        const siren = emergency ? null : this.emergencyBehind(car);
-        const yielding = !!(siren && l === siren.emergency.lane);
+        const siren = emergency
+          ? null
+          : this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, l);
+        const yielding = !!siren;
         const sirenNear = yielding ? 1 - siren.dist / EMERGENCY_SIREN_RANGE : 0;
         const yieldUrgency = yielding ? 3.2 + 3 * sirenNear : 0;
 
@@ -720,8 +722,14 @@ export class Simulation {
         // preference — without this margin nearly half of dense traffic blinks.
         let wantScore = bestScore + 0.3;
         for (const t of targets) {
-          // never merge into the corridor lane while the siren is in it
-          if (siren && t === siren.emergency.lane && l !== siren.emergency.lane) continue;
+          // Check each candidate independently: a closer responder in some
+          // other lane must not hide a siren bearing down in this target lane.
+          if (
+            !emergency &&
+            this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, t)
+          ) {
+            continue;
+          }
           // never merge into the coned lane on its approach or inside it
           if (
             wz &&
@@ -1156,13 +1164,15 @@ export class Simulation {
   }
 
   // Nearest active emergency vehicle approaching this car from behind, within
-  // the move-over corridor range. Null when no siren bears down on the car.
-  emergencyBehind(car, range = EMERGENCY_SIREN_RANGE) {
+  // the move-over corridor range. Passing a lane restricts the search so each
+  // responder corridor remains independent when several sirens are active.
+  // Null when no relevant siren bears down on the car.
+  emergencyBehind(car, range = EMERGENCY_SIREN_RANGE, lane = null) {
     let best = null;
     let bestD = range;
     const active = this._emergencyVehicles?.length ? this._emergencyVehicles : this._ambs || [];
     for (const emergency of active) {
-      if (emergency === car) continue;
+      if (emergency === car || (lane !== null && emergency.lane !== lane)) continue;
       const d = forwardDist(emergency.s, car.s);
       if (d < bestD) {
         bestD = d;
