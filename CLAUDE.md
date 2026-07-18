@@ -296,12 +296,14 @@ test/smoke.js          runs the sim headless under several parameter regimes
   white Type-I-style rig (hood + cab + taller patient module, dark cab glass,
   red module stripe, red/blue strobes on the module's front roof) that
   spawns into the widest inner-lane gap,
-  runs at 1.55× the desired-speed knob with hair-trigger MOBIL (no politeness,
-  holds the innermost lane so the corridor stays predictable), and despawns
-  after ~1.6 laps. Cars with the siren within ~220 m behind (`ambBehind`) and
+  runs at 1.55× the desired-speed knob with opportunity-gated MOBIL (no
+  politeness; a target lane must offer a meaningful projected pace gain, then
+  it holds the chosen lane for 4 s to prevent flip-flopping), and despawns
+  after ~1.6 laps. Cars with the siren within ~260 m behind (`ambBehind`) and
   in its lane bleed speed as it closes (0.65–1.0× — matching the receiving
-  lane is what makes the merge out feasible, the exit-drift trick), get a
-  strong bias out of that lane plus relaxed merge gates, and nobody merges
+  lane is what makes the merge out feasible, the exit-drift trick), get an
+  early, strong bias out of that lane plus progressively assertive merge
+  gates, and nobody merges
   into it; receiving lanes are deliberately NOT slowed — a cap that travels
   with the ambulance compresses them into a clot that walls everyone in. The
   corridor is emergent, and it degrades honestly with density (near capacity

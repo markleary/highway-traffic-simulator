@@ -118,7 +118,7 @@ export const PRESETS = {
   },
   siren: {
     label: 'Ambulance run',
-    tip: 'Moderate traffic with an ambulance on a siren run: watch the move-over corridor open ahead of it. Spawn more from the Events folder.',
+    tip: 'Moderate traffic with an ambulance on a siren run: watch drivers clear decisively while the ambulance commits to useful passing openings. Spawn more from the Events folder.',
     patch: { initialCars: 65 },
     after: (sim) => sim.spawnAmbulance(),
   },

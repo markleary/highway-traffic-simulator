@@ -58,8 +58,10 @@ branch → `main` / root**. That's it — there is nothing to build.
     and merges back later, while passing traffic slows down to rubberneck.
   - **Random accident** — a wreck blocks its lane until cleared.
   - **Emergency vehicle** — an ambulance runs the loop well above the speed
-    limit while traffic ahead of the siren slows and pulls out of its lane:
-    the "move over" corridor is emergent, not scripted.
+    limit while traffic ahead of the siren slows and makes an assertive move
+    out of its lane. The ambulance commits to a lane unless an adjacent lane
+    offers a meaningful passing gain, so the emergent "move over" corridor is
+    decisive without turning the ambulance into a pinball.
   - **Rain storm** — a three-minute storm rolls in, pours, and clears. Wet
     roads mean slower targets, longer following distances, and less grip;
     watch a busy regime tip into stop-and-go as it peaks. A steady **Rain**
@@ -146,7 +148,9 @@ mid-run and watch average speed sag as the merges take back over. Pick
 raise the adaptive-cruise share and reset — the jam stripes dissolve; the 2018
 Stern experiment, reproducible from your couch. Or pick **Sudden downpour**
 and watch a comfortably flowing road collapse into stop-and-go one minute
-later when the storm arrives.
+later when the storm arrives. Pick **Ambulance run** to watch drivers open a
+corridor ahead of the siren while the ambulance waits for useful passing gaps
+instead of weaving between nearly tied lanes.
 
 ## How it works
 
@@ -168,5 +172,5 @@ with the same live rain level that drives the physics.
 
 ## Roadmap
 
-The original roadmap — and every feature added along the way — has shipped.
-Ideas welcome.
+The original roadmap — including the latest emergency-vehicle behavior polish —
+has shipped. Ideas welcome.

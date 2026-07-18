@@ -12,6 +12,16 @@ const WZ_WARN = 250;
 // (MAX_AMB in renderer.js): a spawn past it would drive physics invisibly.
 const MAX_AMBULANCES = 8;
 
+// Emergency-vehicle lane choice is intentionally less twitchy than ordinary
+// MOBIL. A target lane must offer a meaningful projected pace gain, then the
+// driver commits long enough to use that opening instead of immediately
+// reconsidering the lane it just left. Traffic ahead hears the siren somewhat
+// earlier and accepts a firmer merge to clear its lane.
+const AMB_SIREN_RANGE = 260; // m
+const AMB_PASS_LOOKAHEAD = 3; // s used to turn leader gap into projected pace
+const AMB_PASS_SPEED_GAIN = 3; // m/s of projected pace: a real pass, not noise
+const AMB_LANE_HOLD = 4; // s after taking a passing opportunity
+
 // Rain (0–1, the max of the steady Rain knob and a live storm): slower
 // desired speeds, longer following, and less grip. Each factor is mild, but
 // together they cut capacity enough to tip a near-capacity regime into
@@ -104,6 +114,15 @@ function neighborsAt(arr, s) {
     else hi = mid;
   }
   return { leader: arr[lo % n], follower: arr[(lo - 1 + n) % n] };
+}
+
+// A compact estimate of how much speed a lane can support over the next few
+// seconds. The leader's pace matters, but extra runway lets the ambulance
+// accelerate before catching it. This provides the hysteresis MOBIL's
+// instantaneous acceleration comparison lacks when two lanes are nearly tied.
+function lanePace(leader, gap, v0) {
+  if (!leader) return v0;
+  return Math.min(v0, leader.v + Math.max(0, gap) / AMB_PASS_LOOKAHEAD);
 }
 
 function insertSorted(arr, car) {
@@ -254,7 +273,7 @@ export class Simulation {
       // that TRAVELS WITH the ambulance, compressing the receiving lanes
       // into a clot that walls in both the corridor cars and the ambulance.
       if (near && car.lane === near.amb.lane) {
-        v0 = Math.min(v0, this.v0(car) * (0.65 + 0.35 * (near.dist / 220)));
+        v0 = Math.min(v0, this.v0(car) * (0.65 + 0.35 * (near.dist / AMB_SIREN_RANGE)));
       }
     }
     const wz = this.workZone();
@@ -619,18 +638,23 @@ export class Simulation {
         const pullover = car.incident?.phase === 'pullover';
         if (car.incident && !pullover) continue;
 
-        // Emergency driving: the ambulance hunts the fastest lane with no
-        // politeness, no keep-right bias, and a hair-trigger threshold.
+        // Emergency driving: the ambulance hunts a meaningfully faster lane
+        // with no politeness, then commits to the opening instead of reacting
+        // to every momentary acceleration advantage.
         // Everyone else checks for a siren bearing down (see ambBehind):
         // being in its lane makes leaving near-mandatory, and nobody moves
         // INTO its lane inside the corridor.
         const amb = car.kind === 'ambulance';
         const siren = amb ? null : this.ambBehind(car);
+        const yielding = !!(siren && l === siren.amb.lane);
+        const sirenNear = yielding ? 1 - siren.dist / AMB_SIREN_RANGE : 0;
+        const yieldUrgency = yielding ? 3.2 + 3 * sirenNear : 0;
 
         const v0 = this.effectiveV0(car);
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
         const curGap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         const curAcc = idm(car, leader ? leader.v : car.v, curGap, v0);
+        const curPace = amb ? lanePace(leader, curGap, v0) : 0;
 
         // Work zone: a car in the closed lane must be out before the cones.
         // Inside counts as distance 0 — cars caught by a live toggle escape
@@ -647,10 +671,14 @@ export class Simulation {
         let brakeLimit = p.safeBrake * (1 - RAIN_HARD * rainNow); // wet: gentler gates
         if (pullover) {
           brakeLimit *= 1 + Math.min((this.time - car.incident.phaseStart) / 10, 1.5);
-        } else if (amb || (siren && l === siren.amb.lane)) {
-          // clearing a siren's path — or being the siren weaving around a
-          // baulked car — warrants a firm merge; traffic yields to it
+        } else if (amb) {
+          // A useful passing opening can warrant a firm merge.
           brakeLimit *= 1.5;
+        } else if (yielding) {
+          // A vehicle directly ahead of the siren accepts progressively firmer
+          // braking from the receiving lane rather than waiting indefinitely
+          // for an ordinary commuter-sized gap.
+          brakeLimit *= 1.75 + 0.75 * sirenNear;
         }
 
         let targets;
@@ -666,8 +694,9 @@ export class Simulation {
         }
 
         let bestLane = -1;
-        // trucks rarely bother changing lanes; the ambulance barely hesitates
-        let bestScore = p.laneChangeThreshold * (car.kind === 'truck' ? 2.5 : amb ? 0.5 : 1);
+        // Trucks rarely bother changing lanes. The ambulance uses the normal
+        // MOBIL threshold after the stronger projected-pace gate below.
+        let bestScore = p.laneChangeThreshold * (car.kind === 'truck' ? 2.5 : 1);
         let wantLane = -1;
         // Blinker-worthy desire needs a clearly better lane, not a marginal
         // preference — without this margin nearly half of dense traffic blinks.
@@ -688,6 +717,10 @@ export class Simulation {
           const gapBehind = nf ? forwardDist(nf.s, car.s) - halfLens(nf, car) : Infinity;
 
           const myNew = idm(car, nl ? nl.v : car.v, gapAhead, v0);
+          // Do not weave for a marginal instantaneous acceleration advantage:
+          // the target lane has to support a noticeably faster pace over the
+          // next few seconds. This is the main flip-flop guard.
+          if (amb && lanePace(nl, gapAhead, v0) < curPace + AMB_PASS_SPEED_GAIN) continue;
           // Desire, gauged before the gap/safety gates below: the gain the
           // driver sees in the target lane, whether or not the move is safe.
           // A passing desire lights the blinker (see updateLights) — a car
@@ -696,14 +729,15 @@ export class Simulation {
           if (pullover) want += 2.5;
           else if (wzUrgent) want += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) want += 1 + 3 * (1 - exitDist / 400);
-          else if (siren && l === siren.amb.lane) want += 2.2 + 1.8 * (1 - siren.dist / 220);
+          else if (yielding) want += yieldUrgency + (t < l ? 0.35 : 0);
           if (want > wantScore) {
             wantScore = want;
             wantLane = t;
           }
 
-          // clearing a siren's path (or being it) warrants half a normal gap
-          const gapFloor = amb || (siren && l === siren.amb.lane) ? p.minGap * 0.5 : p.minGap;
+          // Emergency moves may use a smaller physical gap; the braking gate
+          // below still decides whether the receiving follower can cope.
+          const gapFloor = amb ? p.minGap * 0.5 : yielding ? p.minGap * 0.25 : p.minGap;
           if (gapAhead < gapFloor || gapBehind < gapFloor) continue;
           let nfNew = 0;
           let nfOld = 0;
@@ -715,19 +749,17 @@ export class Simulation {
           }
 
           let score = myNew - curAcc - (amb ? 0 : p.politeness) * Math.max(0, nfOld - nfNew);
-          // The ambulance holds the innermost lane — the corridor only knits
-          // if the siren's lane is predictable — and drops out of it only to
-          // pass something truly stuck, returning as soon as it clears.
+          // Ambulances choose on projected pace above, with no directional
+          // bias that could pull them straight back into the lane they left.
           // Everyone else keeps the mild keep-right bias.
-          if (amb) score += t > l ? 0.3 : -0.3;
-          else score += t < l ? 0.08 : -0.08;
+          if (!amb) score += t < l ? 0.08 : -0.08;
           if (pullover) score += 2.5;
           else if (wzUrgent) score += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) score += 1 + 3 * (1 - exitDist / 400);
           // strong from the moment the siren is audible — real drivers clear
           // early, not when the bumper arrives (a distance-proportional bonus
           // left cars sitting until the last 80 m)
-          else if (siren && l === siren.amb.lane) score += 2.2 + 1.8 * (1 - siren.dist / 220);
+          else if (yielding) score += yieldUrgency + (t < l ? 0.35 : 0);
           if (score > bestScore) {
             bestScore = score;
             bestLane = t;
@@ -736,7 +768,9 @@ export class Simulation {
 
         if (bestLane >= 0) {
           car.lane = bestLane;
-          car.lcCooldown = mandatory || amb || (siren && l === siren.amb.lane) ? 1.2 : 3.5;
+          if (amb) car.lcCooldown = AMB_LANE_HOLD;
+          else if (yielding) car.lcCooldown = 3.5;
+          else car.lcCooldown = mandatory ? 1.2 : 3.5;
           this.counters.laneChanges++;
           changed = true;
         } else {
@@ -1063,7 +1097,7 @@ export class Simulation {
 
   // Nearest active ambulance approaching this car from behind, within the
   // move-over corridor range. Null when no siren bears down on the car.
-  ambBehind(car, range = 220) {
+  ambBehind(car, range = AMB_SIREN_RANGE) {
     let best = null;
     let bestD = range;
     for (const amb of this._ambs || []) {
