@@ -5,6 +5,7 @@ import { Simulation, BIN_M } from '../src/sim/simulation.js';
 import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
 import { PRESETS, applyPreset } from '../src/presets.js';
 import { Car } from '../src/sim/car.js';
+import { isSecondaryClick } from '../src/render/renderer.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -32,6 +33,14 @@ function check(label, cond, detail = '') {
     failures++;
   }
 }
+
+check(
+  'secondary click detection includes macOS Control-click only',
+  isSecondaryClick({ button: 2, ctrlKey: false }) &&
+    isSecondaryClick({ button: 0, ctrlKey: true }) &&
+    !isSecondaryClick({ button: 0, ctrlKey: false }) &&
+    !isSecondaryClick({ button: 1, ctrlKey: false })
+);
 
 function assertSane(sim, label) {
   let bad = 0;

@@ -24,6 +24,13 @@ const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_AMB) * 2;
 const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
 const RAIN_HEIGHT = 260;
 
+// Browsers report a physical secondary mouse button as button 2. macOS also
+// exposes Control-click as a context gesture while retaining button 0, so both
+// event shapes must bypass click-to-crash and enter the chase path.
+export function isSecondaryClick(event) {
+  return event.button === 2 || (event.button === 0 && event.ctrlKey);
+}
+
 // Late-afternoon low-poly diorama palette. Every DRY color lerps toward its
 // WET partner as sim.rainNow rises (applyWeather), so a storm grades the
 // whole scene — sky, fog, hills, clouds — not just the lighting.
@@ -216,7 +223,7 @@ export class SceneRenderer {
       // Only the primary button owns click-to-crash. Secondary clicks arrive
       // through `contextmenu` below; without this gate their pointerup used to
       // crash the car before the chase action could run.
-      if (e.button !== 0) {
+      if (e.button !== 0 || isSecondaryClick(e)) {
         this._press = null;
         return;
       }
@@ -242,8 +249,8 @@ export class SceneRenderer {
     });
     canvas.addEventListener('contextmenu', (e) => {
       // A touch long-press may synthesize contextmenu with the primary button;
-      // button 2 keeps this a desktop secondary-click gesture.
-      if (e.button !== 2 || !this.onRoadRightClick) return;
+      // only button 2 or macOS Control-click count as desktop secondary clicks.
+      if (!isSecondaryClick(e) || !this.onRoadRightClick) return;
       const handled = this.onRoadRightClick(this.pickRay(e.clientX, e.clientY));
       // Claim the context gesture when a vehicle was picked. OrbitControls
       // retains its existing context-menu behavior for empty-road pan input.
