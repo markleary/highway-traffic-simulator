@@ -4,6 +4,7 @@ import { params, KMH } from '../src/params.js';
 import { Simulation, BIN_M } from '../src/sim/simulation.js';
 import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
 import { PRESETS, applyPreset } from '../src/presets.js';
+import { Car } from '../src/sim/car.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
 const H = 1 / 60;
@@ -323,6 +324,115 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   );
   for (let i = 0; i < Math.round(5 / H); i++) sim.step(H);
   assertSane(sim, 'ambulance spawn edges');
+}
+
+{
+  console.log('\nambulance lane choice and move-over urgency');
+  // Recorded dense trajectory that used to bounce 2→1→2 every 1.2 s when
+  // adjacent lanes traded tiny instantaneous acceleration advantages.
+  const savedRngState = rngState;
+  rngState = 1;
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 75,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const weaving = new Simulation();
+  for (let i = 0; i < Math.round(10 / H); i++) weaving.step(H);
+  const amb = weaving.spawnAmbulance();
+  let previousLane = amb.lane;
+  let previousPreviousLane = -1;
+  let lastChangeAt = -Infinity;
+  let ambLaneChanges = 0;
+  let quickReversals = 0;
+  for (let i = 0; i < Math.round(25 / H); i++) {
+    weaving.step(H);
+    if (amb.lane === previousLane) continue;
+    const now = i * H;
+    ambLaneChanges++;
+    if (amb.lane === previousPreviousLane && now - lastChangeAt < 4) quickReversals++;
+    previousPreviousLane = previousLane;
+    previousLane = amb.lane;
+    lastChangeAt = now;
+  }
+  check(
+    'ambulance does not flip-flop between nearly tied lanes',
+    quickReversals === 0 && ambLaneChanges <= 4,
+    `(changes=${ambLaneChanges}, quick reversals=${quickReversals})`
+  );
+  assertSane(weaving, 'opportunity-aware ambulance lane choice');
+  rngState = savedRngState;
+
+  // Frozen slow leaders cannot clear the way, but lane 1 has extra runway and
+  // lane 0 is open. The ambulance should use those real passing opportunities
+  // without immediately undoing either move.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    lanes: 3,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const passing = new Simulation();
+  const passingAmb = new Car({ s: 100, lane: 2, v: 30, v0Factor: 1.55, kind: 'ambulance' });
+  passingAmb.ambDist = 1e9;
+  passingAmb.lcCooldown = 0;
+  const closeBlocker = new Car({ s: 123, lane: 2, v: 15 });
+  const fartherBlocker = new Car({ s: 140, lane: 1, v: 15 });
+  closeBlocker.lcCooldown = fartherBlocker.lcCooldown = 999;
+  passing.cars = [passingAmb, closeBlocker, fartherBlocker];
+  let passingChanges = 0;
+  let passingLane = passingAmb.lane;
+  let shortestHold = Infinity;
+  let changedAt = -Infinity;
+  for (let i = 0; i < Math.round(12 / H); i++) {
+    passing.step(H);
+    if (passingAmb.lane === passingLane) continue;
+    const now = i * H;
+    if (passingChanges) shortestHold = Math.min(shortestHold, now - changedAt);
+    passingChanges++;
+    passingLane = passingAmb.lane;
+    changedAt = now;
+  }
+  check(
+    'ambulance commits to genuine passing openings',
+    passingChanges === 2 && shortestHold >= 3.9 && passingAmb.lane === 0,
+    `(changes=${passingChanges}, shortest hold=${shortestHold.toFixed(1)} s, lane=${passingAmb.lane})`
+  );
+  assertSane(passing, 'ambulance passing opportunity');
+
+  // A car 40 m ahead of the ambulance has a viable but assertive merge: the
+  // receiving-lane follower is only 20 m back and closing by 2 m/s. Ordinary
+  // MOBIL rejects it; a driver clearing a close siren should take it.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    lanes: 3,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const clearing = new Simulation();
+  const siren = new Car({ s: 100, lane: 2, v: 28, v0Factor: 1.55, kind: 'ambulance' });
+  siren.ambDist = 1e9;
+  siren.lcCooldown = 999;
+  const yielding = new Car({ s: 140, lane: 2, v: 20 });
+  yielding.lcCooldown = 0;
+  const follower = new Car({ s: 115.4, lane: 1, v: 22 });
+  const leader = new Car({ s: 200, lane: 1, v: 22 });
+  follower.lcCooldown = leader.lcCooldown = 999;
+  clearing.cars = [siren, yielding, follower, leader];
+  clearing._ambs = [siren];
+  clearing.applyLaneChanges(clearing.buildLaneIndex());
+  check(
+    'vehicle ahead accepts an assertive gap to clear the siren lane',
+    yielding.lane === 1,
+    `(lane=${yielding.lane})`
+  );
+  assertSane(clearing, 'assertive move-over');
 }
 
 {

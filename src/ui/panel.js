@@ -420,7 +420,7 @@ function makeGui({ sim, renderer, onRebuild }) {
   );
   tip(
     fEvents.add({ amb: () => sim.spawnAmbulance() }, 'amb').name('🚑 Emergency vehicle'),
-    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and pulls out of its lane — the "move over" corridor is emergent, not scripted. It weaves through whatever does not clear, and leaves the map after about a lap and a half.'
+    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and makes an assertive move out of its lane — the "move over" corridor is emergent, not scripted. The ambulance changes lanes only for a useful passing opening, commits to it instead of weaving back, and leaves the map after about a lap and a half.'
   );
   tip(
     fEvents.add({ storm: () => sim.startStorm() }, 'storm').name('🌧 Rain storm'),
