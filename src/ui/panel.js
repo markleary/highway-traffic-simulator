@@ -419,8 +419,10 @@ function makeGui({ sim, renderer, onRebuild }) {
     'A random car crashes where it is, blocking its lane until cleared. You can also left-click or tap any car on the map to crash that specific one.'
   );
   tip(
-    fEvents.add({ amb: () => sim.spawnAmbulance() }, 'amb').name('🚑 Emergency vehicle'),
-    'Send an ambulance around the loop well above the speed limit. Traffic ahead of the siren slows and makes an assertive move out of its lane — the "move over" corridor is emergent, not scripted. The ambulance changes lanes only for a useful passing opening, commits to it instead of weaving back, and leaves the map after about a lap and a half.'
+    fEvents
+      .add({ emergency: () => sim.spawnEmergencyVehicle() }, 'emergency')
+      .name('🚨 Emergency vehicle'),
+    'Dispatch an ambulance, police car, or fire truck at random. All three run with a siren and create the same emergent "move over" corridor. The police car accelerates fastest, the ambulance sits in the middle, and the much longer fire truck accelerates more slowly. If packed traffic cannot hold a model safely, dispatch chooses among the ones that fit. Each commits to useful passing openings and leaves after about a lap and a half.'
   );
   tip(
     fEvents.add({ storm: () => sim.startStorm() }, 'storm').name('🌧 Rain storm'),

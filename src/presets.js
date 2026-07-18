@@ -9,7 +9,7 @@ import { params, DEFAULTS, ownDisplay } from './params.js';
 // Applying spreads DEFAULTS back in first (predictable stage, nothing
 // inherited from the last slider session), preserves the user's display
 // preferences unless the preset itself asks for them, resets the sim, and
-// runs the preset's `after` hook (spawn an ambulance, trigger wrecks).
+// runs the preset's `after` hook (stage an emergency vehicle, trigger wrecks).
 // All presets stay on the default circle so applying never rebuilds geometry
 // slowly — the drama is in the traffic, not the scenery.
 
@@ -118,9 +118,9 @@ export const PRESETS = {
   },
   siren: {
     label: 'Ambulance run',
-    tip: 'Moderate traffic with an ambulance on a siren run: watch drivers clear decisively while the ambulance commits to useful passing openings. Spawn more from the Events folder.',
+    tip: 'A repeatable ambulance siren run in moderate traffic: watch drivers clear decisively while it commits to useful passing openings. The Events button instead dispatches an ambulance, police car, or fire truck at random.',
     patch: { initialCars: 65 },
-    after: (sim) => sim.spawnAmbulance(),
+    after: (sim) => sim.spawnEmergencyVehicle('ambulance'),
   },
   defaults: {
     label: 'Factory defaults',

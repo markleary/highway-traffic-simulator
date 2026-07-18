@@ -1,4 +1,5 @@
 import { params, KMH, MPH } from '../params.js';
+import { vehicleLabel } from '../sim/car.js';
 
 // Dashboard-style speedometer shown while the chase camera follows a car:
 // a 270° gauge with ticks, a progress arc, a needle, and a digital readout.
@@ -109,7 +110,7 @@ export class Speedometer {
     ctx.fillText(imp ? 'mph' : 'km/h', CX, CY + 40);
     ctx.textAlign = 'left';
 
-    const kind = car.kind === 'acc' ? 'ACC car' : car.kind;
+    const kind = vehicleLabel(car.kind);
     const want = Math.round((params.desiredSpeed * car.v0Factor) / unit);
     this.cap.textContent =
       `following ${kind} #${car.id} · wants ${want} ${imp ? 'mph' : 'km/h'}${statusOf(car)}`;
