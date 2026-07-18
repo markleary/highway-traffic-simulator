@@ -51,8 +51,10 @@ branch → `main` / root**. That's it — there is nothing to build.
 - Every panel control has an explainer tooltip: hover it with a mouse, or
   **long-press its label** on a touch screen.
 - **Hover any car** for a nameplate readout: its kind and id, current speed,
-  and desired speed in parens. **Click any car to crash it** — it blocks its
-  lane (optionally dragging a neighbor into a 2-lane pileup) until cleared.
+  and desired speed in parens. **Left-click or tap any car to crash it** — it
+  blocks its lane (optionally dragging a neighbor into a 2-lane pileup) until
+  cleared. In a desktop browser, **right-click a vehicle to chase that exact
+  vehicle**; its secondary click never triggers an accident.
 - The **Events** folder stages everything else:
   - **Random breakdown** — a car pulls onto the shoulder, parks with hazards,
     and merges back later, while passing traffic slows down to rubberneck.
@@ -148,9 +150,11 @@ mid-run and watch average speed sag as the merges take back over. Pick
 raise the adaptive-cruise share and reset — the jam stripes dissolve; the 2018
 Stern experiment, reproducible from your couch. Or pick **Sudden downpour**
 and watch a comfortably flowing road collapse into stop-and-go one minute
-later when the storm arrives. Pick **Ambulance run** to watch drivers open a
-corridor ahead of the siren while the ambulance waits for useful passing gaps
-instead of weaving between nearly tied lanes.
+later when the storm arrives. Right-click a vehicle you want to follow through
+one of those waves and the chase camera will lock onto that exact car. Or pick
+**Ambulance run** to watch drivers open a corridor ahead of the siren while the
+ambulance waits for useful passing gaps instead of weaving between nearly tied
+lanes.
 
 ## How it works
 
@@ -172,5 +176,5 @@ with the same live rain level that drives the physics.
 
 ## Roadmap
 
-The original roadmap — including the latest emergency-vehicle behavior polish —
-has shipped. Ideas welcome.
+The original roadmap — including direct right-click vehicle chasing — has
+shipped. Ideas welcome.
