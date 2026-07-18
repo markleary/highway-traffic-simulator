@@ -4,7 +4,14 @@ import { params, KMH } from '../src/params.js';
 import { Simulation, BIN_M } from '../src/sim/simulation.js';
 import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
 import { PRESETS, applyPreset } from '../src/presets.js';
-import { Car } from '../src/sim/car.js';
+import {
+  Car,
+  EMERGENCY_KINDS,
+  EMERGENCY_PROFILES,
+  VEHICLE_LEN,
+  isEmergencyVehicle,
+  vehicleLabel,
+} from '../src/sim/car.js';
 import { isSecondaryClick } from '../src/render/renderer.js';
 
 const DEFAULTS = JSON.parse(JSON.stringify(params));
@@ -236,6 +243,239 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   assertSane(sim, 'breakdown scenario');
 }
 
+// These focused tests allocate many extra Cars; restore the suite RNG afterward
+// so the older recorded-trajectory regressions keep their original seeds.
+const emergencyTestRngState = rngState;
+
+{
+  console.log('\nemergency vehicle profiles and helpers');
+  const expected = {
+    ambulance: { length: 5.4, v0Factor: 1.55, accelK: 1.5, headwayK: 0.55, brakeK: 1.1 },
+    police: { length: 5.0, v0Factor: 1.7, accelK: 2.0, headwayK: 0.5, brakeK: 1.25 },
+    firetruck: { length: 10.5, v0Factor: 1.25, accelK: 0.6, headwayK: 0.8, brakeK: 0.85 },
+  };
+  const labels = { ambulance: 'Ambulance', police: 'Police car', firetruck: 'Fire truck' };
+  check(
+    'emergency kind catalog is stable',
+    EMERGENCY_KINDS.join(',') === 'ambulance,police,firetruck',
+    `(${EMERGENCY_KINDS.join(',')})`
+  );
+  for (const kind of EMERGENCY_KINDS) {
+    const car = new Car({ kind });
+    const profile = EMERGENCY_PROFILES[kind];
+    const want = expected[kind];
+    check(
+      `${labels[kind]} has its exact physical profile`,
+      isEmergencyVehicle(kind) &&
+        vehicleLabel(kind) === labels[kind] &&
+        profile.length === want.length &&
+        profile.v0Factor === want.v0Factor &&
+        profile.accelK === want.accelK &&
+        profile.headwayK === want.headwayK &&
+        profile.brakeK === want.brakeK &&
+        VEHICLE_LEN[kind] === want.length &&
+        car.len === want.length &&
+        car.v0Factor === want.v0Factor &&
+        car.accelK === want.accelK &&
+        car.headwayK === want.headwayK &&
+        car.brakeK === want.brakeK
+    );
+  }
+  check(
+    'ordinary vehicles are not emergency vehicles',
+    !isEmergencyVehicle('car') && !isEmergencyVehicle('truck') && !isEmergencyVehicle('acc')
+  );
+
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const dynamics = new Simulation();
+  const responders = EMERGENCY_KINDS.map(
+    (kind, lane) => new Car({ s: lane * 100, lane, v: 0, kind })
+  );
+  for (const responder of responders) {
+    responder.emergencyDist = 1e9;
+    responder.lcCooldown = 999;
+  }
+  dynamics.cars = responders;
+  dynamics.step(H);
+  const [ambulance, police, firetruck] = responders;
+  check(
+    'police accelerates hardest and the fire truck most gently',
+    police.a > ambulance.a && ambulance.a > firetruck.a,
+    `(police=${police.a.toFixed(2)}, ambulance=${ambulance.a.toFixed(2)}, fire=${firetruck.a.toFixed(2)} m/s²)`
+  );
+  check(
+    'emergency target speeds follow police, ambulance, fire-truck order',
+    dynamics.v0(police) > dynamics.v0(ambulance) &&
+      dynamics.v0(ambulance) > dynamics.v0(firetruck) &&
+      dynamics.v0(firetruck) > params.desiredSpeed
+  );
+  check(
+    'fire truck is longest and police car is shortest',
+    firetruck.len > ambulance.len && ambulance.len > police.len
+  );
+
+  // Police and fire models own real indicator clusters, so their red/blue
+  // warning bars must not suppress ordinary lane-change communication.
+  police.renderLane = police.lane - 0.5;
+  firetruck.renderLane = firetruck.lane - 0.5;
+  dynamics.updateLights();
+  check('police car signals while changing lanes', police.signal === 1);
+  check('fire truck signals while changing lanes', firetruck.signal === 1);
+  check('ambulance keeps its strobe-only signal treatment', ambulance.signal === 0);
+
+  firetruck.renderLane = firetruck.lane;
+  firetruck.signalWant = -1;
+  firetruck.signalUntil = dynamics.time + 1;
+  dynamics.updateLights();
+  check('fire truck signals a blocked lane-change desire', firetruck.signal === -1);
+}
+
+{
+  console.log('\nemergency vehicle selection, lifecycle, and shared capacity');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+
+  // Control only the model-selection draw; constructor draws return 0.5. This
+  // deterministically proves all three thirds without a flaky frequency test.
+  const selection = new Simulation();
+  const savedRandom = Math.random;
+  const rolls = [
+    [0.0, 'ambulance'],
+    [0.34, 'police'],
+    [0.67, 'firetruck'],
+  ];
+  const selected = [];
+  try {
+    for (const [roll, expectedKind] of rolls) {
+      let first = true;
+      Math.random = () => {
+        if (!first) return 0.5;
+        first = false;
+        return roll;
+      };
+      const responder = selection.spawnEmergencyVehicle();
+      selected.push(responder?.kind === expectedKind);
+      selection.removeCar(responder);
+    }
+  } finally {
+    Math.random = savedRandom;
+  }
+  check('random selection maps evenly across the three feasible models', selected.every(Boolean));
+  check('unknown explicit emergency kind is rejected', selection.spawnEmergencyVehicle('tow') === null);
+
+  const lifecycle = new Simulation();
+  const explicit = EMERGENCY_KINDS.map((kind) => lifecycle.spawnEmergencyVehicle(kind));
+  check(
+    'all explicit emergency models spawn in the innermost lane',
+    explicit.every(
+      (responder, i) =>
+        responder?.kind === EMERGENCY_KINDS[i] &&
+        responder.lane === params.lanes - 1 &&
+        lifecycle.cars.includes(responder)
+    )
+  );
+  lifecycle.step(H);
+  check(
+    'all models share the active emergency cache',
+    lifecycle._emergencyVehicles.length === 3 &&
+      explicit.every((responder) => lifecycle._emergencyVehicles.includes(responder)) &&
+      lifecycle._ambs === lifecycle._emergencyVehicles
+  );
+  explicit[0].ambDist = 0.01; // old field remains a live compatibility alias
+  explicit[1].emergencyDist = 0.01;
+  explicit[2].emergencyDist = 0.01;
+  lifecycle.step(H);
+  check(
+    'every emergency model despawns when its distance budget expires',
+    explicit.every((responder) => !lifecycle.cars.includes(responder))
+  );
+
+  const capped = new Simulation();
+  const attempts = [];
+  for (let i = 0; i < 9; i++) {
+    attempts.push(capped.spawnEmergencyVehicle(EMERGENCY_KINDS[i % EMERGENCY_KINDS.length]));
+  }
+  check(
+    'mixed emergency vehicles share the eight-vehicle render cap',
+    attempts.slice(0, 8).every(Boolean) &&
+      attempts[8] === null &&
+      capped.cars.filter((car) => isEmergencyVehicle(car.kind)).length === 8
+  );
+}
+
+{
+  console.log('\nemergency vehicle spawn clearance');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 120,
+    truckShare: 0,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const roomy = new Simulation();
+  const fire = roomy.spawnEmergencyVehicle('firetruck');
+  const lane = roomy.buildLaneIndex()[params.lanes - 1];
+  const fi = lane.indexOf(fire);
+  const behind = fi >= 0 ? lane[(fi - 1 + lane.length) % lane.length] : null;
+  const ahead = fi >= 0 ? lane[(fi + 1) % lane.length] : null;
+  const gapBehind =
+    fire && behind ? forwardDist(behind.s, fire.s) - (behind.len + fire.len) / 2 : -Infinity;
+  const gapAhead =
+    fire && ahead ? forwardDist(fire.s, ahead.s) - (fire.len + ahead.len) / 2 : -Infinity;
+  check(
+    'fire truck spawns with minimum bumper clearance on both sides',
+    !!fire && gapBehind >= params.minGap - 1e-9 && gapAhead >= params.minGap - 1e-9,
+    `(behind=${gapBehind.toFixed(2)}, ahead=${gapAhead.toFixed(2)} m)`
+  );
+
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    truckShare: 0,
+    onRampA: 0,
+    onRampB: 0,
+    offRampA: 0,
+    offRampB: 0,
+  });
+  const dense = new Simulation();
+  const count = Math.ceil(LOOP / 18);
+  const spacing = LOOP / count; // < fire truck's 19.1 m insertion requirement
+  dense.cars = Array.from(
+    { length: count },
+    (_, i) => new Car({ s: i * spacing, lane: params.lanes - 1, v: 20, kind: 'car' })
+  );
+  const before = dense.cars.length;
+  check(
+    'explicit fire truck spawn refuses a physically short gap',
+    dense.spawnEmergencyVehicle('firetruck') === null && dense.cars.length === before,
+    `(spacing=${spacing.toFixed(2)} m)`
+  );
+  const savedRandom = Math.random;
+  let feasibleRandom;
+  try {
+    Math.random = () => 0.999;
+    feasibleRandom = dense.spawnEmergencyVehicle();
+  } finally {
+    Math.random = savedRandom;
+  }
+  check(
+    'random spawn selects among models that fit instead of failing on the fire truck',
+    feasibleRandom?.kind === 'police'
+  );
+}
+rngState = emergencyTestRngState;
+
 {
   console.log('\nemergency vehicle: outruns traffic, corridor opens, then leaves');
   // Moderate density on purpose: the corridor needs spare capacity in the
@@ -428,20 +668,51 @@ run('drain: no inflow, heavy exits → road empties', { onRampA: 0, onRampB: 0, 
   const siren = new Car({ s: 100, lane: 2, v: 28, v0Factor: 1.55, kind: 'ambulance' });
   siren.ambDist = 1e9;
   siren.lcCooldown = 999;
+  // This police car is closer overall, but in a lane unrelated to the
+  // yielding car or its receiving lane. It must not mask the ambulance.
+  const closerAdjacent = new Car({ s: 120, lane: 0, v: 28, kind: 'police' });
+  closerAdjacent.emergencyDist = 1e9;
+  closerAdjacent.lcCooldown = 999;
   const yielding = new Car({ s: 140, lane: 2, v: 20 });
   yielding.lcCooldown = 0;
   const follower = new Car({ s: 115.4, lane: 1, v: 22 });
   const leader = new Car({ s: 200, lane: 1, v: 22 });
   follower.lcCooldown = leader.lcCooldown = 999;
-  clearing.cars = [siren, yielding, follower, leader];
-  clearing._ambs = [siren];
+  clearing.cars = [siren, closerAdjacent, yielding, follower, leader];
+  clearing._emergencyVehicles = [closerAdjacent, siren];
+  clearing._ambs = clearing._emergencyVehicles;
+  check(
+    'nearer adjacent responder does not mask same-lane siren slowdown',
+    clearing.effectiveV0(yielding) < clearing.v0(yielding)
+  );
   clearing.applyLaneChanges(clearing.buildLaneIndex());
   check(
-    'vehicle ahead accepts an assertive gap to clear the siren lane',
+    'vehicle clears the same-lane siren despite a closer adjacent responder',
     yielding.lane === 1,
     `(lane=${yielding.lane})`
   );
   assertSane(clearing, 'assertive move-over');
+
+  // The inverse case matters too: after finding the same-lane ambulance, the
+  // car must still notice a different responder in its candidate target lane.
+  // A same-lane-only shortcut would clear it directly into the police corridor.
+  const protectedTarget = new Simulation();
+  const target = new Car({ s: 200, lane: 2, v: 20 });
+  target.lcCooldown = 0;
+  const fartherSameLane = new Car({ s: 100, lane: 2, v: 30, kind: 'ambulance' });
+  const nearerTargetLane = new Car({ s: 140, lane: 1, v: 20, kind: 'police' });
+  fartherSameLane.lcCooldown = nearerTargetLane.lcCooldown = 999;
+  fartherSameLane.emergencyDist = nearerTargetLane.emergencyDist = 1e9;
+  protectedTarget.cars = [nearerTargetLane, fartherSameLane, target];
+  protectedTarget._emergencyVehicles = [nearerTargetLane, fartherSameLane];
+  protectedTarget._ambs = protectedTarget._emergencyVehicles;
+  protectedTarget.applyLaneChanges(protectedTarget.buildLaneIndex());
+  check(
+    'yielding car does not merge into another responder corridor',
+    target.lane === 2,
+    `(lane=${target.lane})`
+  );
+  assertSane(protectedTarget, 'independent responder corridors');
 }
 
 {

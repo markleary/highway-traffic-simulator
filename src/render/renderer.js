@@ -4,23 +4,27 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../sim/road.js';
 import { params, KMH, MPH } from '../params.js';
+import { isEmergencyVehicle, vehicleLabel } from '../sim/car.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
-const MAX_AMB = 8; // sim.spawnAmbulance caps at the same count (MAX_AMBULANCES)
-const MAX_SHADOWS = MAX_CARS * 3 + MAX_TRUCKS + MAX_AMB; // every render pool combined
+const MAX_EMERGENCY = 8; // simulation caps all emergency kinds at this total
+const MAX_SHADOWS = MAX_CARS * 3 + MAX_TRUCKS + MAX_EMERGENCY; // every render pool combined
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
 // 'By type' color mode: the charts' categorical trio (speed/flow/cars series
-// hues), so the whole UI speaks one palette. Ambulances stay white.
+// hues), so the whole UI speaks one palette. Emergency liveries stay fixed.
 const TYPE_COLORS = {
   car: new THREE.Color(0x3987e5),
   acc: new THREE.Color(0x199e70),
   truck: new THREE.Color(0xd98e32),
+  ambulance: new THREE.Color(0xf4f7f9),
+  police: new THREE.Color(0x242a30),
+  firetruck: new THREE.Color(0xc93632),
 };
 // Brake lamps are paired on every conventional vehicle, and a signaling car
 // can also contribute a front/rear blinker pair in the same frame.
-const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_AMB) * 2;
+const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_EMERGENCY) * 2;
 const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
 const RAIN_HEIGHT = 260;
 
@@ -93,6 +97,47 @@ const LIGHT_DIMS = {
   ambulance: {
     rear: -2.69, front: 2.69, halfW: 0.85, y: 1.0,
     brakeZ: -2.785, brakeY: 0.74, brakeHalfW: 0.68, brakeW: 0.36, brakeH: 0.14,
+  },
+  police: {
+    rear: -2.487, front: 2.39, halfW: 0.75, y: 0.8,
+    // Each rear housing is one horizontal lamp: red on its inner half, amber
+    // on its outer half. Dynamic light mounts sit over those exact halves.
+    brakeZ: -2.487, brakeY: 0.8, brakeHalfW: 0.505, brakeW: 0.26, brakeH: 0.15,
+    blinkZR: -2.491, blinkYR: 0.8, blinkHalfWR: 0.745,
+    blinkWR: 0.2, blinkHR: 0.15, blinkDepthR: 0.015,
+    // Front indicators wrap around the bumper corners instead of forming a
+    // second, rear-looking row beneath the headlights.
+    blinkZF: 2.39, blinkYF: 0.72, blinkHalfWF: 0.82,
+    blinkWF: 0.28, blinkHF: 0.13, blinkDepthF: 0.08, blinkYawF: 0.55,
+  },
+  firetruck: {
+    rear: -5.225, front: 5.225, halfW: 0.9, y: 1.05,
+    brakeZ: -5.225, brakeY: 0.88, brakeHalfW: 0.9, brakeW: 0.42, brakeH: 0.18,
+    blinkZR: -5.225, blinkYR: 1.16, blinkHalfWR: 0.9,
+    blinkWR: 0.42, blinkHR: 0.14, blinkDepthR: 0.025,
+    blinkZF: 5.225, blinkYF: 1.2, blinkHalfWF: 0.78,
+    blinkWF: 0.34, blinkHF: 0.12, blinkDepthF: 0.025,
+  },
+};
+
+// Shared presentation dimensions keep the long/tall emergency models out of
+// the old kind-by-kind ternaries. Contact-shadow length comes from car.len so
+// the rendered footprint follows the physics record automatically.
+const RENDER_DIMS = {
+  car: { shadowHalfW: 0.92, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
+  acc: { shadowHalfW: 1.02, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
+  truck: { shadowHalfW: 1.22, shadowInset: 0.5, hoverY: 4.2, chaseUp: 8.5 },
+  ambulance: {
+    shadowHalfW: 1.17, shadowInset: 0.22, hoverY: 3.1, chaseUp: 6,
+    strobe: { x: 0.55, y: 2.6, z: 0.1, sx: 0.5, sy: 0.22, sz: 0.5 },
+  },
+  police: {
+    shadowHalfW: 1.0, shadowInset: 0.2, hoverY: 2.7, chaseUp: 6,
+    strobe: { x: 0.43, y: 1.65, z: -0.1, sx: 0.4, sy: 0.13, sz: 0.22 },
+  },
+  firetruck: {
+    shadowHalfW: 1.24, shadowInset: 0.5, hoverY: 4.4, chaseUp: 8.5,
+    strobe: { x: 0.62, y: 3.18, z: 3.65, sx: 0.52, sy: 0.17, sz: 0.3 },
   },
 };
 
@@ -321,15 +366,16 @@ export class SceneRenderer {
     this.hoverTip.visible = !!car;
     if (!car) return;
     this.carPose(car, this._pos, this._tan);
+    const dims = RENDER_DIMS[car.kind] ?? RENDER_DIMS.car;
     this.hoverTip.position.set(
       this._pos.x,
-      this._pos.y + (car.kind === 'truck' ? 4.2 : 2.6),
+      this._pos.y + dims.hoverY,
       this._pos.z
     );
     const imp = params.units === 'imperial';
     const unit = imp ? MPH : KMH;
     const want = params.desiredSpeed * car.v0Factor;
-    this.hoverName.textContent = `${car.kind === 'acc' ? 'ACC car' : car.kind} #${car.id}`;
+    this.hoverName.textContent = `${vehicleLabel(car.kind)} #${car.id}`;
     this.hoverSub.textContent =
       `${Math.round(car.v / unit)} (${Math.round(want / unit)}) ${imp ? 'mph' : 'km/h'}`;
   }
@@ -1069,30 +1115,95 @@ export class SceneRenderer {
     ]);
     const stripeGeo = ambulanceStripeGeo();
     const ambWheelSpots = [[1.02, 1.85], [-1.02, 1.85], [1.02, -1.6], [-1.02, -1.6]];
-    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, bodyMat, MAX_AMB);
+    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, bodyMat, MAX_EMERGENCY);
     this.ambStripe = new THREE.InstancedMesh(
       stripeGeo,
       new THREE.MeshStandardMaterial({ color: 0xc63a30, roughness: 0.5, metalness: 0.25 }),
-      MAX_AMB
+      MAX_EMERGENCY
     );
-    this.ambGlass = new THREE.InstancedMesh(ambulanceGlassGeo(), glassMat, MAX_AMB);
-    this.ambTrim = new THREE.InstancedMesh(ambulanceTrimGeo(), trimMat, MAX_AMB);
-    this.ambFrontLenses = new THREE.InstancedMesh(ambulanceLensGeo(true), frontLensMat, MAX_AMB);
-    this.ambRearLenses = new THREE.InstancedMesh(ambulanceLensGeo(false), rearLensMat, MAX_AMB);
+    this.ambGlass = new THREE.InstancedMesh(ambulanceGlassGeo(), glassMat, MAX_EMERGENCY);
+    this.ambTrim = new THREE.InstancedMesh(ambulanceTrimGeo(), trimMat, MAX_EMERGENCY);
+    this.ambFrontLenses = new THREE.InstancedMesh(ambulanceLensGeo(true), frontLensMat, MAX_EMERGENCY);
+    this.ambRearLenses = new THREE.InstancedMesh(ambulanceLensGeo(false), rearLensMat, MAX_EMERGENCY);
     this.ambWheels = new THREE.InstancedMesh(
       wheelsGeo(ambWheelSpots, 0.4, 0.32),
       wheelMat,
-      MAX_AMB
+      MAX_EMERGENCY
     );
     this.ambHubs = new THREE.InstancedMesh(
       hubcapsGeo(ambWheelSpots, 0.4, 0.32),
       hubMat,
-      MAX_AMB
+      MAX_EMERGENCY
     );
+
+    // Police interceptor: a broader five-metre sedan in dark charcoal with
+    // black panels, push bar and a low roof light bar. It owns a render pool
+    // instead of borrowing the civilian sedan so an all-police run stays safe.
+    const policeWheelSpots = [[0.88, 1.55], [-0.88, 1.55], [0.88, -1.55], [-0.88, -1.55]];
+    const policeTrimMat = new THREE.MeshStandardMaterial({
+      color: 0x11161b,
+      roughness: 0.78,
+      metalness: 0.18,
+    });
+    this.policeBody = new THREE.InstancedMesh(policeBodyGeo(), bodyMat, MAX_EMERGENCY);
+    this.policeRoof = new THREE.InstancedMesh(
+      policeRoofGeo(),
+      new THREE.MeshStandardMaterial({ color: 0xf1ede2, roughness: 0.54, metalness: 0.12 }),
+      MAX_EMERGENCY
+    );
+    this.policeGlass = new THREE.InstancedMesh(loft(POLICE_CABIN), glassMat, MAX_EMERGENCY);
+    this.policePanels = new THREE.InstancedMesh(policePanelGeo(), policeTrimMat, MAX_EMERGENCY);
+    this.policeTrim = new THREE.InstancedMesh(policeTrimGeo(), policeTrimMat, MAX_EMERGENCY);
+    this.policeFrontLenses = new THREE.InstancedMesh(policeLensGeo(true), frontLensMat, MAX_EMERGENCY);
+    this.policeRearLenses = new THREE.InstancedMesh(policeLensGeo(false), rearLensMat, MAX_EMERGENCY);
+    this.policeIndicators = new THREE.InstancedMesh(policeIndicatorGeo(), indicatorLensMat, MAX_EMERGENCY);
+    this.policeWheels = new THREE.InstancedMesh(
+      wheelsGeo(policeWheelSpots, 0.36, 0.28),
+      wheelMat,
+      MAX_EMERGENCY
+    );
+    this.policeHubs = new THREE.InstancedMesh(
+      hubcapsGeo(policeWheelSpots, 0.36, 0.28),
+      hubMat,
+      MAX_EMERGENCY
+    );
+
+    // Ten-and-a-half-metre pumper: forward-control cab, tall apparatus body,
+    // three axles, gold belt stripe, and silver pump/ladder equipment. Bumpers
+    // terminate at z +/-5.25, matching the simulation footprint exactly.
+    const fireWheelSpots = [3.72, -3.18, -4.25]
+      .flatMap((z) => [[1.12, z], [-1.12, z]]);
+    this.fireBody = new THREE.InstancedMesh(firetruckBodyGeo(), bodyMat, MAX_EMERGENCY);
+    this.fireStripe = new THREE.InstancedMesh(
+      firetruckStripeGeo(),
+      new THREE.MeshStandardMaterial({ color: 0xf0c64b, roughness: 0.48, metalness: 0.18 }),
+      MAX_EMERGENCY
+    );
+    this.fireGlass = new THREE.InstancedMesh(firetruckGlassGeo(), glassMat, MAX_EMERGENCY);
+    this.fireTrim = new THREE.InstancedMesh(firetruckTrimGeo(), trimMat, MAX_EMERGENCY);
+    this.fireEquipment = new THREE.InstancedMesh(
+      firetruckEquipmentGeo(),
+      new THREE.MeshStandardMaterial({ color: 0xbac3c9, roughness: 0.36, metalness: 0.62 }),
+      MAX_EMERGENCY
+    );
+    this.fireFrontLenses = new THREE.InstancedMesh(firetruckLensGeo(true), frontLensMat, MAX_EMERGENCY);
+    this.fireRearLenses = new THREE.InstancedMesh(firetruckLensGeo(false), rearLensMat, MAX_EMERGENCY);
+    this.fireIndicators = new THREE.InstancedMesh(firetruckIndicatorGeo(), indicatorLensMat, MAX_EMERGENCY);
+    this.fireWheels = new THREE.InstancedMesh(
+      wheelsGeo(fireWheelSpots, 0.52, 0.42),
+      wheelMat,
+      MAX_EMERGENCY
+    );
+    this.fireHubs = new THREE.InstancedMesh(
+      hubcapsGeo(fireWheelSpots, 0.52, 0.42),
+      hubMat,
+      MAX_EMERGENCY
+    );
+
     this.strobes = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      MAX_AMB * 2
+      MAX_EMERGENCY * 2
     );
 
     // Driver-communication lights: paired red lamps (the ACC keeps its thin
@@ -1133,6 +1244,12 @@ export class SceneRenderer {
       this.cyberGlass, this.cyberRearLens,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambTrim,
       this.ambFrontLenses, this.ambRearLenses, this.ambWheels, this.ambHubs,
+      this.policeBody, this.policeRoof, this.policeGlass, this.policePanels, this.policeTrim,
+      this.policeFrontLenses, this.policeRearLenses, this.policeIndicators,
+      this.policeWheels, this.policeHubs,
+      this.fireBody, this.fireStripe, this.fireGlass, this.fireTrim, this.fireEquipment,
+      this.fireFrontLenses, this.fireRearLenses, this.fireIndicators,
+      this.fireWheels, this.fireHubs,
       this.contactShadows, this.strobes, this.brakeLights, this.blinkers,
     ];
     for (const m of this._meshes) {
@@ -1152,8 +1269,9 @@ export class SceneRenderer {
 
   // Place one light: the car's local-frame offset rotated into the world.
   // The slope term keeps mounts on the body when the car sits on a grade
-  // (a fore/aft offset oz gains slope·oz of height on a pitched car).
-  placeLight(mesh, idx, rotY, ox, oy, oz, sx, sy, sz) {
+  // (a fore/aft offset oz gains slope·oz of height on a pitched car). localYaw
+  // lets a corner lamp wrap around a tapered bumper without special geometry.
+  placeLight(mesh, idx, rotY, ox, oy, oz, sx, sy, sz, localYaw = 0) {
     const d = this._lightDummy;
     const cos = Math.cos(rotY);
     const sin = Math.sin(rotY);
@@ -1162,7 +1280,7 @@ export class SceneRenderer {
       this._pos.y + oy + this._slope * oz,
       this._pos.z - ox * sin + oz * cos
     );
-    d.rotation.set(0, rotY, 0);
+    d.rotation.set(0, rotY + localYaw, 0);
     d.scale.set(sx, sy, sz);
     d.updateMatrix();
     mesh.setMatrixAt(idx, d.matrix);
@@ -1195,6 +1313,8 @@ export class SceneRenderer {
     let ti = 0; // next free truck instance
     let ai = 0; // next free ACC-car instance
     let mi = 0; // next free ambulance instance
+    let pi = 0; // next free police-interceptor instance
+    let fi = 0; // next free fire-truck instance
     let wi = 0; // next free car wheel-set instance (sedans + hatches)
     let sh = 0; // next shared contact-shadow instance
     let si = 0; // next free strobe instance
@@ -1204,8 +1324,18 @@ export class SceneRenderer {
       const truck = car.kind === 'truck';
       const acc = car.kind === 'acc';
       const ambu = car.kind === 'ambulance';
+      const police = car.kind === 'police';
+      const firetruck = car.kind === 'firetruck';
+      const emergency = isEmergencyVehicle(car.kind);
+      const dims = RENDER_DIMS[car.kind] ?? RENDER_DIMS.car;
       const hatch = car.kind === 'car' && (car.id & 1) === 1; // stable body style per car
-      if (truck ? ti >= MAX_TRUCKS : ambu ? mi >= MAX_AMB : (acc ? ai : hatch ? hi : ci) >= MAX_CARS)
+      if (
+        truck ? ti >= MAX_TRUCKS
+          : ambu ? mi >= MAX_EMERGENCY
+            : police ? pi >= MAX_EMERGENCY
+              : firetruck ? fi >= MAX_EMERGENCY
+                : (acc ? ai : hatch ? hi : ci) >= MAX_CARS
+      )
         continue;
       const poseS = this.carPose(car, this._pos, this._tan);
       let rotY = Math.atan2(this._tan.x, this._tan.z);
@@ -1224,9 +1354,9 @@ export class SceneRenderer {
         d.position.set(this._pos.x, this._pos.y + 0.045, this._pos.z);
         d.rotation.set(pitch, rotY, 0);
         d.scale.set(
-          truck ? 1.22 : ambu ? 1.17 : acc ? 1.02 : 0.92,
+          dims.shadowHalfW,
           1,
-          truck ? 7.75 : ambu ? 2.48 : 2.12
+          Math.max(1, car.len / 2 - dims.shadowInset)
         );
         d.updateMatrix();
         this.contactShadows.setMatrixAt(sh++, d.matrix);
@@ -1242,6 +1372,8 @@ export class SceneRenderer {
       } else {
         this._bodyColor.setHSL(car.hue, 0.65, 0.55);
       }
+      // Emergency liveries remain recognizable under every color mode.
+      if (emergency && !car.incident) this._bodyColor.copy(TYPE_COLORS[car.kind]);
       if (truck) {
         this.trailer.setMatrixAt(ti, this._dummy.matrix);
         this.cab.setMatrixAt(ti, this._dummy.matrix);
@@ -1256,8 +1388,6 @@ export class SceneRenderer {
         this.cab.setColorAt(ti, this._bodyColor);
         ti++;
       } else if (ambu) {
-        // white rig regardless of color mode; incidents keep the amber blink
-        if (!car.incident) this._bodyColor.set(0xf4f7f9);
         this.ambBody.setMatrixAt(mi, this._dummy.matrix);
         this.ambStripe.setMatrixAt(mi, this._dummy.matrix);
         this.ambGlass.setMatrixAt(mi, this._dummy.matrix);
@@ -1268,14 +1398,32 @@ export class SceneRenderer {
         this.ambHubs.setMatrixAt(mi, this._dummy.matrix);
         this.ambBody.setColorAt(mi, this._bodyColor);
         mi++;
-        if (!car.incident && si + 1 < MAX_AMB * 2) {
-          // light bar on the module's front roof edge — the rig's high point,
-          // visible from every angle; red/blue swap sides every blink tick
-          this.placeLight(this.strobes, si, rotY, 0.55, 2.6, 0.1, 0.5, 0.22, 0.5);
-          this.strobes.setColorAt(si++, blinkOn ? STROBE_RED : STROBE_BLUE);
-          this.placeLight(this.strobes, si, rotY, -0.55, 2.6, 0.1, 0.5, 0.22, 0.5);
-          this.strobes.setColorAt(si++, blinkOn ? STROBE_BLUE : STROBE_RED);
-        }
+      } else if (police) {
+        this.policeBody.setMatrixAt(pi, this._dummy.matrix);
+        this.policeRoof.setMatrixAt(pi, this._dummy.matrix);
+        this.policeGlass.setMatrixAt(pi, this._dummy.matrix);
+        this.policePanels.setMatrixAt(pi, this._dummy.matrix);
+        this.policeTrim.setMatrixAt(pi, this._dummy.matrix);
+        this.policeFrontLenses.setMatrixAt(pi, this._dummy.matrix);
+        this.policeRearLenses.setMatrixAt(pi, this._dummy.matrix);
+        this.policeIndicators.setMatrixAt(pi, this._dummy.matrix);
+        this.policeWheels.setMatrixAt(pi, this._dummy.matrix);
+        this.policeHubs.setMatrixAt(pi, this._dummy.matrix);
+        this.policeBody.setColorAt(pi, this._bodyColor);
+        pi++;
+      } else if (firetruck) {
+        this.fireBody.setMatrixAt(fi, this._dummy.matrix);
+        this.fireStripe.setMatrixAt(fi, this._dummy.matrix);
+        this.fireGlass.setMatrixAt(fi, this._dummy.matrix);
+        this.fireTrim.setMatrixAt(fi, this._dummy.matrix);
+        this.fireEquipment.setMatrixAt(fi, this._dummy.matrix);
+        this.fireFrontLenses.setMatrixAt(fi, this._dummy.matrix);
+        this.fireRearLenses.setMatrixAt(fi, this._dummy.matrix);
+        this.fireIndicators.setMatrixAt(fi, this._dummy.matrix);
+        this.fireWheels.setMatrixAt(fi, this._dummy.matrix);
+        this.fireHubs.setMatrixAt(fi, this._dummy.matrix);
+        this.fireBody.setColorAt(fi, this._bodyColor);
+        fi++;
       } else if (acc) {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
@@ -1302,6 +1450,16 @@ export class SceneRenderer {
           this.wheels.setMatrixAt(wi, this._dummy.matrix);
           this.hubs.setMatrixAt(wi++, this._dummy.matrix);
         }
+      }
+
+      if (emergency && !car.incident && si + 1 < MAX_EMERGENCY * 2) {
+        // Two unlit blocks form each roof bar. Their type-specific mount keeps
+        // the police bar low and the fire-engine bar above its forward cab.
+        const S = dims.strobe;
+        this.placeLight(this.strobes, si, rotY, S.x, S.y, S.z, S.sx, S.sy, S.sz);
+        this.strobes.setColorAt(si++, blinkOn ? STROBE_RED : STROBE_BLUE);
+        this.placeLight(this.strobes, si, rotY, -S.x, S.y, S.z, S.sx, S.sy, S.sz);
+        this.strobes.setColorAt(si++, blinkOn ? STROBE_BLUE : STROBE_RED);
       }
 
       // brake lights + blinkers (incident cars blink their whole body amber)
@@ -1342,7 +1500,8 @@ export class SceneRenderer {
           this.placeLight(
             this.blinkers, ki++, rotY,
             sxFront, L.blinkYF ?? L.y, L.blinkZF ?? L.front,
-            L.blinkWF ?? bw, L.blinkHF ?? bh, L.blinkDepthF ?? 0.14
+            L.blinkWF ?? bw, L.blinkHF ?? bh, L.blinkDepthF ?? 0.14,
+            dir * (L.blinkYawF ?? 0)
           );
         }
       }
@@ -1382,6 +1541,26 @@ export class SceneRenderer {
     this.ambRearLenses.count = mi;
     this.ambWheels.count = mi;
     this.ambHubs.count = mi;
+    this.policeBody.count = pi;
+    this.policeRoof.count = pi;
+    this.policeGlass.count = pi;
+    this.policePanels.count = pi;
+    this.policeTrim.count = pi;
+    this.policeFrontLenses.count = pi;
+    this.policeRearLenses.count = pi;
+    this.policeIndicators.count = pi;
+    this.policeWheels.count = pi;
+    this.policeHubs.count = pi;
+    this.fireBody.count = fi;
+    this.fireStripe.count = fi;
+    this.fireGlass.count = fi;
+    this.fireTrim.count = fi;
+    this.fireEquipment.count = fi;
+    this.fireFrontLenses.count = fi;
+    this.fireRearLenses.count = fi;
+    this.fireIndicators.count = fi;
+    this.fireWheels.count = fi;
+    this.fireHubs.count = fi;
     this.contactShadows.count = sh;
     this.strobes.count = si;
     this.brakeLights.count = li;
@@ -1470,7 +1649,7 @@ export class SceneRenderer {
     // hang further back (and higher) behind long vehicles so they don't fill
     // the whole frame
     const back = 14 + Math.max(0, this.chaseCar.len - 4.6);
-    const up = this.chaseCar.kind === 'truck' ? 8.5 : 6;
+    const up = (RENDER_DIMS[this.chaseCar.kind] ?? RENDER_DIMS.car).chaseUp;
     // spherical offset around the car: at yaw = pitch = 0 this lands exactly
     // on the classic back/up follow position; a held drag swings it around
     const dist = Math.hypot(back, up);
@@ -2037,6 +2216,173 @@ function ambulanceLensGeo(front) {
   ]);
 }
 
+function policeBodyGeo() {
+  return loft(POLICE_BODY);
+}
+
+function policeRoofGeo() {
+  // Separate fixed-livery panel: warm white through every color mode and even
+  // while the tintable charcoal shell flashes an incident hazard color.
+  return new THREE.BoxGeometry(1.34, 0.06, 1.08).translate(0, 1.52, -0.18);
+}
+
+function policePanelGeo() {
+  const parts = [];
+  for (const side of [-1, 1]) {
+    parts.push(
+      // Near-black front/rear door panels sit subtly against the charcoal
+      // shell instead of creating the previous white-and-black livery.
+      new THREE.BoxGeometry(0.035, 0.68, 1.34).translate(side * 0.992, 0.72, 0.14),
+      new THREE.BoxGeometry(0.035, 0.66, 1.18).translate(side * 0.992, 0.72, -1.14)
+    );
+  }
+  return mergeSolids(parts);
+}
+
+function policeTrimGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(1.72, 0.15, 0.08).translate(0, 0.43, 2.46),
+    new THREE.BoxGeometry(1.76, 0.15, 0.08).translate(0, 0.43, -2.46),
+    new THREE.BoxGeometry(0.1, 0.13, 2.9).translate(0.98, 0.35, -0.05),
+    new THREE.BoxGeometry(0.1, 0.13, 2.9).translate(-0.98, 0.35, -0.05),
+    new THREE.BoxGeometry(0.74, 0.2, 0.02).translate(0, 0.66, 2.487), // grille
+    new THREE.BoxGeometry(1.28, 0.08, 0.3).translate(0, 1.575, -0.1), // light-bar base
+    new THREE.BoxGeometry(0.18, 0.1, 0.27).translate(1.06, 1.04, 0.68),
+    new THREE.BoxGeometry(0.18, 0.1, 0.27).translate(-1.06, 1.04, 0.68),
+    // Square push bar, kept within the five-metre physical footprint.
+    new THREE.BoxGeometry(1.38, 0.09, 0.025).translate(0, 0.58, 2.485),
+    new THREE.BoxGeometry(0.09, 0.5, 0.025).translate(0.58, 0.67, 2.485),
+    new THREE.BoxGeometry(0.09, 0.5, 0.025).translate(-0.58, 0.67, 2.485),
+    // One dark housing per side unifies the split red/amber rear lamp halves.
+    new THREE.BoxGeometry(0.53, 0.21, 0.035).translate(0.61, 0.8, -2.465),
+    new THREE.BoxGeometry(0.53, 0.21, 0.035).translate(-0.61, 0.8, -2.465),
+  ]);
+}
+
+function policeLensGeo(front) {
+  if (!front) {
+    // Inner red half of each rear combination lamp. The outer halves live in
+    // policeIndicatorGeo with the same y/z plane and shared dark housing.
+    return mergeSolids([
+      new THREE.BoxGeometry(0.26, 0.15, 0.035).translate(0.505, 0.8, -2.475),
+      new THREE.BoxGeometry(0.26, 0.15, 0.035).translate(-0.505, 0.8, -2.475),
+    ]);
+  }
+  return mergeSolids([
+    // Pale headlamps stay inboard, leaving the amber indicators to wrap the
+    // bumper corners rather than reading as a second horizontal lamp row.
+    new THREE.BoxGeometry(0.34, 0.15, 0.035).translate(0.5, 0.84, 2.47),
+    new THREE.BoxGeometry(0.34, 0.15, 0.035).translate(-0.5, 0.84, 2.47),
+  ]);
+}
+
+function policeIndicatorGeo() {
+  const parts = [];
+  for (const side of [-1, 1]) {
+    parts.push(
+      // Rotated corner lenses follow the interceptor's tapered front flanks.
+      new THREE.BoxGeometry(0.28, 0.13, 0.08)
+        .rotateY(side * 0.55)
+        .translate(side * 0.82, 0.72, 2.38),
+      // Outer amber half of the rear combination lamp.
+      new THREE.BoxGeometry(0.2, 0.15, 0.035).translate(side * 0.745, 0.8, -2.475)
+    );
+  }
+  return mergeSolids(parts);
+}
+
+function firetruckBodyGeo() {
+  return mergeSolids([
+    loft(FIRETRUCK_CAB),
+    // Apparatus body ends just ahead of the rear bumper and overlaps the cab
+    // slightly, reading as one compact pumper instead of a tractor/trailer.
+    new THREE.BoxGeometry(2.5, 2.55, 5.9).translate(0, 1.65, -2.18),
+    new THREE.BoxGeometry(2.18, 0.08, 3.5).translate(0, 3.04, 2.83), // cab roof
+  ]);
+}
+
+function firetruckStripeGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(0.035, 0.3, 4.12).translate(1.215, 1.34, 2.86),
+    new THREE.BoxGeometry(0.035, 0.3, 4.12).translate(-1.215, 1.34, 2.86),
+    new THREE.BoxGeometry(0.035, 0.3, 5.76).translate(1.266, 1.34, -2.2),
+    new THREE.BoxGeometry(0.035, 0.3, 5.76).translate(-1.266, 1.34, -2.2),
+    new THREE.BoxGeometry(2.5, 0.3, 0.025).translate(0, 1.34, -5.145),
+  ]);
+}
+
+function firetruckGlassGeo() {
+  return mergeSolids([
+    // Split windshield sells the flat-front fire-engine cab.
+    new THREE.BoxGeometry(0.95, 0.82, 0.035).translate(0.54, 2.32, 5.13),
+    new THREE.BoxGeometry(0.95, 0.82, 0.035).translate(-0.54, 2.32, 5.13),
+    new THREE.BoxGeometry(0.035, 0.88, 1.46).translate(1.215, 2.3, 3.87),
+    new THREE.BoxGeometry(0.035, 0.88, 1.46).translate(-1.215, 2.3, 3.87),
+    new THREE.BoxGeometry(0.035, 0.88, 1.25).translate(1.215, 2.3, 2.33),
+    new THREE.BoxGeometry(0.035, 0.88, 1.25).translate(-1.215, 2.3, 2.33),
+  ]);
+}
+
+function firetruckTrimGeo() {
+  return mergeSolids([
+    // The 0.10 m bumpers centered at +/-5.20 define the exact +/-5.25 extent.
+    new THREE.BoxGeometry(2.34, 0.22, 0.1).translate(0, 0.46, 5.2),
+    new THREE.BoxGeometry(2.46, 0.22, 0.1).translate(0, 0.46, -5.2),
+    new THREE.BoxGeometry(1.55, 0.68, 0.045).translate(0, 1.25, 5.16), // grille
+    new THREE.BoxGeometry(1.25, 0.24, 8.7).translate(0, 0.45, -0.35), // chassis
+    new THREE.BoxGeometry(0.14, 0.18, 8.1).translate(1.25, 0.72, -0.45),
+    new THREE.BoxGeometry(0.14, 0.18, 8.1).translate(-1.25, 0.72, -0.45),
+    new THREE.BoxGeometry(0.22, 0.15, 0.38).translate(1.36, 2.36, 4.08),
+    new THREE.BoxGeometry(0.22, 0.15, 0.38).translate(-1.36, 2.36, 4.08),
+    new THREE.BoxGeometry(0.07, 2.0, 0.03).translate(0, 1.68, -5.155), // rear door seam
+  ]);
+}
+
+function firetruckEquipmentGeo() {
+  const parts = [
+    // Pump panels and roll-up compartment faces on both sides.
+    new THREE.BoxGeometry(0.04, 1.28, 1.62).translate(1.278, 1.83, -0.18),
+    new THREE.BoxGeometry(0.04, 1.28, 1.62).translate(-1.278, 1.83, -0.18),
+    new THREE.BoxGeometry(0.04, 1.38, 1.75).translate(1.278, 1.82, -2.08),
+    new THREE.BoxGeometry(0.04, 1.38, 1.75).translate(-1.278, 1.82, -2.08),
+    new THREE.BoxGeometry(0.04, 1.38, 1.65).translate(1.278, 1.82, -3.88),
+    new THREE.BoxGeometry(0.04, 1.38, 1.65).translate(-1.278, 1.82, -3.88),
+    // Two ladder rails sit on the apparatus roof.
+    new THREE.BoxGeometry(0.1, 0.11, 5.6).translate(0.54, 3.06, -2.05),
+    new THREE.BoxGeometry(0.1, 0.11, 5.6).translate(-0.54, 3.06, -2.05),
+  ];
+  for (let z = -4.55; z <= 0.45; z += 0.62) {
+    parts.push(new THREE.BoxGeometry(1.16, 0.09, 0.09).translate(0, 3.08, z));
+  }
+  // Horizontal highlights imply the slats of the equipment doors without
+  // needing textures or a new draw call.
+  for (const side of [-1, 1]) {
+    for (const y of [1.35, 1.7, 2.05, 2.4]) {
+      parts.push(new THREE.BoxGeometry(0.025, 0.045, 5.25).translate(side * 1.302, y, -2.2));
+    }
+  }
+  return mergeSolids(parts);
+}
+
+function firetruckLensGeo(front) {
+  const z = front ? 5.18 : -5.18;
+  const y = front ? 1.48 : 0.88;
+  const halfW = front ? 0.78 : 0.9;
+  return mergeSolids([
+    new THREE.BoxGeometry(0.46, 0.22, 0.05).translate(halfW, y, z),
+    new THREE.BoxGeometry(0.46, 0.22, 0.05).translate(-halfW, y, z),
+  ]);
+}
+
+function firetruckIndicatorGeo() {
+  return mergeSolids([
+    new THREE.BoxGeometry(0.38, 0.15, 0.05).translate(0.78, 1.2, 5.18),
+    new THREE.BoxGeometry(0.38, 0.15, 0.05).translate(-0.78, 1.2, 5.18),
+    new THREE.BoxGeometry(0.46, 0.17, 0.05).translate(0.9, 1.16, -5.18),
+    new THREE.BoxGeometry(0.46, 0.17, 0.05).translate(-0.9, 1.16, -5.18),
+  ]);
+}
+
 // Bright polygon hubs on the outward tire faces make the wheels legible at
 // a glance while leaving the tire geometry itself matte and nearly black.
 function hubcapsGeo(spots, r, w) {
@@ -2118,6 +2464,28 @@ const HATCH_CABIN = [
   { z: 0.35, hw: 0.73, y0: 0.94, y1: 1.5 },
   { z: -1.35, hw: 0.73, y0: 0.94, y1: 1.48 }, // long roof
   { z: -2.05, hw: 0.78, y0: 0.94, y1: 1.04 }, // steep tailgate glass
+];
+const POLICE_BODY = [
+  { z: 2.44, hw: 0.76, y0: 0.43, y1: 0.68 },
+  { z: 2.25, hw: 0.93, y0: 0.3, y1: 0.78 },
+  { z: 1.08, hw: 0.99, y0: 0.28, y1: 0.98 },
+  { z: -1.72, hw: 0.99, y0: 0.28, y1: 1.02 },
+  { z: -2.25, hw: 0.92, y0: 0.32, y1: 0.95 },
+  { z: -2.44, hw: 0.75, y0: 0.43, y1: 0.8 },
+];
+const POLICE_CABIN = [
+  { z: 1.08, hw: 0.81, y0: 0.92, y1: 0.98 },
+  { z: 0.34, hw: 0.73, y0: 0.92, y1: 1.5 },
+  { z: -0.95, hw: 0.73, y0: 0.92, y1: 1.49 },
+  { z: -1.72, hw: 0.8, y0: 0.92, y1: 1.01 },
+];
+// Front-to-rear cross-sections for the 10.5 m pumper. The cab shell stops at
+// +/-5.15; firetruckTrimGeo's bumpers define the exact +/-5.25 m footprint.
+const FIRETRUCK_CAB = [
+  { z: 5.15, hw: 1.08, y0: 0.5, y1: 1.5 },
+  { z: 5.08, hw: 1.2, y0: 0.34, y1: 3.0 },
+  { z: 0.72, hw: 1.2, y0: 0.32, y1: 3.0 },
+  { z: 0.62, hw: 1.15, y0: 0.38, y1: 2.86 },
 ];
 const TRUCK_CAB = [
   { z: 8.2, hw: 0.85, y0: 0.55, y1: 1.15 }, // bumper nose

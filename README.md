@@ -59,11 +59,15 @@ branch → `main` / root**. That's it — there is nothing to build.
   - **Random breakdown** — a car pulls onto the shoulder, parks with hazards,
     and merges back later, while passing traffic slows down to rubberneck.
   - **Random accident** — a wreck blocks its lane until cleared.
-  - **Emergency vehicle** — an ambulance runs the loop well above the speed
-    limit while traffic ahead of the siren slows and makes an assertive move
-    out of its lane. The ambulance commits to a lane unless an adjacent lane
-    offers a meaningful passing gain, so the emergent "move over" corridor is
-    decisive without turning the ambulance into a pinball.
+  - **Emergency vehicle** — dispatches an ambulance, police car, or fire truck
+    at random. All three run with sirens while traffic ahead
+    slows and makes an assertive move out of their lane. The police car
+    accelerates fastest, the ambulance is the middleweight, and the fire truck
+    is much longer and slower to get moving. Each commits to a lane unless an
+    adjacent lane offers a meaningful passing gain, so the emergent "move over"
+    corridor is decisive without turning the emergency vehicle into a pinball.
+    In tightly packed traffic, dispatch chooses only among models with a safe
+    insertion gap rather than spawning an overlapping vehicle.
   - **Rain storm** — a three-minute storm rolls in, pours, and clears. Wet
     roads mean slower targets, longer following distances, and less grip;
     watch a busy regime tip into stop-and-go as it peaks. A steady **Rain**
@@ -76,7 +80,8 @@ branch → `main` / root**. That's it — there is nothing to build.
   so a jam wave reads as a red pulse sweeping upstream; **blinkers** show
   intent — merging in from a ramp, working over toward an exit, or wanting a
   lane change that isn't safe yet (that car blinks without moving until a gap
-  opens). The ambulance flashes red/blue roof strobes instead.
+  opens). Emergency vehicles use their model-specific red/blue warning lights
+  instead.
 - The panel (top right) changes the simulation live:
   - **Units** — imperial (mph, default) or metric (km/h)
   - **Simulation** — pause, time scale, number of cars seeded on reset
@@ -154,7 +159,9 @@ later when the storm arrives. Right-click a vehicle you want to follow through
 one of those waves and the chase camera will lock onto that exact car. Or pick
 **Ambulance run** to watch drivers open a corridor ahead of the siren while the
 ambulance waits for useful passing gaps instead of weaving between nearly tied
-lanes.
+lanes. That curated preset always stages an ambulance for a repeatable demo;
+the **Emergency vehicle** button instead chooses an ambulance, police car, or
+fire truck at random.
 
 ## How it works
 
@@ -166,8 +173,11 @@ work their way to the outer lane in time. Adaptive-cruise cars temper IDM with t
 constant-acceleration heuristic, so they absorb perturbations instead of
 amplifying them. Rain scales the whole driver model — slower targets, longer
 headways, less grip — which is why a stable regime tips when a storm rolls in.
+Emergency vehicles share the same siren-aware lane logic, with model-specific
+length, acceleration, following, braking, and top-speed characteristics.
 Everything is rendered with three.js (instanced meshes) — the low-poly cars,
-trucks, and golden-hour landscape included — so thousands of cars stay smooth.
+trucks, ambulance, police car, fire truck, and golden-hour landscape included —
+so thousands of cars stay smooth.
 The landscape uses sparse, broad faceted ground relief, faint wheel-wear
 ribbons, and a polygonal sun halo to keep the diorama graphic without looking
 busy. Rain
@@ -176,5 +186,5 @@ with the same live rain level that drives the physics.
 
 ## Roadmap
 
-The original roadmap — including direct right-click vehicle chasing — has
-shipped. Ideas welcome.
+The original roadmap — including direct right-click vehicle chasing and the
+three-model emergency fleet — has shipped. Ideas welcome.

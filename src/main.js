@@ -203,15 +203,18 @@ chaseBtn.addEventListener('click', () => {
 // TYPE_COLORS); Per car has nothing to explain, so it hides.
 const legendEl = document.getElementById('legend');
 const legendSpeed = legendEl.innerHTML;
-const sw = (hex, label) =>
+const sw = (fill, label) =>
   `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;` +
-  `background:${hex};margin-right:5px"></i>${label}</span>`;
+  `background:${fill};margin-right:5px"></i>${label}</span>`;
 // "ACC" over "adaptive cruise": the long label ran the legend panel under
-// the hint bar, and the hover readout already calls these "ACC car"
+// the hint bar, and the hover readout already calls these "ACC car". Keep the
+// three model-specific emergency liveries in one striped swatch for the same
+// reason: the legend explains the category without growing by two labels.
 const legendType =
   `<div class="labels" style="margin-top:0;gap:12px;justify-content:flex-start">` +
   sw('#3987e5', 'human') + sw('#199e70', 'ACC') + sw('#d98e32', 'truck') +
-  sw('#f4f7f9', 'ambulance') + `</div>`;
+  sw('linear-gradient(90deg,#f4f7f9 0 33%,#242a30 33% 66%,#c93632 66%)', 'emergency') +
+  `</div>`;
 let legendMode = 'speed';
 
 let fpsLast = performance.now();

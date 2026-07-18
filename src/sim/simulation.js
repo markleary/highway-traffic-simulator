@@ -1,6 +1,11 @@
 import { LOOP, RAMPS, ROAD, SHOULDER_LANE, wrap, forwardDist, pointAt, lateralOf, setShape } from './road.js';
 import { params } from '../params.js';
-import { Car, VEHICLE_LEN } from './car.js';
+import {
+  Car,
+  EMERGENCY_KINDS,
+  VEHICLE_LEN,
+  isEmergencyVehicle,
+} from './car.js';
 
 // Spatial resolution of the space-time diagram's speed sampling (m of s).
 export const BIN_M = 10;
@@ -8,19 +13,20 @@ export const BIN_M = 10;
 // How far ahead of a work zone's cones the closed lane starts merging out.
 const WZ_WARN = 250;
 
-// Concurrent ambulance cap — matches the renderer's instanced-mesh capacity
-// (MAX_AMB in renderer.js): a spawn past it would drive physics invisibly.
-const MAX_AMBULANCES = 8;
+// Total concurrent emergency-vehicle cap. Each renderer model has this many
+// instances available, so a shared cap guarantees physics never drives an
+// invisible vehicle while preserving the old eight-ambulance ceiling.
+const MAX_EMERGENCY_VEHICLES = 8;
 
 // Emergency-vehicle lane choice is intentionally less twitchy than ordinary
 // MOBIL. A target lane must offer a meaningful projected pace gain, then the
 // driver commits long enough to use that opening instead of immediately
 // reconsidering the lane it just left. Traffic ahead hears the siren somewhat
 // earlier and accepts a firmer merge to clear its lane.
-const AMB_SIREN_RANGE = 260; // m
-const AMB_PASS_LOOKAHEAD = 3; // s used to turn leader gap into projected pace
-const AMB_PASS_SPEED_GAIN = 3; // m/s of projected pace: a real pass, not noise
-const AMB_LANE_HOLD = 4; // s after taking a passing opportunity
+const EMERGENCY_SIREN_RANGE = 260; // m
+const EMERGENCY_PASS_LOOKAHEAD = 3; // s used to turn leader gap into projected pace
+const EMERGENCY_PASS_SPEED_GAIN = 3; // m/s of projected pace: a real pass, not noise
+const EMERGENCY_LANE_HOLD = 4; // s after taking a passing opportunity
 
 // Rain (0–1, the max of the steady Rain knob and a live storm): slower
 // desired speeds, longer following, and less grip. Each factor is mild, but
@@ -117,12 +123,12 @@ function neighborsAt(arr, s) {
 }
 
 // A compact estimate of how much speed a lane can support over the next few
-// seconds. The leader's pace matters, but extra runway lets the ambulance
+// seconds. The leader's pace matters, but extra runway lets an emergency vehicle
 // accelerate before catching it. This provides the hysteresis MOBIL's
 // instantaneous acceleration comparison lacks when two lanes are nearly tied.
 function lanePace(leader, gap, v0) {
   if (!leader) return v0;
-  return Math.min(v0, leader.v + Math.max(0, gap) / AMB_PASS_LOOKAHEAD);
+  return Math.min(v0, leader.v + Math.max(0, gap) / EMERGENCY_PASS_LOOKAHEAD);
 }
 
 function insertSorted(arr, car) {
@@ -243,7 +249,7 @@ export class Simulation {
   }
 
   v0(car) {
-    // wet roads slow everyone's target speed, ambulances included
+    // wet roads slow everyone's target speed, emergency vehicles included
     return params.desiredSpeed * car.v0Factor * (1 - RAIN_V0 * rainNow);
   }
 
@@ -263,17 +269,23 @@ export class Simulation {
         v0 = Math.min(v0, Math.max(rampV0, (v0 * dist) / 250));
       }
     }
-    if (car.kind !== 'ambulance' && this._ambs?.length) {
-      const near = this.ambBehind(car);
+    if (
+      !isEmergencyVehicle(car.kind) &&
+      (this._emergencyVehicles?.length || this._ambs?.length)
+    ) {
+      const near = this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, car.lane);
       // Only the siren's OWN lane slows, bleeding speed as it closes (down
-      // to a floor the ambulance can still weave around): merging out into
+      // to a floor the responder can still weave around): merging out into
       // same-speed neighbors is feasible where merging out of a fast lane is
       // not — the same trick exit-bound cars use to make lane 0. The other
       // lanes are deliberately left alone: capping them slows a 220 m zone
-      // that TRAVELS WITH the ambulance, compressing the receiving lanes
-      // into a clot that walls in both the corridor cars and the ambulance.
-      if (near && car.lane === near.amb.lane) {
-        v0 = Math.min(v0, this.v0(car) * (0.65 + 0.35 * (near.dist / AMB_SIREN_RANGE)));
+      // that TRAVELS WITH the responder, compressing the receiving lanes
+      // into a clot that walls in both the corridor cars and the responder.
+      if (near) {
+        v0 = Math.min(
+          v0,
+          this.v0(car) * (0.65 + 0.35 * (near.dist / EMERGENCY_SIREN_RANGE))
+        );
       }
     }
     const wz = this.workZone();
@@ -299,8 +311,8 @@ export class Simulation {
       if (car.incident.phase === 'pullover') {
         v0 = Math.min(v0, car.lane === 0 ? Math.max(8, params.rampSpeed * 0.6) : v0 * 0.75);
       }
-    } else if (this.incidents.length && car.kind !== 'ambulance') {
-      // ambulances skip the rubbernecking cap: they are the ones on duty
+    } else if (this.incidents.length && !isEmergencyVehicle(car.kind)) {
+      // emergency vehicles skip the rubbernecking cap: they are the ones on duty
       const LANE_WEIGHT = [0.7, 0.4, 0.2, 0.1];
       for (const inc of this.incidents) {
         for (const other of inc.cars) {
@@ -374,16 +386,18 @@ export class Simulation {
     // every physics pass below reads the module-level value
     rainNow = this.rainNow = Math.min(1, Math.max(params.rain, this.stormLevel()));
 
-    // ambulances: retire any that finished their siren run, and cache the
-    // active list for the move-over corridor checks (ambBehind runs per car
-    // per step — scanning all cars for the handful of ambulances would not do)
-    this._ambs = [];
+    // Emergency vehicles: retire any that finished their siren run, and cache
+    // the active list for corridor checks (emergencyBehind runs per ordinary
+    // car per step, so repeatedly scanning all traffic would be wasteful).
+    this._emergencyVehicles = [];
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
-      if (c.kind !== 'ambulance') continue;
-      if (!c.incident && (c.ambDist -= c.v * h) <= 0) this.cars.splice(i, 1);
-      else if (c.state === 'main' && !c.incident) this._ambs.push(c);
+      if (!isEmergencyVehicle(c.kind)) continue;
+      if (!Number.isFinite(c.emergencyDist)) c.emergencyDist = 1.6 * LOOP;
+      if (!c.incident && (c.emergencyDist -= c.v * h) <= 0) this.cars.splice(i, 1);
+      else if (c.state === 'main' && !c.incident) this._emergencyVehicles.push(c);
     }
+    this._ambs = this._emergencyVehicles; // compatibility with the old cache name
 
     let arrs = this.buildLaneIndex();
     if (this.applyLaneChanges(arrs)) arrs = this.buildLaneIndex();
@@ -488,7 +502,11 @@ export class Simulation {
       car.brakeLit = car.a < (car.brakeLit ? offAt : onAt);
 
       if (car.kind === 'ambulance') {
-        car.signal = 0; // the strobes do the talking (renderer)
+        // The ambulance model has no ordinary indicator clusters; its roof
+        // strobes do the talking. Police cars and fire trucks keep flowing
+        // through the normal desire/maneuver logic below because both models
+        // have dedicated front and rear turn signals.
+        car.signal = 0;
         continue;
       }
       if (car.state === 'onramp') {
@@ -638,23 +656,25 @@ export class Simulation {
         const pullover = car.incident?.phase === 'pullover';
         if (car.incident && !pullover) continue;
 
-        // Emergency driving: the ambulance hunts a meaningfully faster lane
+        // Emergency driving: the responder hunts a meaningfully faster lane
         // with no politeness, then commits to the opening instead of reacting
         // to every momentary acceleration advantage.
-        // Everyone else checks for a siren bearing down (see ambBehind):
+        // Everyone else checks for a siren bearing down (see emergencyBehind):
         // being in its lane makes leaving near-mandatory, and nobody moves
         // INTO its lane inside the corridor.
-        const amb = car.kind === 'ambulance';
-        const siren = amb ? null : this.ambBehind(car);
-        const yielding = !!(siren && l === siren.amb.lane);
-        const sirenNear = yielding ? 1 - siren.dist / AMB_SIREN_RANGE : 0;
+        const emergency = isEmergencyVehicle(car.kind);
+        const siren = emergency
+          ? null
+          : this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, l);
+        const yielding = !!siren;
+        const sirenNear = yielding ? 1 - siren.dist / EMERGENCY_SIREN_RANGE : 0;
         const yieldUrgency = yielding ? 3.2 + 3 * sirenNear : 0;
 
         const v0 = this.effectiveV0(car);
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
         const curGap = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
         const curAcc = idm(car, leader ? leader.v : car.v, curGap, v0);
-        const curPace = amb ? lanePace(leader, curGap, v0) : 0;
+        const curPace = emergency ? lanePace(leader, curGap, v0) : 0;
 
         // Work zone: a car in the closed lane must be out before the cones.
         // Inside counts as distance 0 — cars caught by a live toggle escape
@@ -671,7 +691,7 @@ export class Simulation {
         let brakeLimit = p.safeBrake * (1 - RAIN_HARD * rainNow); // wet: gentler gates
         if (pullover) {
           brakeLimit *= 1 + Math.min((this.time - car.incident.phaseStart) / 10, 1.5);
-        } else if (amb) {
+        } else if (emergency) {
           // A useful passing opening can warrant a firm merge.
           brakeLimit *= 1.5;
         } else if (yielding) {
@@ -694,7 +714,7 @@ export class Simulation {
         }
 
         let bestLane = -1;
-        // Trucks rarely bother changing lanes. The ambulance uses the normal
+        // Trucks rarely bother changing lanes. Emergency vehicles use the normal
         // MOBIL threshold after the stronger projected-pace gate below.
         let bestScore = p.laneChangeThreshold * (car.kind === 'truck' ? 2.5 : 1);
         let wantLane = -1;
@@ -702,8 +722,14 @@ export class Simulation {
         // preference — without this margin nearly half of dense traffic blinks.
         let wantScore = bestScore + 0.3;
         for (const t of targets) {
-          // never merge into the corridor lane while the siren is in it
-          if (siren && t === siren.amb.lane && l !== siren.amb.lane) continue;
+          // Check each candidate independently: a closer responder in some
+          // other lane must not hide a siren bearing down in this target lane.
+          if (
+            !emergency &&
+            this.emergencyBehind(car, EMERGENCY_SIREN_RANGE, t)
+          ) {
+            continue;
+          }
           // never merge into the coned lane on its approach or inside it
           if (
             wz &&
@@ -720,12 +746,17 @@ export class Simulation {
           // Do not weave for a marginal instantaneous acceleration advantage:
           // the target lane has to support a noticeably faster pace over the
           // next few seconds. This is the main flip-flop guard.
-          if (amb && lanePace(nl, gapAhead, v0) < curPace + AMB_PASS_SPEED_GAIN) continue;
+          if (
+            emergency &&
+            lanePace(nl, gapAhead, v0) < curPace + EMERGENCY_PASS_SPEED_GAIN
+          ) {
+            continue;
+          }
           // Desire, gauged before the gap/safety gates below: the gain the
           // driver sees in the target lane, whether or not the move is safe.
           // A passing desire lights the blinker (see updateLights) — a car
           // that wants a gap it can't take blinks without moving.
-          let want = myNew - curAcc + (amb ? 0 : t < l ? 0.08 : -0.08);
+          let want = myNew - curAcc + (emergency ? 0 : t < l ? 0.08 : -0.08);
           if (pullover) want += 2.5;
           else if (wzUrgent) want += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) want += 1 + 3 * (1 - exitDist / 400);
@@ -737,7 +768,7 @@ export class Simulation {
 
           // Emergency moves may use a smaller physical gap; the braking gate
           // below still decides whether the receiving follower can cope.
-          const gapFloor = amb ? p.minGap * 0.5 : yielding ? p.minGap * 0.25 : p.minGap;
+          const gapFloor = p.minGap * (emergency ? 0.5 : yielding ? 0.25 : 1);
           if (gapAhead < gapFloor || gapBehind < gapFloor) continue;
           let nfNew = 0;
           let nfOld = 0;
@@ -748,11 +779,12 @@ export class Simulation {
             nfOld = idm(nf, nl ? nl.v : nf.v, nfCurGap, this.v0(nf));
           }
 
-          let score = myNew - curAcc - (amb ? 0 : p.politeness) * Math.max(0, nfOld - nfNew);
-          // Ambulances choose on projected pace above, with no directional
+          let score =
+            myNew - curAcc - (emergency ? 0 : p.politeness) * Math.max(0, nfOld - nfNew);
+          // Emergency vehicles choose on projected pace above, with no directional
           // bias that could pull them straight back into the lane they left.
           // Everyone else keeps the mild keep-right bias.
-          if (!amb) score += t < l ? 0.08 : -0.08;
+          if (!emergency) score += t < l ? 0.08 : -0.08;
           if (pullover) score += 2.5;
           else if (wzUrgent) score += 1 + 3 * (1 - wzDist / WZ_WARN);
           else if (mandatory) score += 1 + 3 * (1 - exitDist / 400);
@@ -768,7 +800,7 @@ export class Simulation {
 
         if (bestLane >= 0) {
           car.lane = bestLane;
-          if (amb) car.lcCooldown = AMB_LANE_HOLD;
+          if (emergency) car.lcCooldown = EMERGENCY_LANE_HOLD;
           else if (yielding) car.lcCooldown = 3.5;
           else car.lcCooldown = mandatory ? 1.2 : 3.5;
           this.counters.laneChanges++;
@@ -820,7 +852,7 @@ export class Simulation {
         if (
           !car.exitRamp &&
           !car.incident &&
-          car.kind !== 'ambulance' && // laps until its run ends, never exits
+          !isEmergencyVehicle(car.kind) && // emergency run ends by distance, never an exit
           forwardDist(car.sPrev, ramp.decideS) < traveled
         ) {
           if (Math.random() * 100 < params[ramp.rateKey]) car.exitRamp = ramp;
@@ -1047,7 +1079,7 @@ export class Simulation {
 
   randomEligibleCar() {
     const eligible = this.cars.filter(
-      (c) => c.state === 'main' && !c.incident && c.kind !== 'ambulance'
+      (c) => c.state === 'main' && !c.incident && !isEmergencyVehicle(c.kind)
     );
     return eligible.length ? eligible[Math.floor(Math.random() * eligible.length)] : null;
   }
@@ -1064,51 +1096,97 @@ export class Simulation {
     if (i >= 0) this.cars.splice(i, 1);
   }
 
-  // Send an ambulance around the loop: it spawns into the widest gap in the
-  // innermost lane, runs well above the global desired speed, and despawns
-  // after ~1.6 laps. Traffic ahead reacts through ambBehind (slowing and
-  // vacating its lane) — the move-over corridor is emergent, not scripted.
-  spawnAmbulance() {
-    if (this.cars.filter((c) => c.kind === 'ambulance').length >= MAX_AMBULANCES) return null;
-    const lane = params.lanes - 1;
-    const arr = this.buildLaneIndex()[lane];
-    let s = 0;
-    let v = params.desiredSpeed;
-    if (arr.length) {
-      let lead = arr[0];
-      let bestGap = -1;
-      for (let i = 0; i < arr.length; i++) {
-        // a lone car's gap to itself is the whole loop, not forwardDist's 0
-        const gap =
-          arr.length === 1 ? LOOP : forwardDist(arr[i].s, arr[(i + 1) % arr.length].s);
-        if (gap > bestGap) {
-          bestGap = gap;
-          lead = arr[i];
-        }
-      }
-      s = wrap(lead.s + bestGap / 2);
-      v = Math.max(lead.v, 8); // never materialize at rest mid-traffic
+  // Find the safest placement in the innermost lane for a vehicle of `kind`.
+  // Positions are centers, so a feasible slot must fit both neighboring half
+  // lengths, the new vehicle's full length, and minGap at both bumpers. This is
+  // more important for a fire truck than the old center-gap midpoint scan: a
+  // large center gap can still be physically too short between long vehicles.
+  emergencySpawnSlot(arr, kind) {
+    const len = VEHICLE_LEN[kind];
+    if (!arr.length) return { s: 0, v: params.desiredSpeed, slack: Infinity };
+
+    let best = null;
+    for (let i = 0; i < arr.length; i++) {
+      const behind = arr[i];
+      const ahead = arr[(i + 1) % arr.length];
+      // A lone car's gap to itself is the whole loop, not forwardDist(s, s)=0.
+      const centerGap = arr.length === 1 ? LOOP : forwardDist(behind.s, ahead.s);
+      const needBehind = (behind.len + len) / 2 + params.minGap;
+      const needAhead = (len + ahead.len) / 2 + params.minGap;
+      const slack = centerGap - needBehind - needAhead;
+      if (slack < 0 || (best && slack <= best.slack)) continue;
+      best = {
+        s: wrap(behind.s + needBehind + slack / 2),
+        v: Math.max(behind.v, 8), // never materialize at rest mid-traffic
+        slack,
+      };
     }
-    const amb = new Car({ s, lane, v, v0Factor: 1.55, kind: 'ambulance' });
-    amb.ambDist = 1.6 * LOOP; // siren-run budget in meters driven
-    this.cars.push(amb);
-    return amb;
+    return best;
   }
 
-  // Nearest active ambulance approaching this car from behind, within the
-  // move-over corridor range. Null when no siren bears down on the car.
-  ambBehind(car, range = AMB_SIREN_RANGE) {
+  // Send a random feasible emergency vehicle around the loop. Passing a kind
+  // makes selection deterministic (and backs the compatibility wrapper below).
+  // Omitted-kind selection is uniform across the models that physically fit.
+  spawnEmergencyVehicle(kind) {
+    const emergencyCount = this.cars.filter((c) => isEmergencyVehicle(c.kind)).length;
+    if (emergencyCount >= MAX_EMERGENCY_VEHICLES) return null;
+
+    const lane = params.lanes - 1;
+    const arr = this.buildLaneIndex()[lane];
+    const kinds =
+      kind === undefined ? EMERGENCY_KINDS : isEmergencyVehicle(kind) ? [kind] : [];
+    const candidates = kinds
+      .map((candidateKind) => ({
+        kind: candidateKind,
+        slot: this.emergencySpawnSlot(arr, candidateKind),
+      }))
+      .filter((candidate) => candidate.slot);
+    if (!candidates.length) return null;
+
+    const index =
+      kind === undefined
+        ? Math.min(candidates.length - 1, Math.floor(Math.random() * candidates.length))
+        : 0;
+    const chosen = candidates[index];
+    const emergency = new Car({
+      s: chosen.slot.s,
+      lane,
+      v: chosen.slot.v,
+      kind: chosen.kind,
+    });
+    emergency.emergencyDist = 1.6 * LOOP; // siren-run budget in meters driven
+    this.cars.push(emergency);
+    return emergency;
+  }
+
+  spawnAmbulance() {
+    return this.spawnEmergencyVehicle('ambulance');
+  }
+
+  // Nearest active emergency vehicle approaching this car from behind, within
+  // the move-over corridor range. Passing a lane restricts the search so each
+  // responder corridor remains independent when several sirens are active.
+  // Null when no relevant siren bears down on the car.
+  emergencyBehind(car, range = EMERGENCY_SIREN_RANGE, lane = null) {
     let best = null;
     let bestD = range;
-    for (const amb of this._ambs || []) {
-      if (amb === car) continue;
-      const d = forwardDist(amb.s, car.s);
+    const active = this._emergencyVehicles?.length ? this._emergencyVehicles : this._ambs || [];
+    for (const emergency of active) {
+      if (emergency === car || (lane !== null && emergency.lane !== lane)) continue;
+      const d = forwardDist(emergency.s, car.s);
       if (d < bestD) {
         bestD = d;
-        best = amb;
+        best = emergency;
       }
     }
-    return best && { amb: best, dist: bestD };
+    return best && { emergency: best, dist: bestD };
+  }
+
+  // Compatibility with pre-generic callers and the old `{amb, dist}` result.
+  // New code should use emergencyBehind and its `{emergency, dist}` result.
+  ambBehind(car, range = EMERGENCY_SIREN_RANGE) {
+    const result = this.emergencyBehind(car, range);
+    return result && { amb: result.emergency, dist: result.dist };
   }
 
   // Nearest car to a pointer ray ({origin, dir}, dir normalized), measured

@@ -96,7 +96,7 @@ assets/social.png      1200×630 social-preview card — og:image in index.html
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        desktop right-click-to-chase picker (the exact visible
-                       vehicle, including ramps/incidents/ambulances; left-click
+                       vehicle, including ramps/incidents/emergency vehicles; left-click
                        remains click-to-crash), the
                        touch chase-toggle button (chase exits — esc, the
                        button, chased car despawning with no successor — go
@@ -145,12 +145,15 @@ src/params.js          single mutable `params` object — the GUI writes it, the
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
-                       an ambulance, trigger wrecks); the panel's Scenario
+                       a specific emergency vehicle, trigger wrecks); the panel's Scenario
                        dropdown drives it and every preset is smoke-tested
 src/sim/road.js        loop shapes (SHAPES catalog) + ramp geometry, s-coordinate
                        helpers; LOOP/RAMPS are live bindings updated by setShape()
-src/sim/car.js         Car state record
-src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic
+src/sim/car.js         Car state record + per-kind lengths/driver factors;
+                       `vehicleLabel()` supplies user-facing kind names and
+                       `isEmergencyVehicle()` classifies the three siren kinds
+src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic,
+                       and the shared emergency-vehicle corridor/dispatch behavior
 src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun disc
                        (camera-tied), cloud carousel, unlit pre-hazed hill ring,
                        and trees/bushes/rocks scattered by rejection sampling
@@ -166,12 +169,17 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        stitches {z, hw, y0, y1} cross-sections; sedan vs
                        hatchback picked by a car.id bit) + matte greenhouse +
                        shared dark wheel sets; trucks are a lofted conventional
-                       cab + box trailer + five axles
+                       cab + box trailer + five axles. Emergency pools render a
+                       white Type-I ambulance, police cruiser, and long fire
+                       truck with distinct body geometry and warning-light mounts
 src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        default on phones, tracking the breakpoint live until
                        the user toggles the panel themselves (open state
-                       survives the units/interchange/preset rebuilds), and
-                       renderer.viewFit only
+                       survives the units/interchange/preset rebuilds). Its
+                       Emergency vehicle button calls
+                       `spawnEmergencyVehicle()` with no kind for a random safe-fit
+                       choice; the Ambulance run preset stays explicitly curated,
+                       while renderer.viewFit only
                        reserves the panel's column while it hangs open. Open/
                        close (root or folders) schedules refitView() ~350 ms
                        out — past lil-gui's height transition — and mirrors
@@ -289,7 +297,10 @@ test/smoke.js          runs the sim headless under several parameter regimes
   gates (`signalWant`, expires ~1 s unless re-affirmed). Hazards (incident
   amber body-blink) take precedence over both. Rendered as two extra
   InstancedMeshes with per-kind mount points (`LIGHT_DIMS`; the 'car' entry is
-  per body style, indexed by the same car.id bit that picks the loft).
+  per body style, indexed by the same car.id bit that picks the loft). Police
+  cars and fire trucks combine ordinary turn signals with their model-specific
+  red/blue warning-light meshes; the ambulance has no indicator clusters and
+  keeps its strobe-only treatment.
 - Incidents (`sim.incidents`): breakdowns pull over to the shoulder, park with
   hazards, then re-merge (with growing desperation, forced after a timeout);
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
@@ -299,23 +310,32 @@ test/smoke.js          runs the sim headless under several parameter regimes
   `sim.triggerAccident`); the Events panel folder has the rest.
 - Per-car desired speed = global desired speed × `car.v0Factor` (sampled at spawn
   from the speed-variation knob), so the speed slider retunes every car live.
-- Emergency vehicle (`sim.spawnAmbulance`, Events panel): an 'ambulance'-kind
-  white Type-I-style rig (hood + cab + taller patient module, dark cab glass,
-  red module stripe, red/blue strobes on the module's front roof) that
-  spawns into the widest inner-lane gap,
-  runs at 1.55× the desired-speed knob with opportunity-gated MOBIL (no
-  politeness; a target lane must offer a meaningful projected pace gain, then
-  it holds the chosen lane for 4 s to prevent flip-flopping), and despawns
-  after ~1.6 laps. Cars with the siren within ~260 m behind (`ambBehind`) and
-  in its lane bleed speed as it closes (0.65–1.0× — matching the receiving
-  lane is what makes the merge out feasible, the exit-drift trick), get an
-  early, strong bias out of that lane plus progressively assertive merge
-  gates, and nobody merges
-  into it; receiving lanes are deliberately NOT slowed — a cap that travels
-  with the ambulance compresses them into a clot that walls everyone in. The
-  corridor is emergent, and it degrades honestly with density (near capacity
-  there is nowhere to move over to). Ambulances never take exits, skip
-  rubbernecking, and are excluded from `randomEligibleCar`.
+- Emergency vehicles (`sim.spawnEmergencyVehicle(kind?)`, Events panel): the
+  no-argument form chooses uniformly among the `ambulance`, `police`, and
+  `firetruck` models that have a collision-free inner-lane insertion gap
+  (normally all three); passing a kind makes presets/tests deterministic. The
+  curated Ambulance run preset passes `ambulance`, while the Events button deliberately
+  omits it. `spawnAmbulance()` remains as a compatibility wrapper. All three
+  spawn into the widest inner-lane gap, use opportunity-gated MOBIL with no
+  politeness, require a meaningful projected pace gain, hold the chosen lane
+  for 4 s to prevent flip-flopping, and despawn after ~1.6 laps. Their exact
+  physical profiles (`length`, `accelK`, `headwayK`, `brakeK`, desired-speed
+  multiplier) are: ambulance `(5.4 m, 1.5, 0.55, 1.1, 1.55×)`, police
+  `(5.0 m, 2.0, 0.5, 1.25, 1.7×)`, and fire truck
+  `(10.5 m, 0.6, 0.8, 0.85, 1.25×)`. The total concurrent cap is eight
+  emergency vehicles across all three kinds, matching renderer capacity.
+  Cars with an emergency vehicle's siren within ~260 m behind
+  (`emergencyBehind`) and in its lane bleed speed as it closes (0.65–1.0× —
+  matching the receiving lane is what makes the merge out feasible, the
+  exit-drift trick), get an early, strong bias out of that lane plus
+  progressively assertive merge gates, and nobody merges into it; receiving
+  lanes are deliberately NOT slowed — a cap that travels with the emergency
+  vehicle would compress them into a clot that walls everyone in. The active
+  cache is `_emergencyVehicles`, and `emergencyDist` stores each vehicle's
+  remaining run. `ambBehind()` remains as a compatibility wrapper. The corridor
+  is emergent and degrades honestly with density (near capacity there is nowhere
+  to move over to). `isEmergencyVehicle()` gates the common behavior: none take
+  exits or rubberneck, and all are excluded from `randomEligibleCar`.
 - Ramp metering (`params.metering` + `params.meterRate`, Ramps panel folder;
   live, no reset): each on-ramp gets a stop line at the start of its merge
   zone (`ramp.length - mergeZone`). Held cars (`!car.meterGo`) brake for it
