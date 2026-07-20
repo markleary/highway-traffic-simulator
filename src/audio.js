@@ -52,6 +52,7 @@ export class AmbientAudio {
     this.sirens = new Map(); // car -> { panner, gain, src, rate, dying }
     this.seenIncidents = new WeakSet();
     this.armed = false; // don't voice incidents that predate sound-on
+    this.pendingCrashes = []; // { car, age }: waiting on crash.mp3 to decode
     this.statTimer = 0;
     this.intensity = 0; // traffic bed drive, re-derived at 4 Hz
     this.offTime = 0;
@@ -184,7 +185,7 @@ export class AmbientAudio {
     this.updateListener(camera);
     this.updateBeds(dt, sim, camera, now);
     this.updateSirens(dt, sim, camera, now);
-    this.updateCrashes(sim);
+    this.updateCrashes(dt, sim);
   }
 
   updateListener(camera) {
@@ -321,30 +322,46 @@ export class AmbientAudio {
     }
   }
 
-  updateCrashes(sim) {
+  updateCrashes(dt, sim) {
     // First armed pass after sound-on: swallow whatever already happened so
     // enabling audio next to three old wrecks doesn't play a thump salvo.
     if (!this.armed) {
       for (const inc of sim.incidents) this.seenIncidents.add(inc);
+      this.pendingCrashes.length = 0;
       this.armed = true;
       return;
     }
     for (const inc of sim.incidents) {
       if (inc.kind !== 'accident' || this.seenIncidents.has(inc)) continue;
       this.seenIncidents.add(inc);
-      const car = inc.cars[0];
-      if (!car || !this.buffers.crash) continue;
-      pointAt(car.s, -car.renderLane * ROAD.laneWidth, this._v);
-      const panner = this.makePanner(90); // a crash carries further than a siren
-      this.setPos(panner, this._v.x, this._v.y + 1, this._v.z);
-      const src = this.ctx.createBufferSource();
-      src.buffer = this.buffers.crash;
-      src.connect(panner).connect(this.sfxGroup);
-      src.onended = () => {
-        src.disconnect();
-        panner.disconnect();
-      };
-      src.start();
+      // crash.mp3 may still be fetching in the first seconds after sound-on;
+      // queue the thump instead of dropping it (Codex review) - but only
+      // briefly, a wreck is only worth voicing near its visual moment
+      if (inc.cars[0]) this.pendingCrashes.push({ car: inc.cars[0], age: 0 });
     }
+    for (let i = this.pendingCrashes.length - 1; i >= 0; i--) {
+      const p = this.pendingCrashes[i];
+      p.age += dt;
+      if (this.buffers.crash) {
+        this.playCrash(p.car);
+        this.pendingCrashes.splice(i, 1);
+      } else if (p.age > 1.5) {
+        this.pendingCrashes.splice(i, 1); // decode came too late; stay silent
+      }
+    }
+  }
+
+  playCrash(car) {
+    pointAt(car.s, -car.renderLane * ROAD.laneWidth, this._v);
+    const panner = this.makePanner(90); // a crash carries further than a siren
+    this.setPos(panner, this._v.x, this._v.y + 1, this._v.z);
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.buffers.crash;
+    src.connect(panner).connect(this.sfxGroup);
+    src.onended = () => {
+      src.disconnect();
+      panner.disconnect();
+    };
+    src.start();
   }
 }
