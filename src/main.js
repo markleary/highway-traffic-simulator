@@ -1,6 +1,7 @@
 import { params, KMH, MPH, watchViewport, TOUCH_UI, DEBUG_PANEL, TESLA_BROWSER } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
+import { AmbientAudio } from './audio.js';
 import { buildPanel } from './ui/panel.js';
 import { ChartPanel } from './ui/charts.js';
 import { Speedometer } from './ui/speedo.js';
@@ -13,7 +14,8 @@ document.body.classList.toggle('touch-ui', TOUCH_UI);
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
-buildPanel({ sim, renderer });
+const audio = new AmbientAudio();
+buildPanel({ sim, renderer, audio });
 watchViewport(); // un-owned chart defaults keep tracking breakpoint flips
 const charts = new ChartPanel();
 const speedo = new Speedometer();
@@ -89,6 +91,7 @@ if (DEBUG_PANEL) {
 // console access for poking at the live simulation
 window.sim = sim;
 window.renderer = renderer;
+window.audio = audio;
 window.speedo = speedo;
 window.charts = charts;
 window.params = params;
@@ -137,6 +140,7 @@ function frame(now) {
   const hoverRay = renderer.pointerRay();
   renderer.setHoverCar(hoverRay && sim.carNearRay(hoverRay, 9, true));
   renderer.render(dt);
+  audio.update(dt, sim, renderer.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

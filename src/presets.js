@@ -14,7 +14,7 @@ import { params, DEFAULTS, ownDisplay } from './params.js';
 // slowly — the drama is in the traffic, not the scenery.
 
 // user display preferences that survive a preset unless its patch overrides
-const KEEP = ['units', 'showCharts', 'showDiagram', 'showFundamental', 'showFps', 'colorMode', 'scenery'];
+const KEEP = ['units', 'showCharts', 'showDiagram', 'showFundamental', 'showFps', 'colorMode', 'scenery', 'sound'];
 
 export const PRESETS = {
   rush: {

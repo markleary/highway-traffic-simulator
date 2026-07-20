@@ -50,6 +50,13 @@ branch → `main` / root**. That's it — there is nothing to build.
   onto an overhead close-up of the spot where you were driving.
 - Every panel control has an explainer tooltip: hover it with a mouse, or
   **long-press its label** on a touch screen.
+- **🔊 Sound** (top of the panel) turns on subtle ambient audio: a freeway
+  tire hum that follows how much traffic there is and how fast it moves,
+  sirens and crash impacts placed in 3D around the camera (chase an emergency
+  vehicle to ride inside its siren, complete with a gentle doppler as one
+  passes the free camera), and rain when it rains. Everything fades with the
+  camera's distance from the road, there is no music, and nothing downloads
+  until the first time you enable it. Off by default.
 - **Hover any car** for a nameplate readout: its kind and id, current speed,
   and desired speed in parens. **Left-click or tap any car to crash it** — it
   blocks its lane (optionally dragging a neighbor into a 2-lane pileup) until
@@ -182,7 +189,9 @@ The landscape uses sparse, broad faceted ground relief, faint wheel-wear
 ribbons, and a polygonal sun halo to keep the diorama graphic without looking
 busy. Rain
 grades the whole scene: the sky dome, terrain, clouds, hills, and fog all darken
-with the same live rain level that drives the physics.
+with the same live rain level that drives the physics. An optional ambient
+soundscape (🔊 Sound in the panel) hums along with the traffic, sirens and
+weather, fading with the camera's distance from the road.
 
 ## Roadmap
 

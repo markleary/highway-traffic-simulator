@@ -86,6 +86,7 @@ export const params = {
   ...chartDefaults(),
   showFps: false, // FPS row at the bottom of the HUD (the F key toggles it too)
   scenery: true, // landscape dressing (trees, hills, clouds) — off for weak GPUs
+  sound: false, // opt-in ambient audio (src/audio.js); nothing loads until enabled
 
   // road
   roadShape: 'circle', // key into SHAPES (road.js); applied by Simulation.reset()
