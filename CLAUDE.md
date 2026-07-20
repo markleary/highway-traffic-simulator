@@ -93,6 +93,30 @@ assets/social.png      1200×630 social-preview card — og:image in index.html
                        (absolute URL; unfurlers don't resolve relative paths)
                        and the README hero. Regenerate by staging a jam and
                        exporting the WebGL canvas at 2400×1260, then halving
+assets/audio/          six ElevenLabs-generated mp3s (~0.8 MB total): traffic
+                       and rain beds, three siren loops keyed by emergency
+                       kind, one crash impact. Fetched lazily by src/audio.js
+                       the first time Sound is enabled; never at boot
+src/audio.js           opt-in ambient soundscape (params.sound, root-panel
+                       toggle; presets KEEP it like a display pref). One
+                       AudioContext created inside the toggle click (gesture
+                       unlock; audio.unlock() from panel.js onChange), then
+                       driven per frame from main.js: traffic bed gain =
+                       density×speed intensity × ref/(ref+d) line-source
+                       falloff off the camera's distance to sampled
+                       centerline points (rebuilt per road geometry);
+                       sirens/crashes are PannerNodes around a listener
+                       posed from the camera, sirens with a ±5% relative-
+                       velocity doppler (listener velocity differenced from
+                       the camera path so a chase camera hears rate 1; >150
+                       m/s frame jumps = view teleports, ignored). Pause
+                       ducks physics sounds but keeps rain (wall-clock
+                       cosmetic, like the renderer's weather) and still
+                       thumps click-to-crash wrecks; hidden tabs and the
+                       toggle-off fade suspend the context outright. New
+                       accidents are detected by diffing sim.incidents
+                       against a WeakSet, armed only while sound is on so
+                       enabling audio never replays old wrecks
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        desktop right-click-to-chase picker (the exact visible

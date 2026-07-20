@@ -11,7 +11,7 @@ const presetState = { scenario: '' };
 // the panel down and rebuilds it with new labels, ranges and proxy values
 // (changing the interchange count rebuilds it too, so the Ramps folder shows
 // exactly the ramps that exist).
-export function buildPanel({ sim, renderer }) {
+export function buildPanel({ sim, renderer, audio }) {
   let gui = null;
   // phones start collapsed to the title bar: a 245 px panel on a ~430 px
   // screen buries the map and collides with the HUD. Open state survives
@@ -26,7 +26,7 @@ export function buildPanel({ sim, renderer }) {
       hideTip(); // the row it points at just went away
     }
     // defer: destroying the GUI from inside its own onChange handler
-    gui = makeGui({ sim, renderer, onRebuild: () => setTimeout(rebuild, 0) });
+    gui = makeGui({ sim, renderer, audio, onRebuild: () => setTimeout(rebuild, 0) });
     // user toggles claim the panel. Watch the title CLICK, not onOpenClose:
     // lil-gui routes taps and keyboard Enter/Space through $title.click(),
     // while programmatic open()/close() (rebuild restore, breakpoint flip)
@@ -207,7 +207,7 @@ function wireTips(gui) {
   root.addEventListener('scroll', hideTip, true); // panel scrolled under the tip
 }
 
-function makeGui({ sim, renderer, onRebuild }) {
+function makeGui({ sim, renderer, audio, onRebuild }) {
   const imp = params.units === 'imperial';
   const spd = imp ? MPH : KMH; // speed display unit → m/s
   const spdU = imp ? 'mph' : 'km/h';
@@ -251,6 +251,12 @@ function makeGui({ sim, renderer, onRebuild }) {
       .name('Units')
       .onChange(onRebuild),
     'Display units for speeds, gaps and accelerations. The simulation itself always runs in SI internally.'
+  );
+  tip(
+    // unlock() inside onChange: it runs within the click's user gesture,
+    // which is what lets the browser start the AudioContext at all
+    gui.add(params, 'sound').name('🔊 Sound').onChange(() => audio?.unlock()),
+    'Subtle ambient audio: freeway tire hum that follows the traffic and fades with camera distance, sirens and crashes placed in 3D around the camera, and rain. No music. Nothing downloads until first enabled.'
   );
 
   const fSim = gui.addFolder('Simulation');
