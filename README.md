@@ -148,10 +148,12 @@ report themselves as desktops (iPads, the Tesla in-car browser) keep the full
 desktop layout but make the same two swaps — Chase button in, keyboard tips
 out — and in the Tesla browser, which can't show native dropdown pickers, the
 panel's dropdowns open a built-in menu instead. Mid-size windows adapt too:
-charts hide below ~900 px so the road keeps the screen, the defaults keep
-re-deriving as you resize or rotate (once you flip a toggle yourself, your
-setting wins), and the camera re-frames itself around whichever panels are
-actually open.
+charts hide below ~900 px wide so the road keeps the screen, and the taller
+sections of the stack (the space-time diagram, then the fundamental diagram)
+wait until the window is tall enough to hold them without riding up over the
+stats panel. The defaults keep re-deriving as you resize or rotate (once you
+flip a toggle yourself, your setting wins), and the camera re-frames itself
+around whichever panels are actually open.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
 backwards from the merge points — then pick **Metered rush hour**: same flood,

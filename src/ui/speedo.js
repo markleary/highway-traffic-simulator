@@ -31,7 +31,7 @@ export class Speedometer {
     this.shown = 0; // smoothed displayed speed
   }
 
-  update(car) {
+  update(car, dt = 1 / 60) {
     if (!car) {
       if (this.el.style.display !== 'none') this.el.style.display = 'none';
       this.shown = 0;
@@ -52,7 +52,12 @@ export class Speedometer {
     const unit = imp ? MPH : KMH;
     const maxDisp = imp ? 100 : 160;
     const v = car.v / unit;
-    this.shown += (v - this.shown) * 0.12;
+    // Exponential smoothing on WALL-CLOCK time, so the needle settles at the
+    // same rate on a 60 Hz and a 144 Hz display. The old per-frame 0.12 made
+    // it twitchier the faster the display refreshed. Gauge feel, not physics,
+    // so it stays wall-clock like the chase camera's ease-back; the constant
+    // reproduces that 0.12 at 60 Hz.
+    this.shown += (v - this.shown) * (1 - Math.exp(-7.7 * dt));
     const frac = Math.min(Math.max(this.shown / maxDisp, 0), 1);
 
     const ctx = this.ctx;

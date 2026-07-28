@@ -130,7 +130,7 @@ function frame(now) {
   }
   // CSS keys the speedometer/legend/hint bottom-strip layout off this class
   document.body.classList.toggle('chasing', !!renderer.chaseCar);
-  speedo.update(renderer.chaseCar);
+  speedo.update(renderer.chaseCar, dt);
   const renderAlpha = params.paused ? 1 : Math.max(0, Math.min(1, acc / H));
   renderer.setRain(sim.rainNow || 0);
   renderer.updateMeters(sim);
@@ -156,14 +156,16 @@ const views = [
 let viewIndex = 0; // startup camera is the perspective view
 
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && e.target === document.body) {
+  // One gate for every shortcut: never while typing in the panel, and never
+  // chorded with a browser shortcut (cmd/ctrl+F is find, not our FPS toggle).
+  // Escape sits under it too: it used to be handled ABOVE the gate, so
+  // dismissing a lil-gui number field also dropped you out of a chase.
+  if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.code === 'Space') {
     e.preventDefault();
     params.paused = !params.paused;
   }
   if (e.code === 'Escape') renderer.exitChase();
-  // letter shortcuts: never while typing in the panel or chorded with a
-  // browser shortcut (cmd/ctrl+F is find, not our FPS toggle)
-  if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.code === 'KeyF') params.showFps = !params.showFps;
   if (e.code === 'KeyC') {
     viewIndex = 2; // a following 'v' continues the cycle from chase

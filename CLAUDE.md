@@ -147,13 +147,22 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        reads it every step; that is how every knob applies live —
                        plus DEFAULTS, a frozen factory snapshot. Chart
                        visibility is viewport-derived AND live: MQ (matchMedia
-                       small/wide/tall — small shares the CSS 500 px phone
-                       breakpoint; wide/tall are JS-only 900/800 px lines)
-                       drives the boot defaults, and watchViewport() re-derives
-                       them on breakpoint flips (rotation, resize) — phones
-                       hide the whole stack, sub-900px windows hide the charts
-                       (stack + panel would leave no visible road), sub-800px-
-                       tall windows hide the fundamental. ownDisplay(key) pins
+                       small/wide/medium/tall; small shares the CSS 500 px
+                       phone breakpoint, the rest are JS-only 900 px wide and
+                       660/820 px tall lines) drives the boot defaults, and
+                       watchViewport() re-derives them on breakpoint flips
+                       (rotation, resize). Phones hide the whole stack,
+                       sub-900px windows hide the charts (stack + panel would
+                       leave no visible road), and the two HEIGHT gates keep
+                       each added section inside the room it needs: the stack
+                       is bottom-anchored at 76 px while the HUD is top-
+                       anchored, so its 245/400/555 px configurations need
+                       495/650/805 px of window. The diagram had no gate at
+                       all, so a short wide window (900+ × 501-670) grew the
+                       stack straight up THROUGH the HUD and hid the stats;
+                       index.html's max-height cap on .charts is the hard
+                       backstop for a stack the user re-enables anyway.
+                       ownDisplay(key) pins
                        a toggle against auto-tracking: called by the panel's
                        View toggles and by presets whose patch stages a chart.
                        Also exports the device signals: TESLA_BROWSER (2026

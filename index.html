@@ -57,7 +57,21 @@
     .map-label.on { border-left: 3px solid #7ec8a0; }
     .map-label.off { border-left: 3px solid #d9b64a; }
     .map-label.hover { border-left: 3px solid #3987e5; }
-    .charts { left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px; }
+    /* The stack is bottom-anchored while the HUD is top-anchored, so a short
+       window used to let it rise straight through the HUD and hide the stats.
+       params.js keeps the DEFAULT stack inside the room available (per-section
+       height gates); this is the hard stop for a stack the user re-enabled
+       anyway, or an FPS row that grew the HUD: cap it and scroll rather than
+       cover. The reserve is the 76px bottom inset + the HUD's tallest bottom
+       edge (183px, FPS row on) + a 12px gap. Touch caveat: chart canvases set
+       touch-action:none to scrub, so a finger scrolls this only from the
+       padding; the stack fits without scrolling at every default size. */
+    .charts {
+      left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px;
+      box-sizing: border-box;
+      max-height: calc(100dvh - 271px);
+      overflow-y: auto; overscroll-behavior: contain;
+    }
     /* touch-action none: a finger dragged across a chart scrubs the hover
        readout instead of the browser claiming the gesture as a (nonexistent)
        scroll and firing pointercancel */
