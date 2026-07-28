@@ -63,13 +63,18 @@
        height gates); this is the hard stop for a stack the user re-enabled
        anyway, or an FPS row that grew the HUD: cap it and scroll rather than
        cover. The reserve is the 76px bottom inset + the HUD's tallest bottom
-       edge (183px, FPS row on) + a 12px gap. Touch caveat: chart canvases set
-       touch-action:none to scrub, so a finger scrolls this only from the
-       padding; the stack fits without scrolling at every default size. */
+       edge (183px, FPS row on) + a 12px gap = 271px, and 20px more because
+       max-height sizes the CONTENT box: the panel renders 18px of vertical
+       padding and 2px of border on top of it. Do NOT reach for border-box to
+       skip that arithmetic: width: 320px would then include the side padding
+       and leave a 298px content box for the 320px canvases, which spill past
+       the panel edge, raise a horizontal scrollbar, and make viewFit()
+       under-reserve the left column it measures (Codex review). Touch caveat:
+       chart canvases set touch-action:none to scrub, so a finger scrolls this
+       only from the padding; the stack fits unscrolled at every default size. */
     .charts {
       left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px;
-      box-sizing: border-box;
-      max-height: calc(100dvh - 271px);
+      max-height: calc(100dvh - 291px);
       overflow-y: auto; overscroll-behavior: contain;
     }
     /* touch-action none: a finger dragged across a chart scrubs the hover
