@@ -28,6 +28,17 @@ const EMERGENCY_PASS_LOOKAHEAD = 3; // s used to turn leader gap into projected 
 const EMERGENCY_PASS_SPEED_GAIN = 3; // m/s of projected pace: a real pass, not noise
 const EMERGENCY_LANE_HOLD = 4; // s after taking a passing opportunity
 
+// A siren run is budgeted in DISTANCE (laps driven), which stops counting
+// down at v = 0; a responder wedged behind a blockage would never retire,
+// and eight of them would hold the dispatch cap shut for the rest of the
+// session. Back the distance budget with a deadline: the same run at a
+// pessimistically slow average, so it scales with road size and only ever
+// fires on a responder that is genuinely stuck.
+const EMERGENCY_RUN_LAPS = 1.6;
+const EMERGENCY_MIN_PACE = 4; // m/s
+const emergencyRunDist = () => EMERGENCY_RUN_LAPS * LOOP;
+const emergencyRunTime = () => emergencyRunDist() / EMERGENCY_MIN_PACE;
+
 // Rain (0–1, the max of the steady Rain knob and a live storm): slower
 // desired speeds, longer following, and less grip. Each factor is mild, but
 // together they cut capacity enough to tip a near-capacity regime into
@@ -393,9 +404,13 @@ export class Simulation {
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
       if (!isEmergencyVehicle(c.kind)) continue;
-      if (!Number.isFinite(c.emergencyDist)) c.emergencyDist = 1.6 * LOOP;
-      if (!c.incident && (c.emergencyDist -= c.v * h) <= 0) this.cars.splice(i, 1);
-      else if (c.state === 'main' && !c.incident) this._emergencyVehicles.push(c);
+      if (!Number.isFinite(c.emergencyDist)) c.emergencyDist = emergencyRunDist();
+      if (!Number.isFinite(c.emergencyUntil)) c.emergencyUntil = this.time + emergencyRunTime();
+      if (c.incident) continue; // a wrecked responder is the incident's to clear
+      c.emergencyDist -= c.v * h;
+      // distance budget spent, or stuck long enough that it never will be
+      if (c.emergencyDist <= 0 || this.time >= c.emergencyUntil) this.cars.splice(i, 1);
+      else if (c.state === 'main') this._emergencyVehicles.push(c);
     }
     this._ambs = this._emergencyVehicles; // compatibility with the old cache name
 
@@ -746,8 +761,16 @@ export class Simulation {
           // Do not weave for a marginal instantaneous acceleration advantage:
           // the target lane has to support a noticeably faster pace over the
           // next few seconds. This is the main flip-flop guard.
+          //
+          // A MANDATORY move is exempt: it isn't a pass, it's getting out of a
+          // lane that ends. Work-zone v0 is capped at the taper's crawl floor
+          // for BOTH lanes, so a pace GAIN is unsatisfiable there and the gate
+          // vetoed every escape. A responder that spawned in the coned lane
+          // then sat at the taper forever, never spending its distance budget
+          // and so never despawning.
           if (
             emergency &&
+            !mandatory &&
             lanePace(nl, gapAhead, v0) < curPace + EMERGENCY_PASS_SPEED_GAIN
           ) {
             continue;
@@ -1131,7 +1154,13 @@ export class Simulation {
     const emergencyCount = this.cars.filter((c) => isEmergencyVehicle(c.kind)).length;
     if (emergencyCount >= MAX_EMERGENCY_VEHICLES) return null;
 
-    const lane = params.lanes - 1;
+    // Innermost lane, except never the coned one: a work zone closes exactly
+    // that lane, and since ordinary traffic has already vacated it the widest
+    // gap in it is almost always INSIDE the cones, so dispatch would drop the
+    // responder into a closed lane and drive it through the taper.
+    const closed = this.workZone()?.lane ?? -1;
+    let lane = params.lanes - 1;
+    if (lane === closed) lane = Math.max(0, lane - 1);
     const arr = this.buildLaneIndex()[lane];
     const kinds =
       kind === undefined ? EMERGENCY_KINDS : isEmergencyVehicle(kind) ? [kind] : [];
@@ -1154,7 +1183,8 @@ export class Simulation {
       v: chosen.slot.v,
       kind: chosen.kind,
     });
-    emergency.emergencyDist = 1.6 * LOOP; // siren-run budget in meters driven
+    emergency.emergencyDist = emergencyRunDist(); // siren-run budget in meters driven
+    emergency.emergencyUntil = this.time + emergencyRunTime(); // ...and its deadline
     this.cars.push(emergency);
     return emergency;
   }

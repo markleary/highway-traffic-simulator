@@ -754,6 +754,113 @@ rngState = emergencyTestRngState;
 }
 
 {
+  // Dispatch used to drop responders into the CLOSED lane: it always picked
+  // the innermost lane, which is exactly the one a work zone cones off, and
+  // with ordinary traffic already gone the widest gap in it sits inside the
+  // cones. The responder then drove through the taper and parked against it
+  // forever: the projected-pace gate vetoed every escape (work-zone v0 caps
+  // BOTH lanes at the crawl floor, so a pace GAIN is unsatisfiable), and a
+  // stopped responder spends no distance budget, so it never despawned.
+  // Eight of them wedged the dispatch cap shut for the rest of the session.
+  console.log('\nemergency vehicles and work zones: no coned-lane deadlock');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 110,
+    workZone: true,
+    workZonePos: 35,
+    workZoneLen: 300,
+  });
+  const sim = new Simulation();
+  const wz = sim.workZone();
+  for (let i = 0; i < Math.round(60 / H); i++) sim.step(H);
+
+  const ev = sim.spawnEmergencyVehicle('police');
+  check('dispatch avoids the coned lane', !!ev && ev.lane !== wz.lane, `(lane ${ev?.lane})`);
+  let inCones = 0;
+  let life = 0;
+  for (let i = 0; i < Math.round(600 / H); i++) {
+    sim.step(H);
+    if (!sim.cars.includes(ev)) {
+      life = i * H;
+      break;
+    }
+    if (ev.lane === wz.lane && forwardDist(wz.sStart, ev.s) < wz.len) inCones++;
+  }
+  check('dispatched responder never enters the coned stretch', inCones === 0, `(${inCones})`);
+  check('dispatched responder finishes its run', life > 0, `(alive at 600 s)`);
+
+  // A responder already in the innermost lane when the zone is toggled on
+  // live: the spawn-lane guard can't help, so this is the merge-logic half.
+  // A mandatory move is not a pass, so the pace gate must not veto it.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 110 });
+  const live = new Simulation();
+  for (let i = 0; i < Math.round(60 / H); i++) live.step(H);
+  const caught = live.spawnEmergencyVehicle('firetruck');
+  for (let i = 0; i < Math.round(5 / H); i++) live.step(H);
+  Object.assign(params, { workZone: true, workZonePos: 35, workZoneLen: 300 });
+  const zone = live.workZone();
+  check('responder starts in the lane about to close', caught.lane === zone.lane);
+  let escaped = false;
+  let cleared = 0;
+  for (let i = 0; i < Math.round(600 / H); i++) {
+    live.step(H);
+    if (!live.cars.includes(caught)) {
+      cleared = i * H;
+      break;
+    }
+    if (caught.lane !== zone.lane) escaped = true;
+  }
+  check('responder caught by a live closure merges out', escaped);
+  check('responder caught by a live closure finishes its run', cleared > 0, `(alive at 600 s)`);
+
+  // The cap must never wedge: repeated dispatch over a long work-zone run.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 110,
+    workZone: true,
+    workZonePos: 35,
+    workZoneLen: 300,
+  });
+  const repeat = new Simulation();
+  for (let i = 0; i < Math.round(60 / H); i++) repeat.step(H);
+  let refused = 0;
+  for (let k = 0; k < 10; k++) {
+    if (!repeat.spawnEmergencyVehicle()) refused++;
+    for (let i = 0; i < Math.round(25 / H); i++) repeat.step(H);
+  }
+  check('repeated dispatch is never refused', refused === 0, `(${refused} refused)`);
+  const live8 = repeat.cars.filter((c) => isEmergencyVehicle(c.kind)).length;
+  check('responders do not accumulate against the cap', live8 < 8, `(${live8} on the road)`);
+  assertSane(repeat, 'work zone with repeated dispatch');
+
+  // Backstop: the distance budget stops counting down at v = 0, so the run
+  // also carries a deadline. Pin a responder still and it must still retire.
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0,
+    onRampA: 0,
+    onRampB: 0,
+  });
+  const pinned = new Simulation();
+  const stuck = pinned.spawnEmergencyVehicle('ambulance');
+  const budget = stuck.emergencyDist;
+  const deadline = stuck.emergencyUntil;
+  check(
+    'a siren run carries a finite deadline',
+    Number.isFinite(deadline) && deadline > 60 && deadline < 4 * 3600,
+    `(${deadline?.toFixed(0)} s)`
+  );
+  for (let i = 0; i < Math.round((deadline + 5) / H) && pinned.cars.includes(stuck); i++) {
+    stuck.v = 0;
+    stuck.a = 0;
+    pinned.step(H);
+  }
+  check('a pinned responder still retires', !pinned.cars.includes(stuck));
+  check(
+    'it retired on the deadline, not the distance budget',
+    stuck.emergencyDist === budget && pinned.time >= deadline,
+    `(${stuck.emergencyDist.toFixed(0)} m of ${budget.toFixed(0)} m left)`
+  );
+}
+
+{
   console.log('\nscenario presets: every preset boots into sane, moving traffic');
   for (const [key, preset] of Object.entries(PRESETS)) {
     Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)));

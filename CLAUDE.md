@@ -341,8 +341,9 @@ test/smoke.js          runs the sim headless under several parameter regimes
   curated Ambulance run preset passes `ambulance`, while the Events button deliberately
   omits it. `spawnAmbulance()` remains as a compatibility wrapper. All three
   spawn into the widest inner-lane gap, use opportunity-gated MOBIL with no
-  politeness, require a meaningful projected pace gain, hold the chosen lane
-  for 4 s to prevent flip-flopping, and despawn after ~1.6 laps. Their exact
+  politeness, require a meaningful projected pace gain (except on a MANDATORY
+  move, which is an escape, not a pass), hold the chosen lane for 4 s to
+  prevent flip-flopping, and despawn after ~1.6 laps. Their exact
   physical profiles (`length`, `accelK`, `headwayK`, `brakeK`, desired-speed
   multiplier) are: ambulance `(5.4 m, 1.5, 0.55, 1.1, 1.55×)`, police
   `(5.0 m, 2.0, 0.5, 1.25, 1.7×)`, and fire truck
@@ -355,8 +356,14 @@ test/smoke.js          runs the sim headless under several parameter regimes
   progressively assertive merge gates, and nobody merges into it; receiving
   lanes are deliberately NOT slowed — a cap that travels with the emergency
   vehicle would compress them into a clot that walls everyone in. The active
-  cache is `_emergencyVehicles`, and `emergencyDist` stores each vehicle's
-  remaining run. `ambBehind()` remains as a compatibility wrapper. The corridor
+  cache is `_emergencyVehicles`; `emergencyDist` stores each vehicle's
+  remaining run and `emergencyUntil` its deadline (the same run at a
+  pessimistic 4 m/s). BOTH retire it: a distance-only budget stops counting
+  down at v = 0, so a responder stuck against a blockage never despawned and
+  eight of them held the dispatch cap shut for the session. Dispatch also
+  skips the work zone's closed lane, which is the innermost one it would
+  otherwise pick; with ordinary traffic already gone, the widest gap there is
+  inside the cones. `ambBehind()` remains as a compatibility wrapper. The corridor
   is emergent and degrades honestly with density (near capacity there is nowhere
   to move over to). `isEmergencyVehicle()` gates the common behavior: none take
   exits or rubberneck, and all are excluded from `randomEligibleCar`.
