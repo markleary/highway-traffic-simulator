@@ -281,12 +281,19 @@ export class SceneRenderer {
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
       this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (this._pointers.size === 2 && this.chaseCar) {
-        // second finger down while chasing: a pinch, not an orbit or a pick
-        this._pinch = { base: this._pointerSpread(), zoom: this._chaseZoom };
-        this._chaseDrag = null;
-        this._press = null;
+      if (this._pointers.size > 1) {
+        // ANY second finger means a two-finger gesture, never a pick: the
+        // pinch dolly while chasing, or OrbitControls' own pinch/pan when
+        // free. Cancelling has to happen for both, not just the chase case
+        // (Codex review): a two-finger gesture held over traffic on the free
+        // camera used to leave the FIRST finger's long-press timer armed,
+        // which then fired and jumped into a chase on its stale ray.
         this._cancelLongPress();
+        this._press = null;
+        if (this._pointers.size === 2 && this.chaseCar) {
+          this._pinch = { base: this._pointerSpread(), zoom: this._chaseZoom };
+          this._chaseDrag = null;
+        }
         return;
       }
       // Only the primary button owns click-to-crash. Secondary clicks arrive
