@@ -195,7 +195,18 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        Canvas pointer routing arms crash picks only for the
                        primary button; a button-2 `contextmenu` pick delegates
                        exact-vehicle chase to main.js and handles the gesture
-                       when a vehicle was actually selected.
+                       when a vehicle was actually selected. Touch reaches the
+                       same exact-vehicle chase through a 500 ms LONG PRESS
+                       (there is no right-click on a finger), fired on a timer
+                       so the camera cuts over while the finger is still down;
+                       moving cancels it (that is an orbit) and it clears the
+                       pending press so the release can't also crash the car.
+                       Mouse presses never arm it. Chase view disables
+                       OrbitControls, so wheel and pinch would be dead there:
+                       `_chaseZoom` (0.45-4x, reset on a fresh chase) dollies
+                       the follow radius in `chaseGoals`, which leaves the
+                       framing elevation alone. A second finger down while
+                       chasing starts a pinch and suppresses the orbit drag.
                        applyWeather lerps the whole palette — sky uniforms, fog,
                        lights, clouds, hills — from sim.rainNow. Vehicles are
                        per-kind InstancedMeshes: lofted low-poly shells (loft()
@@ -386,7 +397,11 @@ test/smoke.js          runs the sim headless under several parameter regimes
   demand cars roll up and barely stop — the meter binds only when demand
   outruns the rate. Cars past the line when metering toggles on are left
   alone (the wall needs the line ahead of them). Spawn backpressure +
-  the on-ramp labels (achieved vs requested) surface the queue cost.
+  the on-ramp labels surface the queue cost: achieved vs requested, plus the
+  live queue depth from `sim.rampQueues()` once cars are actually waiting
+  ("5.0 of 30 /min · 14 queued"). The rate alone can't distinguish a starved
+  ramp from one backed up fifteen deep, which is exactly the trade the
+  meters demo asks you to weigh.
   Signals (stop bar + two-lamp post, `buildMeter`/`updateMeters`) show per
   ramp; green flashes ~1 s per release. Calibrated on the rush regime at
   `meterRate` 8 (issue #49 — the earlier 12 sat so near the flood's own merge

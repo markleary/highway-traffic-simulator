@@ -543,6 +543,17 @@ export class Simulation {
     }
   }
 
+  // Cars currently waiting on each ramp. On-ramp queues are the COST side of
+  // ramp metering, and of any inflow the merge can't absorb: the achieved
+  // rate alone can't tell "demand is low" apart from "demand is high and the
+  // queue is swallowing it", which is exactly the trade the meters demo asks
+  // you to weigh. Off-ramps are included for symmetry; they rarely queue.
+  rampQueues() {
+    const queues = {};
+    for (const ramp of RAMPS) queues[ramp.id] = this.rampState.get(ramp.id).cars.length;
+    return queues;
+  }
+
   // Measured throughput of each ramp (cars/min over the last minute).
   rampFlows() {
     const window = Math.min(this.time, 60);

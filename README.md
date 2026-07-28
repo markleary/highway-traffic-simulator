@@ -48,6 +48,10 @@ branch → `main` / root**. That's it — there is nothing to build.
   enters the chase camera (again to switch cars), **V** cycles perspective →
   overhead → chase, **F** toggles an FPS readout, **Esc** exits the chase
   onto an overhead close-up of the spot where you were driving.
+- To follow one **specific** vehicle: **right-click** it on a mouse, or
+  **long-press** it on a touch screen. Inside the chase camera, **scroll** or
+  **pinch** to pull the camera back for the surrounding traffic, or in tight
+  on the car itself.
 - Every panel control has an explainer tooltip: hover it with a mouse, or
   **long-press its label** on a touch screen.
 - **🔊 Sound** (top of the panel) turns on subtle ambient audio: a freeway

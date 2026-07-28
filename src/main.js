@@ -201,7 +201,8 @@ const el = {
 const hintEl = document.getElementById('hint');
 const hintFree = hintEl.innerHTML;
 // keep this short: it shares the bottom bar with the centered speedometer
-const hintChase = 'drag orbit &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
+const hintChase =
+  'drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
 let hintShowsChase = false;
 
 // Touch chase toggle (visible only at the phone breakpoint): one tap in,
@@ -261,7 +262,7 @@ setInterval(() => {
   if (params.showFps) el.fps.textContent = (fpsFrames / ((nowMs - fpsLast) / 1000)).toFixed(0);
   fpsFrames = 0;
   fpsLast = nowMs;
-  renderer.updateRampLabels(sim.rampFlows());
+  renderer.updateRampLabels(sim.rampFlows(), sim.rampQueues());
   charts.update(sim.history, sim.incidentStarts); // applies showCharts to the DOM
   // toggling the chart stack moves the free region's left edge; re-frame a
   // parked auto view around it (measured after the update call above)
