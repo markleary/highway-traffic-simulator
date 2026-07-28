@@ -16,7 +16,13 @@ const MQ =
     : {
         small: matchMedia('(max-width: 500px), (max-height: 500px)'), // phones, either orientation
         wide: matchMedia('(min-width: 900px)'), // room for chart stack + panel + visible road
-        tall: matchMedia('(min-height: 800px)'), // room for the full stack incl. fundamental
+        // Height gates. The stack is bottom-anchored (bottom: 76px) and the
+        // HUD is top-anchored, so each section added to the stack needs that
+        // much more window before the two collide. Measured stack heights are
+        // 245 / 400 / 555 px, and the HUD's bottom edge sits at 162 px, so the
+        // viewport needs 495 / 650 / 805 px respectively (+12 px of gap).
+        medium: matchMedia('(min-height: 660px)'), // room for the space-time diagram
+        tall: matchMedia('(min-height: 820px)'), // room for the fundamental too
       };
 export const smallScreen = () => !!MQ && MQ.small.matches;
 export function onSmallScreenChange(fn) {
@@ -60,13 +66,15 @@ export const TOUCH_UI =
   TESLA_BROWSER || (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
 
 // Chart-visibility defaults for the current viewport: phones and narrow
-// windows would bury the map under the 320 px stack, and the fundamental
-// diagram additionally needs a tall window (the full panel stands ~630 px
-// above the window bottom and the HUD owns the top ~170). Node pretends to
+// windows would bury the map under the 320 px stack, and each further
+// section of the stack needs a taller window than the last (see MQ above;
+// the diagram had NO height gate at all, so on a short wide window the stack
+// grew straight up through the HUD and covered the stats). Node pretends to
 // be a big desktop — it never renders.
 const chartDefaults = () => ({
   showCharts: !smallScreen() && (!MQ || MQ.wide.matches),
-  showDiagram: !smallScreen(), // space-time heatmap section of the charts panel
+  // space-time heatmap section of the charts panel
+  showDiagram: !smallScreen() && (!MQ || MQ.medium.matches),
   showFundamental: !smallScreen() && (!MQ || MQ.tall.matches),
 });
 

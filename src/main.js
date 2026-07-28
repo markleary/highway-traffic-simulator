@@ -130,7 +130,7 @@ function frame(now) {
   }
   // CSS keys the speedometer/legend/hint bottom-strip layout off this class
   document.body.classList.toggle('chasing', !!renderer.chaseCar);
-  speedo.update(renderer.chaseCar);
+  speedo.update(renderer.chaseCar, dt);
   const renderAlpha = params.paused ? 1 : Math.max(0, Math.min(1, acc / H));
   renderer.setRain(sim.rainNow || 0);
   renderer.updateMeters(sim);
@@ -155,15 +155,26 @@ const views = [
 ];
 let viewIndex = 0; // startup camera is the perspective view
 
+// Only a text field legitimately owns Escape (it reverts the edit in progress).
+// lil-gui renders every editable widget as input[type=text], including the
+// number entries.
+const typingIn = (el) =>
+  el instanceof HTMLInputElement ? el.type === 'text' : el instanceof HTMLTextAreaElement;
+
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && e.target === document.body) {
+  // Escape is the one shortcut that must survive focus sitting on a control:
+  // esc-to-exit is documented, and the touch chase button holds focus after a
+  // tap. Gating it on target === body broke that (Codex review); gating it on
+  // "not typing" keeps the original fix, which was that dismissing a lil-gui
+  // number field should not also drop you out of a chase.
+  if (e.code === 'Escape' && !typingIn(e.target)) renderer.exitChase();
+  // Everything else: never while focus sits in the panel, and never chorded
+  // with a browser shortcut (cmd/ctrl+F is find, not our FPS toggle).
+  if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.code === 'Space') {
     e.preventDefault();
     params.paused = !params.paused;
   }
-  if (e.code === 'Escape') renderer.exitChase();
-  // letter shortcuts: never while typing in the panel or chorded with a
-  // browser shortcut (cmd/ctrl+F is find, not our FPS toggle)
-  if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.code === 'KeyF') params.showFps = !params.showFps;
   if (e.code === 'KeyC') {
     viewIndex = 2; // a following 'v' continues the cycle from chase
@@ -197,9 +208,15 @@ let hintShowsChase = false;
 // one tap out — there's no C key on a phone. Label follows the state on
 // the HUD tick below.
 const chaseBtn = document.getElementById('chase-btn');
-chaseBtn.addEventListener('click', () => {
+chaseBtn.addEventListener('click', (e) => {
   if (renderer.chaseCar) renderer.exitChase();
   else renderer.startChase(sim.randomEligibleCar());
+  // Hand focus back to the page after a POINTER tap, exactly as panel.js does
+  // for lil-gui: the shortcuts below gate on target === body, so a button
+  // still holding focus swallows space/c/v/f, and space would re-fire the
+  // button instead of pausing. Keyboard activation (detail 0) keeps focus so
+  // the tab position survives.
+  if (e.detail !== 0) chaseBtn.blur();
 });
 
 // The bottom-left legend follows the color mode: the speed gradient only

@@ -57,7 +57,41 @@
     .map-label.on { border-left: 3px solid #7ec8a0; }
     .map-label.off { border-left: 3px solid #d9b64a; }
     .map-label.hover { border-left: 3px solid #3987e5; }
-    .charts { left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px; }
+    /* The stack is bottom-anchored while the HUD is top-anchored, so a short
+       window used to let it rise straight through the HUD and hide the stats.
+       params.js keeps the DEFAULT stack inside the room available (per-section
+       height gates); this is the hard stop for a stack the user re-enabled
+       anyway, or an FPS row that grew the HUD: cap it and scroll rather than
+       cover. The reserve stacks on the SAME inset that moves the thing it is
+       clearing: the HUD's own top is max(12px, safe-area-inset-top), so a
+       notch pushes its bottom edge down and a fixed reserve would silently
+       eat the gap and start overlapping again on a notched tablet (Codex
+       review). The rest is the HUD's 171px height (FPS row on) + a 12px gap
+       + the 76px bottom inset + 20px because max-height sizes the CONTENT
+       box: the panel renders 18px of vertical padding and 2px of border on
+       top of it. At inset 0 that is the plain 100dvh - 291px. Do NOT reach
+       for border-box to
+       skip that arithmetic: width: 320px would then include the side padding
+       and leave a 298px content box for the 320px canvases, which spill past
+       the panel edge, raise a horizontal scrollbar, and make viewFit()
+       under-reserve the left column it measures (Codex review).
+       The stack must also be pointer-targetable, overriding .panel's
+       pointer-events: none. Without it a capped stack cannot be scrolled at
+       all on touch: the canvases opt back in but set touch-action: none to
+       scrub, and every other pixel (headers, padding) fell THROUGH to the
+       road behind, so elementFromPoint over a chart header returned the WebGL
+       canvas and the lower charts were unreachable (Codex review). pan-y
+       keeps a vertical drag on that chrome as a scroll while the canvases go
+       on scrubbing. Falling through was never right anyway: a tap on a chart
+       header was reaching click-to-crash on road the panel is covering. The
+       cost is that drags over the panel's chrome no longer orbit the camera,
+       which the canvases already blocked across most of the panel. */
+    .charts {
+      left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px;
+      max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - 279px);
+      overflow-y: auto; overscroll-behavior: contain;
+      pointer-events: auto; touch-action: pan-y;
+    }
     /* touch-action none: a finger dragged across a chart scrubs the hover
        readout instead of the browser claiming the gesture as a (nonexistent)
        scroll and firing pointercancel */
