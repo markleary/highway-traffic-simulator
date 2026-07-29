@@ -151,9 +151,25 @@ const RENDER_DIMS = {
 
 export class SceneRenderer {
   constructor(container) {
+    // Measure the CONTAINER, never window.innerWidth/innerHeight. An
+    // installed iOS app hands the page a letterboxed initial containing
+    // block — window.innerHeight came up 62 px short of the screen on a
+    // 440×956 iPhone — while #stage, sized in viewport units, covers it
+    // (see index.html). Sizing off the window painted a canvas short of
+    // its own box and left a band of page background along the bottom.
+    // The window fallbacks are for a detached container (never in the app).
+    this.container = container;
+    this.viewSize = () => ({
+      w: Math.max(1, container.clientWidth || window.innerWidth),
+      h: Math.max(1, container.clientHeight || window.innerHeight),
+    });
+    const { w, h } = this.viewSize();
+
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // updateStyle false: CSS sizes the canvas to its box (index.html), so
+    // the two can't disagree; three.js owns only the drawing buffer.
+    this.renderer.setSize(w, h, false);
     // A gentle filmic shoulder keeps the low sun and pale vehicle roofs from
     // clipping while preserving the deliberately saturated toy-diorama palette.
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -163,7 +179,7 @@ export class SceneRenderer {
 
     // DOM overlay for map labels: crisp, constant screen size at any zoom
     this.labelRenderer = new CSS2DRenderer();
-    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    this.labelRenderer.setSize(w, h);
     this.labelRenderer.domElement.style.position = 'absolute';
     this.labelRenderer.domElement.style.top = '0';
     this.labelRenderer.domElement.style.pointerEvents = 'none';
@@ -175,12 +191,7 @@ export class SceneRenderer {
     this.scene.background = SKY.horizonDry.clone();
     this.scene.fog = new THREE.Fog(SKY.horizonDry.clone(), 800, 2000);
 
-    this.camera = new THREE.PerspectiveCamera(
-      50,
-      window.innerWidth / window.innerHeight,
-      1,
-      3000
-    );
+    this.camera = new THREE.PerspectiveCamera(50, w / h, 1, 3000);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -464,6 +475,15 @@ export class SceneRenderer {
     // visualViewport fires where `resize` doesn't: iOS collapsing the URL
     // bar in a browser tab, and the on-screen keyboard on any platform
     if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewport);
+    // ...and a ResizeObserver on the container catches what no window event
+    // reports at all: the box changing under us. That is the installed-app
+    // case — iOS settles its letterboxed containing block after first
+    // paint, so #stage's viewport-unit height can land AFTER boot with no
+    // resize event to announce it.
+    if (typeof ResizeObserver !== 'undefined') {
+      this._boxObserver = new ResizeObserver(onViewport);
+      this._boxObserver.observe(container);
+    }
   }
 
   // --- chase-view dolly + gesture bookkeeping ---------------------------
@@ -1927,7 +1947,9 @@ export class SceneRenderer {
     const hz = b.halfZ + m;
     const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const tH = t * this.camera.aspect;
-    const w = window.innerWidth;
+    // the canvas's own box, not the window's — same reason as the sizing
+    // above, and the panel rects below share its origin either way
+    const { w, h: viewH } = this.viewSize();
     const charts = document.querySelector('.panel.charts');
     const gui = document.querySelector('.lil-gui.root');
     const left = charts && charts.style.display !== 'none' ? charts.getBoundingClientRect().right : 0;
@@ -1935,7 +1957,7 @@ export class SceneRenderer {
     // full-height column to it (on a phone that would squeeze the road into
     // half the screen); reserve its width only while it hangs low
     const guiRect = gui && gui.getBoundingClientRect();
-    const right = guiRect && guiRect.bottom > window.innerHeight * 0.4 ? guiRect.left : w;
+    const right = guiRect && guiRect.bottom > viewH * 0.4 ? guiRect.left : w;
     const frac = Math.max(0.3, (right - left) / w); // usable width fraction
     const centerFrac = (left + right - w) / w; // free-region center, -1..1 of half-width
     const h = Math.max(hz / t, hx / (tH * frac)) * 1.04;
@@ -1989,10 +2011,11 @@ export class SceneRenderer {
   }
 
   onResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    const { w, h } = this.viewSize();
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(w, h, false); // CSS owns the display size
+    this.labelRenderer.setSize(w, h);
   }
 }
 

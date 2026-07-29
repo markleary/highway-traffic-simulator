@@ -27,7 +27,9 @@ export class Speedometer {
     this.cap = document.createElement('div');
     this.cap.className = 'cap';
     this.el.append(this.canvas, this.cap);
-    document.body.appendChild(this.el);
+    // #stage, not body: bottom-anchored, and only #stage reaches the real
+    // bottom of an installed app's screen (see index.html)
+    (document.getElementById('stage') || document.body).appendChild(this.el);
     this.shown = 0; // smoothed displayed speed
   }
 
