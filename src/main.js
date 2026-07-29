@@ -32,12 +32,11 @@ renderer.onRoadClick = (ray) => {
   const car = sim.carNearRay(ray);
   if (car) sim.triggerAccident(car);
 };
-renderer.onRoadRightClick = (ray) => {
-  const car = sim.carNearRay(ray, 9, true);
-  if (!car) return false;
-  renderer.startChase(car);
-  return true;
-};
+// Resolve a ray to a visible vehicle; the renderer drives the chase itself
+// from both its pick gestures. It hands back the CAR rather than doing the
+// chase here so a touch long-press can bind its target at touch-down, before
+// the hold it still has to wait out (see renderer's pointerdown).
+renderer.onVehiclePick = (ray) => sim.carNearRay(ray, 9, true);
 
 // ?debug diagnostic panel (grew out of the Tesla dropdown hunt — the car has
 // no devtools, so a screenshot of this is how ground truth gets off the
@@ -201,7 +200,8 @@ const el = {
 const hintEl = document.getElementById('hint');
 const hintFree = hintEl.innerHTML;
 // keep this short: it shares the bottom bar with the centered speedometer
-const hintChase = 'drag orbit &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
+const hintChase =
+  'drag orbit &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; esc exit &nbsp;·&nbsp; c switch';
 let hintShowsChase = false;
 
 // Touch chase toggle (visible only at the phone breakpoint): one tap in,
@@ -261,7 +261,7 @@ setInterval(() => {
   if (params.showFps) el.fps.textContent = (fpsFrames / ((nowMs - fpsLast) / 1000)).toFixed(0);
   fpsFrames = 0;
   fpsLast = nowMs;
-  renderer.updateRampLabels(sim.rampFlows());
+  renderer.updateRampLabels(sim.rampFlows(), sim.rampQueues());
   charts.update(sim.history, sim.incidentStarts); // applies showCharts to the DOM
   // toggling the chart stack moves the free region's left edge; re-frame a
   // parked auto view around it (measured after the update call above)

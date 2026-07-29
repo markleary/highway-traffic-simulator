@@ -1133,6 +1133,33 @@ run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
   const queued = [...sim.rampState.values()].reduce((a, st) => a + st.cars.length, 0);
   check('demand above the rate queues on the ramps', queued >= 6, `(${queued} waiting)`);
 
+  // rampQueues() is what the map labels read: the queue is the COST half of
+  // the metering trade, and the achieved rate alone can't show it (a ramp
+  // reading "5 of 30 /min" looks the same starved as backed up fifteen deep).
+  const rq = sim.rampQueues();
+  const occupancy = (r) => sim.rampState.get(r.id).cars.length;
+  check(
+    'rampQueues() reports every ramp',
+    RAMPS.every((r) => Number.isInteger(rq[r.id])) && Object.keys(rq).length === RAMPS.length
+  );
+  // WAITING, not merely present. Counting occupancy made a free-flowing ramp
+  // read "1 queued" while a freshly spawned car simply drove down it toward an
+  // open gap (Codex review), which drained the label of meaning.
+  check(
+    'rampQueues() counts only cars that are actually waiting',
+    RAMPS.every(
+      (r) =>
+        rq[r.id] <= occupancy(r) &&
+        rq[r.id] === sim.rampState.get(r.id).cars.filter((c) => c.v < 2).length
+    ),
+    `(${JSON.stringify(rq)})`
+  );
+  check(
+    'the queue sits on the ON-ramps, which are the metered ones',
+    RAMPS.filter((r) => r.type === 'on').reduce((a, r) => a + rq[r.id], 0) >= 6,
+    `(${JSON.stringify(rq)})`
+  );
+
   // The classic counterintuitive result, as a regression: metering the
   // rush-hour flood RAISES settled mainline speed without costing flow past
   // the start line. Measured as a MEAN across a few fixed seeds rather than one
@@ -1179,6 +1206,42 @@ run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
     fMet > fDry - 0.5,
     `(${fMet.toFixed(1)} vs ${fDry.toFixed(1)} /min)`
   );
+}
+
+{
+  // The map label says "queued", so it has to mean WAITING. Counting ramp
+  // occupancy instead made a free-flowing ramp read "1 queued" whenever a car
+  // was simply driving down it toward an open gap, which is most of the time
+  // at low demand and drains the label of meaning (Codex review). The hard
+  // invariant: a ramp on which every car is moving reports no queue at all.
+  console.log('\nramp queue depth counts waiting cars, not ramp occupancy');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 40, onRampA: 6, onRampB: 6, offRampA: 0, offRampB: 0, truckShare: 0,
+  });
+  const sim = new Simulation();
+  const onRamps = RAMPS.filter((r) => r.type === 'on');
+  let transitOnly = 0; // samples where every car on the ramp was moving
+  let falseQueue = 0;
+  let realQueue = 0;
+  for (let i = 0; i < Math.round(300 / H); i++) {
+    sim.step(H);
+    if (i % 30) continue; // sample twice a second
+    const q = sim.rampQueues();
+    for (const r of onRamps) {
+      const cars = sim.rampState.get(r.id).cars;
+      if (!cars.length) continue;
+      if (cars.every((c) => c.v >= 2)) {
+        transitOnly++;
+        if (q[r.id] !== 0) falseQueue++;
+      } else if (q[r.id] > 0) {
+        realQueue++;
+      }
+      if (q[r.id] > cars.length) falseQueue++; // can never exceed occupancy
+    }
+  }
+  check('the transit-only case actually occurred', transitOnly > 20, `(${transitOnly} samples)`);
+  check('a ramp of moving cars reports no queue', falseQueue === 0, `(${falseQueue} false)`);
+  check('a genuinely stopped car still counts', realQueue > 0, `(${realQueue} samples)`);
 }
 
 // --- road shapes: exact geometry on every shape, then a full traffic run.

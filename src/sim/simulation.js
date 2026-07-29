@@ -13,6 +13,14 @@ export const BIN_M = 10;
 // How far ahead of a work zone's cones the closed lane starts merging out.
 const WZ_WARN = 250;
 
+// Speed below which a ramp car counts as QUEUED rather than just driving down
+// the ramp (see rampQueues). A car held at a meter or stuck waiting for a gap
+// sits at or near zero; one simply traversing the ramp runs at its 12 m/s
+// spawn speed or better. Measured across quiet, moderate, flooded and metered
+// regimes the split is bimodal with nothing at all between ~2 and ~12 m/s, so
+// the exact cut is not delicate.
+const RAMP_QUEUE_SPEED = 2; // m/s
+
 // Total concurrent emergency-vehicle cap. Each renderer model has this many
 // instances available, so a shared cap guarantees physics never drives an
 // invisible vehicle while preserving the old eight-ambulance ceiling.
@@ -541,6 +549,26 @@ export class Simulation {
         car.signal = 0;
       }
     }
+  }
+
+  // Cars WAITING on each ramp. On-ramp queues are the COST side of ramp
+  // metering, and of any inflow the merge can't absorb: the achieved rate
+  // alone can't tell "demand is low" apart from "demand is high and the queue
+  // is swallowing it", which is exactly the trade the meters demo asks you to
+  // weigh. Off-ramps are included for symmetry; they rarely queue.
+  //
+  // Waiting, not merely present: total ramp occupancy counts a car that just
+  // spawned and is driving down an open ramp toward a gap, so a free-flowing
+  // ramp would flicker "1 queued" with no backpressure at all and the label
+  // would stop meaning anything (Codex review).
+  rampQueues() {
+    const queues = {};
+    for (const ramp of RAMPS) {
+      queues[ramp.id] = this.rampState
+        .get(ramp.id)
+        .cars.filter((car) => car.v < RAMP_QUEUE_SPEED).length;
+    }
+    return queues;
   }
 
   // Measured throughput of each ramp (cars/min over the last minute).

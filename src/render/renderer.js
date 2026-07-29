@@ -27,6 +27,14 @@ const TYPE_COLORS = {
 const MAX_LIGHTS = (MAX_CARS + MAX_TRUCKS + MAX_EMERGENCY) * 2;
 const RAIN_BOX = 700; // rain sheet footprint (m), follows the camera
 const RAIN_HEIGHT = 260;
+// Chase-view dolly range, as a multiplier on the per-kind follow distance:
+// close enough to sit on the bumper, far enough to watch the surrounding
+// platoon without leaving the car.
+const CHASE_ZOOM_MIN = 0.45;
+const CHASE_ZOOM_MAX = 4;
+// Hold this long without moving and a touch press becomes "chase this one".
+// Matches the panel's long-press tooltips, which train the same gesture.
+const LONG_PRESS_MS = 500;
 
 // Browsers report a physical secondary mouse button as button 2. macOS also
 // exposes Control-click as a context gesture while retaining button 0, so both
@@ -255,16 +263,40 @@ export class SceneRenderer {
     this._chaseYaw = 0;
     this._chasePitch = 0;
     this._chaseDrag = null; // last pointer position while a chase orbit is held
+    // Chase-view zoom, as a multiplier on the follow distance. OrbitControls
+    // is disabled while chasing, so the wheel and pinch would otherwise do
+    // nothing at all: this is the only dolly control chase view has.
+    this._chaseZoom = 1;
+    this._pointers = new Map(); // live pointerId -> {x, y}, for the pinch gesture
+    this._pinch = null;
+    this._longPress = 0;
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
 
     // Primary-click detection (as opposed to an orbit drag): small movement,
-    // quick release. main.js assigns onRoadClick to crash a picked car and
-    // onRoadRightClick to chase a specifically picked car.
+    // quick release. main.js assigns onRoadClick to crash a picked car, and
+    // onVehiclePick to resolve a ray to a visible vehicle (this class then
+    // drives the chase itself, from either pick gesture).
     this.onRoadClick = null;
-    this.onRoadRightClick = null;
+    this.onVehiclePick = null;
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pointers.size > 1) {
+        // ANY second finger means a two-finger gesture, never a pick: the
+        // pinch dolly while chasing, or OrbitControls' own pinch/pan when
+        // free. Cancelling has to happen for both, not just the chase case
+        // (Codex review): a two-finger gesture held over traffic on the free
+        // camera used to leave the FIRST finger's long-press timer armed,
+        // which then fired and jumped into a chase on its stale ray.
+        this._cancelLongPress();
+        this._press = null;
+        if (this._pointers.size === 2 && this.chaseCar) {
+          this._pinch = { base: this._pointerSpread(), zoom: this._chaseZoom };
+          this._chaseDrag = null;
+        }
+        return;
+      }
       // Only the primary button owns click-to-crash. Secondary clicks arrive
       // through `contextmenu` below; without this gate their pointerup used to
       // crash the car before the chase action could run.
@@ -281,9 +313,38 @@ export class SceneRenderer {
         return;
       }
       this._press = { x: e.clientX, y: e.clientY, t: performance.now() };
+      // A finger has no right-click, so a long press is how touch picks a
+      // specific vehicle to chase (desktop uses button 2, see contextmenu
+      // below). It fires on a timer rather than on release, so the camera
+      // cuts over while the finger is still down and the gesture confirms
+      // itself; clearing _press stops the release also crashing that car.
+      // Before this, a press over 500 ms did nothing at all: the click gate
+      // rejected it and the synthesized contextmenu was ignored.
+      //
+      // Bind the vehicle NOW rather than re-picking when the timer fires:
+      // traffic keeps moving through the hold, so the same screen point
+      // resolves to whatever has since driven into it. Measured on the
+      // default overview, a re-pick returned the touched car only 35% of the
+      // time and a DIFFERENT car 57% (just 16% right for free-flowing
+      // traffic, which covers ~15 m in 500 ms against a 9 m pick radius).
+      // The finger said "that one" (Codex review). No vehicle under it means
+      // no timer at all, so a press on empty road stays inert.
+      if (e.pointerType !== 'mouse' && this.onVehiclePick) {
+        const target = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
+        if (target) {
+          this._longPress = setTimeout(() => {
+            this._longPress = 0;
+            if (!this._press) return; // released, dragged, or a second finger
+            this._press = null;
+            this.startChase(target);
+          }, LONG_PRESS_MS);
+        }
+      }
     });
     canvas.addEventListener('pointerup', (e) => {
+      this._releasePointer(e);
       this._chaseDrag = null;
+      this._cancelLongPress();
       const press = this._press;
       this._press = null;
       if (!press || !this.onRoadClick) return;
@@ -292,14 +353,39 @@ export class SceneRenderer {
       if (dx * dx + dy * dy > 36 || performance.now() - press.t > 500) return;
       this.onRoadClick(this.pickRay(e.clientX, e.clientY));
     });
+    canvas.addEventListener('pointercancel', (e) => {
+      this._releasePointer(e);
+      this._press = null;
+      this._chaseDrag = null;
+      this._cancelLongPress();
+    });
+    // Chase view disables OrbitControls, so the wheel would be dead there.
+    // Dolly the follow distance instead; the free camera keeps its own zoom.
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.chaseCar) return;
+        e.preventDefault();
+        this._zoomChase(Math.exp(e.deltaY * 0.0012));
+      },
+      { passive: false }
+    );
     canvas.addEventListener('contextmenu', (e) => {
-      // A touch long-press may synthesize contextmenu with the primary button;
-      // only button 2 or macOS Control-click count as desktop secondary clicks.
-      if (!isSecondaryClick(e) || !this.onRoadRightClick) return;
-      const handled = this.onRoadRightClick(this.pickRay(e.clientX, e.clientY));
-      // Claim the context gesture when a vehicle was picked. OrbitControls
-      // retains its existing context-menu behavior for empty-road pan input.
-      if (handled) e.preventDefault();
+      // A native context menu over the 3D canvas is never useful, and it must
+      // be suppressed HERE rather than left to OrbitControls, which only does
+      // it while enabled. startChase disables controls, so its suppressor
+      // returns early exactly when a chase is running: a touch long-press
+      // that just started a chase, or a right-click during one, could pop the
+      // browser menu on top of the view (Codex review). Suppressing first
+      // makes that independent of control state.
+      e.preventDefault();
+      // Only button 2 or macOS Control-click are desktop secondary clicks; a
+      // touch long-press synthesizes this event with the primary button and
+      // is handled by its own timer in pointerdown above. No hold here, so
+      // picking at event time is exactly right.
+      if (!isSecondaryClick(e) || !this.onVehiclePick) return;
+      const car = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
+      if (car) this.startChase(car);
     });
 
     // Hover position for the car readout: buttons pressed means an orbit
@@ -308,6 +394,21 @@ export class SceneRenderer {
     this._pointer = null;
     canvas.addEventListener('pointermove', (e) => {
       this._pointer = e.buttons === 0 ? { x: e.clientX, y: e.clientY } : null;
+      if (this._pointers.has(e.pointerId)) {
+        this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (this._pinch && this._pointers.size >= 2) {
+        // pinch out (fingers apart) pulls the camera in, like every map
+        const spread = this._pointerSpread();
+        if (spread > 1) this._setChaseZoom((this._pinch.base / spread) * this._pinch.zoom);
+        return; // a pinch is never also an orbit drag
+      }
+      // A long press has to hold still to count; a drag is an orbit, not a pick
+      if (this._longPress && this._press) {
+        const dx = e.clientX - this._press.x;
+        const dy = e.clientY - this._press.y;
+        if (dx * dx + dy * dy > 64) this._cancelLongPress();
+      }
       if (this._chaseDrag && this.chaseCar && e.buttons & 1) {
         // held-drag orbit: horizontal swings around the car, vertical tilts
         this._chaseYaw += (e.clientX - this._chaseDrag.x) * 0.008;
@@ -321,9 +422,11 @@ export class SceneRenderer {
         this._chaseDrag = { x: e.clientX, y: e.clientY };
       }
     });
-    canvas.addEventListener('pointerleave', () => {
+    canvas.addEventListener('pointerleave', (e) => {
       this._pointer = null;
       this._chaseDrag = null;
+      this._releasePointer(e);
+      this._cancelLongPress();
     });
 
     // nameplate above the hovered car (see setHoverCar)
@@ -339,6 +442,31 @@ export class SceneRenderer {
     this.scene.add(this.hoverTip);
 
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  // --- chase-view dolly + gesture bookkeeping ---------------------------
+  // Distance between the first two live pointers, for the pinch gesture.
+  _pointerSpread() {
+    const [a, b] = [...this._pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  _setChaseZoom(z) {
+    this._chaseZoom = THREE.MathUtils.clamp(z, CHASE_ZOOM_MIN, CHASE_ZOOM_MAX);
+  }
+
+  _zoomChase(factor) {
+    this._setChaseZoom(this._chaseZoom * factor);
+  }
+
+  _releasePointer(e) {
+    this._pointers.delete(e.pointerId);
+    if (this._pointers.size < 2) this._pinch = null;
+  }
+
+  _cancelLongPress() {
+    if (this._longPress) clearTimeout(this._longPress);
+    this._longPress = 0;
   }
 
   // World-space pointer ray from a screen position, for elevation-aware car
@@ -1616,6 +1744,7 @@ export class SceneRenderer {
     if (fresh) {
       this._chaseYaw = 0;
       this._chasePitch = 0;
+      this._chaseZoom = 1; // a new chase starts at the standard framing
       this._chaseDrag = null;
       // snap straight to the follow position instead of flying across the map
       this.chaseGoals(this._chasePos, this._chaseAim);
@@ -1651,8 +1780,10 @@ export class SceneRenderer {
     const back = 14 + Math.max(0, this.chaseCar.len - 4.6);
     const up = (RENDER_DIMS[this.chaseCar.kind] ?? RENDER_DIMS.car).chaseUp;
     // spherical offset around the car: at yaw = pitch = 0 this lands exactly
-    // on the classic back/up follow position; a held drag swings it around
-    const dist = Math.hypot(back, up);
+    // on the classic back/up follow position; a held drag swings it around,
+    // and the wheel/pinch dolly scales the radius (which leaves the framing
+    // ELEVATION alone, since that comes from atan2(up, back) below)
+    const dist = Math.hypot(back, up) * this._chaseZoom;
     const el = THREE.MathUtils.clamp(Math.atan2(up, back) + this._chasePitch, 0.06, 1.35);
     const cos = Math.cos(this._chaseYaw);
     const sin = Math.sin(this._chaseYaw);
@@ -1726,15 +1857,22 @@ export class SceneRenderer {
 
   // Measured vs. requested flow, so it's visible when a ramp can't keep up
   // (queue backing up) or how much traffic an exit share amounts to.
-  updateRampLabels(flows) {
+  updateRampLabels(flows, queues) {
     for (const ramp of RAMPS) {
       const el = this.rampFlowEls[ramp.id];
       if (!el) continue;
       const measured = flows[ramp.id].toFixed(1);
+      if (ramp.type !== 'on') {
+        el.textContent = `${measured}/min (${params[ramp.rateKey]}%)`;
+        continue;
+      }
+      // The queue is the cost the achieved rate is hiding: 6-of-30 reads the
+      // same whether the ramp is starved or backed up twenty cars deep. Only
+      // shown once cars are actually waiting, so a free-flowing ramp label
+      // stays as short as it was.
+      const queued = queues?.[ramp.id] ?? 0;
       el.textContent =
-        ramp.type === 'on'
-          ? `${measured} of ${params[ramp.rateKey]} /min`
-          : `${measured}/min (${params[ramp.rateKey]}%)`;
+        `${measured} of ${params[ramp.rateKey]} /min` + (queued ? ` · ${queued} queued` : '');
     }
   }
 

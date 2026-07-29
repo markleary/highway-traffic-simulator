@@ -515,7 +515,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
     fView
       .add({ chase: () => renderer.startChase(sim.randomEligibleCar()) }, 'chase')
       .name('🎥 Chase a car'),
-    'Ride along behind a random car, with a live speedometer. On desktop, right-click any specific vehicle to chase it directly. Hold the left mouse button to swing the camera around the car — it eases back behind on release. Press again (or the C key) to switch cars; Esc or either view button returns to the free camera.'
+    'Ride along behind a random car, with a live speedometer. To chase one specific vehicle, right-click it (mouse) or long-press it (touch). Hold the left mouse button to swing the camera around the car (it eases back behind on release), and scroll or pinch to pull back for the surrounding traffic. Press again (or the C key) to switch cars; Esc or either view button returns to the free camera.'
   );
   tip(
     fView.add({ top: () => renderer.setTopView() }, 'top').name('Overhead view'),
