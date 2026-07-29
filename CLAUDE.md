@@ -56,12 +56,15 @@ Headless physics check (no browser needed): `npm install && npm test`
 - For installed-app (home-screen) changes: manifest paths stay RELATIVE
   (Pages serves from a `/repo/` subpath, so a leading `/` breaks every icon
   and the start URL), icons stay in sync with `tools/make-icons.py`, and any
-  new fixed panel carries the same safe-area treatment as its neighbors.
-  Treat `black-translucent` as a regression (see index.html's head comment:
-  it strands the status bar's height at the bottom of portrait) and treat
-  anything that makes a long press selectable as one too — `user-select:
-  none` on body is what keeps the iOS magnifier, the callout bubble and the
-  writing-tools chip off the chase gesture and the tooltip gesture.
+  new bottom-anchored panel goes INSIDE `#stage` with the same safe-area
+  treatment as its neighbors — a panel left on `document.body` anchors to
+  the letterboxed ICB and floats ~60 px high in an installed app, which no
+  desktop browser will ever show you. Sizing a canvas or a layout box from
+  `window.innerWidth/innerHeight` is the same bug: measure the container.
+  Treat anything that makes a long press selectable as a regression too —
+  `user-select: none` on body is what keeps the iOS magnifier, the callout
+  bubble and the writing-tools chip off the chase gesture and the tooltip
+  gesture.
 - Expect `npm test` to pass for PRs that touch `src/sim/`, `src/params.js`, or
   traffic-control behavior.
 
@@ -84,22 +87,32 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
                        respect notch safe areas (viewport-fit=cover).
-                       Installed-app (home-screen) mode needs NO layout
-                       special case, and that is load-bearing: iOS sizes a
-                       standalone web view to (screen − status bar) no matter
-                       what, so apple-mobile-web-app-status-bar-style only
-                       chooses WHERE it puts it. black-translucent moves it
-                       to y=0 — the page paints behind the clock — and
-                       strands that same height at the BOTTOM, outside the
-                       layout viewport, where fixed elements clip and
-                       nothing can paint: a measured 62 px band of page
-                       background on a 440×956 iPhone, viewport 894 px,
-                       panels included (landscape was fine, its inset is 0).
-                       `black` leaves the view below the bar so viewport and
-                       web view coincide. Ship `black`; the translucent bar
-                       trades 62 px of sky for 62 px of dead slate. A
-                       --top-guard floor (for iOS screens that overlay the
-                       bar without reporting an inset) went out with it.
+                       #stage is the app's own viewport box and EVERY panel
+                       positions against it (position: absolute), because an
+                       installed iOS app letterboxes the INITIAL CONTAINING
+                       BLOCK — even with viewport-fit=cover — so `inset: 0`
+                       and percentage heights stop short of the screen:
+                       measured 894 px of ICB on a 440×956 iPhone in
+                       portrait, i.e. a 62 px band of page background along
+                       the bottom and every bottom-anchored panel floating
+                       62 px high (the legend at 97 px instead of 34).
+                       Viewport units see the whole screen, so
+                       @media (display-mode: standalone/fullscreen) sizes
+                       html/body/#stage in 100vh/100vw; an ordinary tab
+                       keeps dvh, where a browser toolbar would fight 100vh.
+                       Pattern lifted from the sibling moonlure project,
+                       which hit it first. NOT the status-bar style: the
+                       band survived black-translucent → black → back, so
+                       black-translucent stays (it is what paints the road
+                       behind the clock). Anything appended from JS that is
+                       bottom-anchored must go into #stage too — charts,
+                       speedo, the ?debug readout all look it up. lil-gui
+                       and its tooltip/menu stay in body deliberately: top-
+                       anchored or positioned from live client coords, so
+                       the short bottom edge never touches them. A
+                       --top-guard floor from the first attempt (for iOS
+                       screens that overlay the bar without reporting an
+                       inset) was speculative and is gone.
                        body.touch-ui (set at boot by main.js from params.js
                        device signals: coarse-primary pointer or Tesla) makes
                        just the phone rule's two keyboard swaps — tip bar
@@ -234,7 +247,13 @@ src/sim/car.js         Car state record + per-kind lengths/driver factors;
                        `isEmergencyVehicle()` classifies the three siren kinds
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic,
                        and the shared emergency-vehicle corridor/dispatch behavior
-src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun disc
+src/render/renderer.js sizes itself from its CONTAINER (#app inside #stage),
+                       never from window.inner*, and watches it with a
+                       ResizeObserver — the installed-app ICB is short, and
+                       its correction after first paint fires no window
+                       event at all. setSize(w, h, false) leaves the display
+                       size to CSS so canvas and box cannot disagree.
+                       Then: three.js golden-hour diorama: gradient sky dome + sun disc
                        (camera-tied), cloud carousel, unlit pre-hazed hill ring,
                        and trees/bushes/rocks scattered by rejection sampling
                        against a road+ramp keep-out corridor (re-run on shape

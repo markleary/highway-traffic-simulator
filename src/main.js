@@ -83,6 +83,17 @@ if (DEBUG_PANEL) {
       ` · vp ${window.innerWidth}×${window.innerHeight}` +
       ` · dpr ${window.devicePixelRatio}`
   );
+  // screen vs vp vs stage, the three numbers that diagnose a short initial
+  // containing block: an installed iOS app letterboxes the ICB, so `vp`
+  // (and anything laid out with inset: 0) comes up short of `screen` while
+  // `stage`, sized in viewport units, matches it. That gap was the whole
+  // bug behind the portrait band.
+  const stageEl = document.getElementById('stage');
+  line(
+    `stage ${stageEl ? `${stageEl.clientWidth}×${stageEl.clientHeight}` : 'missing'}` +
+      ` · canvas ${document.querySelector('#app canvas')?.clientWidth}×` +
+      `${document.querySelector('#app canvas')?.clientHeight}`
+  );
   // Resolved safe-area insets. Only CSS can read env(), so a throwaway
   // element takes them as padding and getComputedStyle reads them back —
   // on a phone with no devtools this is the only way to tell "the app is
@@ -110,7 +121,7 @@ if (DEBUG_PANEL) {
   } catch {
     line('gpu: unavailable');
   }
-  document.body.appendChild(el);
+  (document.getElementById('stage') || document.body).appendChild(el);
 }
 
 // console access for poking at the live simulation

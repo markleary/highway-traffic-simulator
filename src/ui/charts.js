@@ -44,7 +44,9 @@ export class ChartPanel {
     // and on a phone a briefly-visible chart stack shoves the road far
     // off-center before update() ever runs
     this.el.style.display = params.showCharts ? '' : 'none';
-    document.body.appendChild(this.el);
+    // #stage, not body: it is bottom-anchored, and only #stage reaches the
+    // real bottom of an installed app's screen (see index.html)
+    (document.getElementById('stage') || document.body).appendChild(this.el);
     this.history = [];
     this.incidentStarts = [];
     this.onHoverS = null; // set by main.js: reports the hovered loop position (or null)

@@ -23,27 +23,19 @@
        iOS reads almost none of that, hence the apple-* metas: they are what
        actually makes the home-screen launch chrome-free.
 
-       status-bar-style is `black`, NOT black-translucent. iOS sizes a
-       standalone web view to (screen − status bar) either way; the
-       difference is where it puts it. black-translucent moves the view up
-       to y=0 so the page paints behind the clock — and leaves the
-       status-bar's worth of screen stranded at the BOTTOM, outside the
-       layout viewport, where nothing can paint: fixed elements clip to the
-       viewport. Measured on a 440×956 iPhone: a 62px band of page
-       background along the bottom edge, 62px being exactly
-       safe-area-inset-top, with the whole viewport (canvas AND panels, the
-       legend included) 894px tall and anchored at the physical top.
-       Landscape was untouched because the inset is 0 there. So the
-       translucent bar bought 62px at the top and lost the same 62px at the
-       bottom. `black` leaves the view below the bar, viewport and web view
-       coincide, and the gap cannot exist.
-       viewport-fit=cover STAYS: it's what fills the notch sides in
-       landscape and lets the road run under the home indicator. -->
+       black-translucent is what extends the canvas UNDER the status bar
+       instead of letting iOS letterbox it, and viewport-fit=cover is what
+       fills the notch sides in landscape and runs the road beneath the
+       home indicator. Neither is responsible for the bottom band an
+       installed app used to show in portrait — that is the initial
+       containing block being short, and it is fixed on #stage below. The
+       band survived a round-trip through `black`, which is the evidence
+       the bar style was never it. -->
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#46586b" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Traffic Sim" />
   <link rel="apple-touch-icon" href="./assets/icon-180.png" />
   <style>
@@ -53,6 +45,39 @@
        the whole app off the top of the screen mid-orbit — there is nothing
        to scroll here, but iOS bounces the document anyway. */
     html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background: #46586b; }
+    /* #stage is the app's own viewport box, and EVERY panel is positioned
+       against it rather than against the browser's initial containing
+       block. In an installed home-screen app iOS letterboxes that ICB —
+       even with viewport-fit=cover — so `inset: 0` and percentage heights
+       stop short of the screen: a band of page background along the bottom
+       edge, and every bottom-anchored panel floating the same distance too
+       high. Measured on a 440×956 iPhone in portrait: an 894 px ICB, a
+       62 px band, the legend sitting 97 px up instead of its 34. Viewport
+       units see the whole screen, and an installed app has no browser
+       toolbar for 100vh to fight with — which is exactly why this is
+       scoped to the installed display modes while an ordinary tab keeps
+       dvh. (Pattern lifted from the moonlure project, which hit this
+       first. It is NOT the status-bar style: the band survived
+       black-translucent → black → back, because the short ICB is what
+       every layout box is measured from.)
+
+       ABSOLUTE, not fixed, and that is load-bearing: `position: fixed`
+       creates a stacking context unconditionally, which would trap every
+       z-index in here (the chase button's 1002, the ?debug panel's 1003)
+       inside #stage while lil-gui sits OUTSIDE it at 1001 — so the open
+       control panel would paint over the chase button and eat its taps,
+       the exact burial PR #41 fixed. `position: absolute` with z-index
+       auto creates no stacking context, so those z-indexes keep
+       interleaving with lil-gui in the root context. Verified by forcing
+       the overlap and hit-testing: fixed → elementFromPoint at the
+       button's centre returns a lil-gui input; absolute → the button.
+       Nothing scrolls (html/body are overflow: hidden), so absolute and
+       fixed are otherwise identical here. */
+    #stage { position: absolute; inset: 0; }
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+      html, body { height: 100vh; }
+      #stage { width: 100vw; height: 100vh; }
+    }
     /* This app has two long-press gestures — hold a car to chase it, hold a
        control's LABEL for its tooltip — and iOS reads a long press as the
        start of a text selection. Both fired the selection magnifier over
@@ -72,9 +97,16 @@
     input, textarea { -webkit-user-select: text; user-select: text; }
     /* inset: 0 on a fixed element is the full viewport, notch included
        (viewport-fit=cover) */
-    #app { position: fixed; inset: 0; }
+    #app { position: absolute; inset: 0; }
+    /* CSS owns the canvas's display size so it can never disagree with the
+       box it fills; the renderer sets only the drawing buffer
+       (setSize(w, h, false)) from the same measured box. */
+    #app > canvas, #app > div { position: absolute; inset: 0; width: 100%; height: 100%; }
+    /* absolute, not fixed: the panels' containing block is #stage, the box
+       that actually covers the screen (see above). Same pixels in a
+       browser tab, where #stage IS the ICB. */
     .panel {
-      position: fixed; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
+      position: absolute; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
       border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
       padding: 10px 14px; backdrop-filter: blur(6px);
       pointer-events: none; user-select: none;
@@ -89,7 +121,7 @@
        when both were independently fixed, the wrapping hint slid left and
        painted over the legend on mid-width windows */
     .dock {
-      position: fixed; display: flex; align-items: flex-end; gap: 8px;
+      position: absolute; display: flex; align-items: flex-end; gap: 8px;
       left: max(12px, env(safe-area-inset-left));
       bottom: max(12px, env(safe-area-inset-bottom));
       right: max(272px, calc(env(safe-area-inset-right) + 272px));
@@ -281,7 +313,7 @@
        devices without devtools (the car) a photo of this is the ground
        truth. Observability only; it never changes behavior. */
     #debug-panel {
-      position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
+      position: absolute; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
       transform: translateX(-50%); z-index: 1003; pointer-events: none;
       color: #dbe4ee; background: rgba(10, 16, 14, 0.85);
       border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
@@ -309,6 +341,13 @@
   </style>
 </head>
 <body>
+  <!-- Everything visible lives inside #stage — the box that covers the
+       whole screen in an installed app, where `inset: 0` alone does not.
+       Panels appended from JS (charts, speedo, the ?debug readout) look it
+       up too; the two elements deliberately left outside are lil-gui and
+       its tooltip/menu, which are top-anchored or positioned from live
+       client coordinates and so never touch the short bottom edge. -->
+  <div id="stage">
   <div id="app"></div>
 
   <div class="panel hud">
@@ -342,6 +381,7 @@
     It needs WebGL and access to cdn.jsdelivr.net (three.js loads from
     there). Check the browser console for details, then reload.
   </div>
+  </div><!-- /#stage -->
   <script>
     // Boot watchdog — a plain script, so it runs even when module loading
     // fails. main.js publishes window.sim as it boots; if that never

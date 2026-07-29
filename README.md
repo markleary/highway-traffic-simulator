@@ -39,9 +39,9 @@ It ships a web app manifest, so you can run it chrome-free and full-screen:
 
 - **iPhone / iPad** — open the site in Safari, then **Share → Add to Home
   Screen**. Launching from that icon drops the browser UI entirely and hands
-  the road every pixel below the status bar — the full screen in landscape,
-  where iOS hides the bar; the HUD, panel, legend and chase button sit on
-  the safe areas so nothing lands under the notch or the home indicator.
+  the road every pixel of the display, the band behind the status bar and
+  the notch included; the HUD, panel, legend and chase button sit on the
+  safe areas so nothing lands under the clock or the home indicator.
   Rotate freely
   — both orientations are supported, and the camera re-frames the loop to fit
   the new shape of the screen (unless you've orbited it yourself or you're in
