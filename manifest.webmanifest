@@ -1,0 +1,33 @@
+{
+  "id": "./",
+  "name": "Highway Traffic Simulator",
+  "short_name": "Traffic Sim",
+  "description": "Cars drive a closed-loop freeway with on-ramps, weather, wrecks and ramp meters - watch phantom jams and merge waves emerge, and turn the knobs live.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#46586b",
+  "theme_color": "#46586b",
+  "categories": ["education", "games", "simulation"],
+  "icons": [
+    { "src": "./assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "./assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "./assets/social.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Traffic backed up behind an on-ramp merge"
+    }
+  ]
+}

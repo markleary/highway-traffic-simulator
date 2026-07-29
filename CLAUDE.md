@@ -53,6 +53,11 @@ Headless physics check (no browser needed): `npm install && npm test`
   buried the chase button under the open control panel, PR #41). Watch CSS
   order too: equal-specificity rules resolve last-wins, and the safe-area
   block silently overrode an earlier `.hud` fix the same day.
+- For installed-app (home-screen) changes: manifest paths stay RELATIVE
+  (Pages serves from a `/repo/` subpath, so a leading `/` breaks every icon
+  and the start URL), icons stay in sync with `tools/make-icons.py`, and any
+  new fixed panel carries the same safe-area + `--top-guard` treatment as its
+  neighbors — the status-bar band is real screen the app now paints on.
 - Expect `npm test` to pass for PRs that touch `src/sim/`, `src/params.js`, or
   traffic-control behavior.
 
@@ -75,6 +80,18 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
                        respect notch safe areas (viewport-fit=cover).
+                       Installed-app (home-screen) mode: --top-guard, a
+                       0 px custom property that body.installed raises to
+                       20 px, floors the top clearance of the HUD and the
+                       lil-gui panel. iOS gives the page the status-bar band
+                       (apple-mobile-web-app-status-bar-style:
+                       black-translucent, which is what makes the app
+                       genuinely full-screen), but only NOTCHED devices then
+                       report that band as safe-area-inset-top — an SE or a
+                       home-button iPad reports 0 and overlays the clock
+                       anyway. Every top offset is max(base, inset,
+                       --top-guard) so the phone rule's 42 px HUD clearance
+                       still stacks on whatever moved the panel.
                        body.touch-ui (set at boot by main.js from params.js
                        device signals: coarse-primary pointer or Tesla) makes
                        just the phone rule's two keyboard swaps — tip bar
@@ -84,11 +101,25 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        button slides left of it (it floats above lil-gui, a
                        phone necessity, and the open desktop column can reach
                        the corner it lives in). Also:
-                       emoji-SVG favicon + description/OG metas, .gui-tip
+                       emoji-SVG favicon + description/OG metas, the installed-
+                       app head block (manifest link, theme-color, apple-*
+                       metas, apple-touch-icon), .gui-tip
                        tooltip styling, and a plain-script boot watchdog
                        that shows a notice if window.sim never appears
                        (CDN unreachable / WebGL missing) — plain script so
                        it runs even when module loading fails
+manifest.webmanifest   web app manifest: relative start_url/scope (Pages
+                       serves from a /repo/ subpath), display fullscreen with
+                       a standalone fallback, orientation any, and the #46586b
+                       background_color that matches the page so the iOS
+                       launch screen doesn't flash. iOS reads almost none of
+                       it — the apple-* metas in index.html are what actually
+                       make the home-screen launch chrome-free
+assets/icon-*.png      home-screen / install icons (180 apple-touch, 192, 512,
+                       plus a maskable 512 whose art sits inside the 80% safe
+                       circle). Regenerate with `python3 tools/make-icons.py`
+                       (stdlib only — no Pillow, no ImageMagick, since the
+                       repo has no build step and these are committed binaries)
 assets/social.png      1200×630 social-preview card — og:image in index.html
                        (absolute URL; unfurlers don't resolve relative paths)
                        and the README hero. Regenerate by staging a jam and
@@ -172,9 +203,19 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        positives are Linux touch desktops, which the same
                        treatment suits; stage it on a desktop via DevTools
                        device emulation + X11-Linux UA override), TOUCH_UI
-                       (Tesla, or a coarse primary pointer — iPads), and
+                       (Tesla, or a coarse primary pointer — iPads),
                        DEBUG_PANEL (?debug → main.js's diagnostic panel;
-                       observability only, never changes behavior)
+                       observability only, never changes behavior),
+                       INSTALLED_APP (display-mode standalone/fullscreen or
+                       navigator.standalone — reported in ?debug: "installed
+                       app or the tab I left open?" is the first question a
+                       home-screen bug raises) and STATUS_BAR_OVERLAY
+                       (INSTALLED_APP on iOS specifically — navigator.
+                       standalone exists nowhere else). Only iOS hands the
+                       page the status-bar band (black-translucent), which is
+                       what body.installed / --top-guard clears; Android keeps
+                       its own bar above a standalone window, so the guard
+                       must NOT apply there
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn
@@ -317,6 +358,14 @@ test/smoke.js          runs the sim headless under several parameter regimes
   hangs concrete skirts and piers under elevated spans (`buildBridgeInto`),
   pitches car bodies with the grade (and slope-corrects light mounts), and
   the smoke test's self-overlap guard exempts pairs >3 m apart vertically.
+  A viewport change (resize, rotation, an iOS URL bar collapsing —
+  `resize` + `orientationchange` + `visualViewport`) resizes the buffers
+  immediately and then re-fits 300 ms later, because iOS reports stale
+  dimensions and late insets while a rotation animates. The re-fit goes
+  through `refitView()`, so it only moves a camera parked in an auto view:
+  an orbited camera and a chase (which nulls `_autoView`) survive rotation
+  untouched. Without it a landscape fit left the loop hanging out both
+  sides of the portrait frame.
   `params.roadShape` and `params.roadScale` (1–3×; builders scale radii and
   straights, while ramp anchors stay a fixed physical distance from their
   segment ends) are applied by `Simulation.reset()` (a geometry change

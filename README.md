@@ -2,7 +2,7 @@
 
 [![A jammed loop of freeway at golden hour — cars colored by speed, the on-ramp queue backed up solid red](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
 
-**[▶ Try it live](https://markleary.github.io/highway-traffic-simulator/)** — no install, works on phones.
+**[▶ Try it live](https://markleary.github.io/highway-traffic-simulator/)** — no install, works on phones (and adds to the home screen as a full-screen app).
 
 A real-time, browser-based highway traffic simulator. Cars drive around a closed
 loop of freeway with 2–4 interchanges (off-ramp + on-ramp each). You control the
@@ -29,8 +29,27 @@ python3 -m http.server 8000
 
 Append **`?debug`** to the URL for a small diagnostics readout: the deploy
 timestamp of the running build, the latest `main` commit, device-detection
-verdicts, and the UA/touch/GPU details. It changes no behavior — it exists
-for devices without devtools (it's how Tesla in-car support was debugged).
+verdicts, the resolved safe-area insets, and the UA/touch/GPU details. It
+changes no behavior — it exists for devices without devtools (it's how Tesla
+in-car support was debugged).
+
+## Installing it as an app
+
+It ships a web app manifest, so you can run it chrome-free and full-screen:
+
+- **iPhone / iPad** — open the site in Safari, then **Share → Add to Home
+  Screen**. Launching from that icon drops the browser UI entirely and hands
+  the road every pixel of the display, including the band behind the status
+  bar and the notch; the HUD, panel, legend and chase button sit on the safe
+  areas so nothing lands under the clock or the home indicator. Rotate freely
+  — both orientations are supported, and the camera re-frames the loop to fit
+  the new shape of the screen (unless you've orbited it yourself or you're in
+  the chase camera, which are left exactly where you put them).
+- **Android / desktop Chrome** — **Install** from the address bar or the ⋮
+  menu. Android honors `display: fullscreen` and hides the status bar too.
+
+It still needs a network connection at launch (three.js loads from a CDN);
+there's no offline cache.
 
 ## Deploying to GitHub Pages
 

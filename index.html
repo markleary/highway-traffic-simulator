@@ -15,10 +15,40 @@
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>" />
+  <!-- Installed-app metadata. The manifest carries the icons, the slate
+       #46586b splash (same color as the page background, so launching the
+       app doesn't flash), and display: fullscreen — which Android honors
+       outright and iOS falls back to standalone per the display chain.
+       relative start_url/scope: Pages serves this from a /repo/ subpath.
+       iOS reads almost none of that, hence the apple-* metas: they are what
+       actually makes the home-screen launch chrome-free, and
+       black-translucent is what extends the canvas UNDER the status bar
+       instead of letting iOS letterbox it — every fixed panel already sits
+       on env(safe-area-inset-*), which is what keeps the HUD clear of the
+       notch once the page owns those pixels. -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#46586b" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Traffic Sim" />
+  <link rel="apple-touch-icon" href="./assets/icon-180.png" />
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #46586b; }
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    #app { position: fixed; inset: 0; }
+    /* 100dvh, not 100%: an installed iOS app has no URL bar, but the same
+       page in a Safari tab does, and dvh is the only unit that tracks it.
+       overscroll-behavior stops the rubber-band drag that otherwise peels
+       the whole app off the top of the screen mid-orbit — there is nothing
+       to scroll here, but iOS bounces the document anyway. */
+    html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background: #46586b; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-tap-highlight-color: transparent; /* no gray flash on every tap */
+    }
+    /* inset: 0 on a fixed element is the whole screen in app mode, notch
+       included (viewport-fit=cover). touch-callout: none is what lets the
+       renderer's 500 ms long-press-to-chase survive on iOS — without it the
+       hold raises the system selection/share callout over the canvas. */
+    #app { position: fixed; inset: 0; -webkit-touch-callout: none; }
     .panel {
       position: fixed; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
       border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
@@ -66,7 +96,12 @@
        clearing: the HUD's own top is max(12px, safe-area-inset-top), so a
        notch pushes its bottom edge down and a fixed reserve would silently
        eat the gap and start overlapping again on a notched tablet (Codex
-       review). The rest is the HUD's 171px height (FPS row on) + a 12px gap
+       review). The bottom inset rides along for the same reason: the stack
+       sits 76px above the home indicator, not 76px above the glass, so both
+       the offset and this cap carry env(safe-area-inset-bottom) or a
+       landscape iPhone in app mode grows the stack back into the HUD by the
+       height of the indicator strip. The rest is the HUD's 171px height
+       (FPS row on) + a 12px gap
        + the 76px bottom inset + 20px because max-height sizes the CONTENT
        box: the panel renders 18px of vertical padding and 2px of border on
        top of it. At inset 0 that is the plain 100dvh - 291px. Do NOT reach
@@ -87,8 +122,12 @@
        cost is that drags over the panel's chrome no longer orbit the camera,
        which the canvases already blocked across most of the panel. */
     .charts {
-      left: 12px; bottom: 76px; width: 320px; padding: 8px 10px 10px;
-      max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)) - 279px);
+      left: 12px; bottom: 76px; /* fallback pair: no env(), no inset to add */
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+      width: 320px; padding: 8px 10px 10px;
+      max-height: calc(
+        100dvh - max(12px, env(safe-area-inset-top, 0px))
+               - env(safe-area-inset-bottom, 0px) - 279px);
       overflow-y: auto; overscroll-behavior: contain;
       pointer-events: auto; touch-action: pan-y;
     }
@@ -172,14 +211,28 @@
       .charts canvas { width: 100%; }
     }
     /* notched phones: keep fixed panels out of the sensor/home-bar areas
-       (the dock carries its own insets above) */
-    .hud { left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); }
+       (the dock carries its own insets above).
+       --top-guard is the SECOND thing the top strip needs. Installed on an
+       iOS home screen (body.installed, set by main.js from params.js
+       STATUS_BAR_OVERLAY), iOS hands the page the status-bar band as usable
+       pixels — which is the point, the road paints edge to edge — but only
+       notched devices then report that band as safe-area-inset-top. An
+       iPhone SE or an older iPad reports 0 and overlays the clock on the
+       top 20 px anyway, so the guard floors the clearance there. In a
+       browser tab it stays 0 and every max() below collapses to what it
+       always was. */
+    :root { --top-guard: 0px; }
+    body.installed { --top-guard: 20px; }
+    .hud {
+      left: max(12px, env(safe-area-inset-left));
+      top: max(12px, env(safe-area-inset-top), var(--top-guard));
+    }
     .charts { left: max(12px, env(safe-area-inset-left)); }
     .speedo { bottom: max(12px, env(safe-area-inset-bottom)); }
     /* lil-gui's own fixed inset (top 0, right 15px) ignores the cutout; on
        non-notched screens env() is 0 and these collapse to its defaults */
     .lil-gui.autoPlace {
-      top: max(0px, env(safe-area-inset-top));
+      top: max(0px, env(safe-area-inset-top), var(--top-guard));
       right: max(15px, env(safe-area-inset-right));
     }
     /* panel tooltips (panel.js): replaces the native title attribute, which
@@ -236,7 +289,7 @@
        Kept last: it must beat the safe-area .hud rule above. */
     @media (max-width: 500px) {
       .hud h1 { display: none; }
-      .hud { top: 42px; top: calc(env(safe-area-inset-top) + 42px); }
+      .hud { top: 42px; top: calc(max(env(safe-area-inset-top), var(--top-guard)) + 42px); }
     }
   </style>
 </head>
