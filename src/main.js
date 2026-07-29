@@ -1,4 +1,14 @@
-import { params, KMH, MPH, watchViewport, TOUCH_UI, DEBUG_PANEL, TESLA_BROWSER } from './params.js';
+import {
+  params,
+  KMH,
+  MPH,
+  watchViewport,
+  TOUCH_UI,
+  DEBUG_PANEL,
+  TESLA_BROWSER,
+  INSTALLED_APP,
+  STATUS_BAR_OVERLAY,
+} from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
 import { AmbientAudio } from './audio.js';
@@ -11,6 +21,10 @@ import { Speedometer } from './ui/speedo.js';
 // toggle — CSS keys off this class the same way it keys off the phone
 // breakpoint, without dragging in the rest of the small-screen layout
 document.body.classList.toggle('touch-ui', TOUCH_UI);
+// iOS home-screen app: the page owns the status-bar band too, so CSS floors
+// the top clearance for the devices that overlay it without reporting a
+// safe-area inset (see --top-guard in index.html)
+document.body.classList.toggle('installed', STATUS_BAR_OVERLAY);
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
@@ -64,7 +78,10 @@ if (DEBUG_PANEL) {
     .catch(() => {
       gitLine.textContent = 'latest main: unavailable (offline or rate-limited)';
     });
-  line(`detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI}`);
+  line(
+    `detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI}` +
+      ` · installed ${INSTALLED_APP} · status-bar-overlay ${STATUS_BAR_OVERLAY}`
+  );
   line(navigator.userAgent);
   line(
     `touch ${navigator.maxTouchPoints}` +
@@ -74,6 +91,23 @@ if (DEBUG_PANEL) {
       ` · vp ${window.innerWidth}×${window.innerHeight}` +
       ` · dpr ${window.devicePixelRatio}`
   );
+  // Resolved safe-area insets. Only CSS can read env(), so a throwaway
+  // element takes them as padding and getComputedStyle reads them back —
+  // on a phone with no devtools this is the only way to tell "the app is
+  // drawing under the notch and the panels are clearing it" from "iOS
+  // letterboxed the page and the insets are all zero".
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;padding:' +
+    'env(safe-area-inset-top) env(safe-area-inset-right)' +
+    ' env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(probe);
+  const pad = getComputedStyle(probe);
+  line(
+    `safe area t/r/b/l ${pad.paddingTop} ${pad.paddingRight}` +
+      ` ${pad.paddingBottom} ${pad.paddingLeft}`
+  );
+  probe.remove();
   try {
     // same-type getContext returns three's existing context; the debug ext
     // is absent in browsers that already unmask RENDERER (newer Chromium)

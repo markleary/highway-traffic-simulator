@@ -441,7 +441,29 @@ export class SceneRenderer {
     this.hoverTip.visible = false;
     this.scene.add(this.hoverTip);
 
-    window.addEventListener('resize', () => this.onResize());
+    // Viewport changes resize the buffers AND re-frame the road. Rotating a
+    // phone swings the aspect ratio hard, and viewFit()'s distance is
+    // computed from it: a fit made in landscape leaves the loop hanging out
+    // both sides of the portrait frame (and a portrait fit wastes half a
+    // landscape screen). refitView only moves a camera still parked in an
+    // auto view, so an orbited camera — and a chase, which nulls _autoView —
+    // is left alone. The settle timer is for iOS: innerWidth/innerHeight
+    // read stale while the rotation animates, and in an installed app the
+    // status/home-bar insets land a frame after that, so every trigger
+    // re-measures once the dust has settled.
+    const onViewport = () => {
+      this.onResize();
+      clearTimeout(this._resizeSettle);
+      this._resizeSettle = setTimeout(() => {
+        this.onResize();
+        this.refitView();
+      }, 300);
+    };
+    window.addEventListener('resize', onViewport);
+    window.addEventListener('orientationchange', onViewport);
+    // visualViewport fires where `resize` doesn't: iOS collapsing the URL
+    // bar in a browser tab, and the on-screen keyboard on any platform
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewport);
   }
 
   // --- chase-view dolly + gesture bookkeeping ---------------------------
