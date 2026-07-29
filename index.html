@@ -59,8 +59,21 @@
        dvh. (Pattern lifted from the moonlure project, which hit this
        first. It is NOT the status-bar style: the band survived
        black-translucent → black → back, because the short ICB is what
-       every layout box is measured from.) */
-    #stage { position: fixed; inset: 0; }
+       every layout box is measured from.)
+
+       ABSOLUTE, not fixed, and that is load-bearing: `position: fixed`
+       creates a stacking context unconditionally, which would trap every
+       z-index in here (the chase button's 1002, the ?debug panel's 1003)
+       inside #stage while lil-gui sits OUTSIDE it at 1001 — so the open
+       control panel would paint over the chase button and eat its taps,
+       the exact burial PR #41 fixed. `position: absolute` with z-index
+       auto creates no stacking context, so those z-indexes keep
+       interleaving with lil-gui in the root context. Verified by forcing
+       the overlap and hit-testing: fixed → elementFromPoint at the
+       button's centre returns a lil-gui input; absolute → the button.
+       Nothing scrolls (html/body are overflow: hidden), so absolute and
+       fixed are otherwise identical here. */
+    #stage { position: absolute; inset: 0; }
     @media (display-mode: standalone), (display-mode: fullscreen) {
       html, body { height: 100vh; }
       #stage { width: 100vw; height: 100vh; }
