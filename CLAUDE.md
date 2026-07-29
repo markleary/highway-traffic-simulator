@@ -56,8 +56,12 @@ Headless physics check (no browser needed): `npm install && npm test`
 - For installed-app (home-screen) changes: manifest paths stay RELATIVE
   (Pages serves from a `/repo/` subpath, so a leading `/` breaks every icon
   and the start URL), icons stay in sync with `tools/make-icons.py`, and any
-  new fixed panel carries the same safe-area + `--top-guard` treatment as its
-  neighbors — the status-bar band is real screen the app now paints on.
+  new fixed panel carries the same safe-area treatment as its neighbors.
+  Treat `black-translucent` as a regression (see index.html's head comment:
+  it strands the status bar's height at the bottom of portrait) and treat
+  anything that makes a long press selectable as one too — `user-select:
+  none` on body is what keeps the iOS magnifier, the callout bubble and the
+  writing-tools chip off the chase gesture and the tooltip gesture.
 - Expect `npm test` to pass for PRs that touch `src/sim/`, `src/params.js`, or
   traffic-control behavior.
 
@@ -80,18 +84,22 @@ index.html             import map, HUD overlay (stats, legend), CSS. Legend +
                        chart stack to the viewport (canvas hover math is
                        fraction-based, so CSS scaling is safe); fixed panels
                        respect notch safe areas (viewport-fit=cover).
-                       Installed-app (home-screen) mode: --top-guard, a
-                       0 px custom property that body.installed raises to
-                       20 px, floors the top clearance of the HUD and the
-                       lil-gui panel. iOS gives the page the status-bar band
-                       (apple-mobile-web-app-status-bar-style:
-                       black-translucent, which is what makes the app
-                       genuinely full-screen), but only NOTCHED devices then
-                       report that band as safe-area-inset-top — an SE or a
-                       home-button iPad reports 0 and overlays the clock
-                       anyway. Every top offset is max(base, inset,
-                       --top-guard) so the phone rule's 42 px HUD clearance
-                       still stacks on whatever moved the panel.
+                       Installed-app (home-screen) mode needs NO layout
+                       special case, and that is load-bearing: iOS sizes a
+                       standalone web view to (screen − status bar) no matter
+                       what, so apple-mobile-web-app-status-bar-style only
+                       chooses WHERE it puts it. black-translucent moves it
+                       to y=0 — the page paints behind the clock — and
+                       strands that same height at the BOTTOM, outside the
+                       layout viewport, where fixed elements clip and
+                       nothing can paint: a measured 62 px band of page
+                       background on a 440×956 iPhone, viewport 894 px,
+                       panels included (landscape was fine, its inset is 0).
+                       `black` leaves the view below the bar so viewport and
+                       web view coincide. Ship `black`; the translucent bar
+                       trades 62 px of sky for 62 px of dead slate. A
+                       --top-guard floor (for iOS screens that overlay the
+                       bar without reporting an inset) went out with it.
                        body.touch-ui (set at boot by main.js from params.js
                        device signals: coarse-primary pointer or Tesla) makes
                        just the phone rule's two keyboard swaps — tip bar
@@ -209,13 +217,11 @@ src/params.js          single mutable `params` object — the GUI writes it, the
                        INSTALLED_APP (display-mode standalone/fullscreen or
                        navigator.standalone — reported in ?debug: "installed
                        app or the tab I left open?" is the first question a
-                       home-screen bug raises) and STATUS_BAR_OVERLAY
-                       (INSTALLED_APP on iOS specifically — navigator.
-                       standalone exists nowhere else). Only iOS hands the
-                       page the status-bar band (black-translucent), which is
-                       what body.installed / --top-guard clears; Android keeps
-                       its own bar above a standalone window, so the guard
-                       must NOT apply there
+                       home-screen bug raises — and app mode is where the
+                       layout differs: iOS sizes a standalone web view to
+                       screen − status bar, so ?debug's `vp` is SHORTER than
+                       its `screen`, which is the readout that diagnosed the
+                       portrait band)
 src/presets.js         scenario presets: curated param regimes applied over
                        DEFAULTS (user display prefs kept unless the preset says
                        otherwise) + sim.reset() + an optional `after` hook (spawn

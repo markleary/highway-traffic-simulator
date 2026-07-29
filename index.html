@@ -21,16 +21,29 @@
        outright and iOS falls back to standalone per the display chain.
        relative start_url/scope: Pages serves this from a /repo/ subpath.
        iOS reads almost none of that, hence the apple-* metas: they are what
-       actually makes the home-screen launch chrome-free, and
-       black-translucent is what extends the canvas UNDER the status bar
-       instead of letting iOS letterbox it — every fixed panel already sits
-       on env(safe-area-inset-*), which is what keeps the HUD clear of the
-       notch once the page owns those pixels. -->
+       actually makes the home-screen launch chrome-free.
+
+       status-bar-style is `black`, NOT black-translucent. iOS sizes a
+       standalone web view to (screen − status bar) either way; the
+       difference is where it puts it. black-translucent moves the view up
+       to y=0 so the page paints behind the clock — and leaves the
+       status-bar's worth of screen stranded at the BOTTOM, outside the
+       layout viewport, where nothing can paint: fixed elements clip to the
+       viewport. Measured on a 440×956 iPhone: a 62px band of page
+       background along the bottom edge, 62px being exactly
+       safe-area-inset-top, with the whole viewport (canvas AND panels, the
+       legend included) 894px tall and anchored at the physical top.
+       Landscape was untouched because the inset is 0 there. So the
+       translucent bar bought 62px at the top and lost the same 62px at the
+       bottom. `black` leaves the view below the bar, viewport and web view
+       coincide, and the gap cannot exist.
+       viewport-fit=cover STAYS: it's what fills the notch sides in
+       landscape and lets the road run under the home indicator. -->
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#46586b" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="apple-mobile-web-app-title" content="Traffic Sim" />
   <link rel="apple-touch-icon" href="./assets/icon-180.png" />
   <style>
@@ -40,15 +53,26 @@
        the whole app off the top of the screen mid-orbit — there is nothing
        to scroll here, but iOS bounces the document anyway. */
     html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background: #46586b; }
+    /* This app has two long-press gestures — hold a car to chase it, hold a
+       control's LABEL for its tooltip — and iOS reads a long press as the
+       start of a text selection. Both fired the selection magnifier over
+       the road, then a callout bubble and an Apple Intelligence writing-
+       tools chip, and left the page dimmed behind the selection UI until
+       the next tap. touch-callout alone only suppresses the bubble; the
+       magnifier and everything downstream of it need user-select. They go
+       on BODY, not #app: the panel's label press happens outside the
+       canvas. Inputs opt back in on the next line, or lil-gui's number
+       fields can't be typed into. */
     body {
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-tap-highlight-color: transparent; /* no gray flash on every tap */
+      -webkit-user-select: none; user-select: none;
+      -webkit-touch-callout: none;
     }
-    /* inset: 0 on a fixed element is the whole screen in app mode, notch
-       included (viewport-fit=cover). touch-callout: none is what lets the
-       renderer's 500 ms long-press-to-chase survive on iOS — without it the
-       hold raises the system selection/share callout over the canvas. */
-    #app { position: fixed; inset: 0; -webkit-touch-callout: none; }
+    input, textarea { -webkit-user-select: text; user-select: text; }
+    /* inset: 0 on a fixed element is the full viewport, notch included
+       (viewport-fit=cover) */
+    #app { position: fixed; inset: 0; }
     .panel {
       position: fixed; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
       border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
@@ -93,15 +117,10 @@
        height gates); this is the hard stop for a stack the user re-enabled
        anyway, or an FPS row that grew the HUD: cap it and scroll rather than
        cover. The reserve stacks on the SAME inset that moves the thing it is
-       clearing: the HUD's own top is
-       max(12px, safe-area-inset-top, --top-guard), so a
+       clearing: the HUD's own top is max(12px, safe-area-inset-top), so a
        notch pushes its bottom edge down and a fixed reserve would silently
        eat the gap and start overlapping again on a notched tablet (Codex
-       review). --top-guard is in that max() for the identical reason one
-       step further: an installed iOS app on a device with NO inset still
-       moves the HUD down to 20px, and a cap that reserved only 12px would
-       grow 8px back into the clearance (Codex review).
-       The bottom inset rides along for the same reason: the stack
+       review). The bottom inset rides along for the same reason: the stack
        sits 76px above the home indicator, not 76px above the glass, so both
        the offset and this cap carry env(safe-area-inset-bottom) or a
        landscape iPhone in app mode grows the stack back into the HUD by the
@@ -131,7 +150,7 @@
       bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
       width: 320px; padding: 8px 10px 10px;
       max-height: calc(
-        100dvh - max(12px, env(safe-area-inset-top, 0px), var(--top-guard))
+        100dvh - max(12px, env(safe-area-inset-top, 0px))
                - env(safe-area-inset-bottom, 0px) - 279px);
       overflow-y: auto; overscroll-behavior: contain;
       pointer-events: auto; touch-action: pan-y;
@@ -216,28 +235,19 @@
       .charts canvas { width: 100%; }
     }
     /* notched phones: keep fixed panels out of the sensor/home-bar areas
-       (the dock carries its own insets above).
-       --top-guard is the SECOND thing the top strip needs. Installed on an
-       iOS home screen (body.installed, set by main.js from params.js
-       STATUS_BAR_OVERLAY), iOS hands the page the status-bar band as usable
-       pixels — which is the point, the road paints edge to edge — but only
-       notched devices then report that band as safe-area-inset-top. An
-       iPhone SE or an older iPad reports 0 and overlays the clock on the
-       top 20 px anyway, so the guard floors the clearance there. In a
-       browser tab it stays 0 and every max() below collapses to what it
-       always was. */
-    :root { --top-guard: 0px; }
-    body.installed { --top-guard: 20px; }
-    .hud {
-      left: max(12px, env(safe-area-inset-left));
-      top: max(12px, env(safe-area-inset-top), var(--top-guard));
-    }
+       (the dock carries its own insets above). No installed-app special
+       case: with the opaque status bar the page never owns that band, in a
+       tab it never did, so safe-area-inset-top is the whole story on every
+       screen. (A --top-guard floor for iOS devices that overlay the bar
+       without reporting an inset lived here for one release; it went out
+       with black-translucent, which is what put the page under the bar.) */
+    .hud { left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); }
     .charts { left: max(12px, env(safe-area-inset-left)); }
     .speedo { bottom: max(12px, env(safe-area-inset-bottom)); }
     /* lil-gui's own fixed inset (top 0, right 15px) ignores the cutout; on
        non-notched screens env() is 0 and these collapse to its defaults */
     .lil-gui.autoPlace {
-      top: max(0px, env(safe-area-inset-top), var(--top-guard));
+      top: max(0px, env(safe-area-inset-top));
       right: max(15px, env(safe-area-inset-right));
     }
     /* panel tooltips (panel.js): replaces the native title attribute, which
@@ -294,7 +304,7 @@
        Kept last: it must beat the safe-area .hud rule above. */
     @media (max-width: 500px) {
       .hud h1 { display: none; }
-      .hud { top: 42px; top: calc(max(env(safe-area-inset-top), var(--top-guard)) + 42px); }
+      .hud { top: 42px; top: calc(env(safe-area-inset-top) + 42px); }
     }
   </style>
 </head>

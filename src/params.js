@@ -68,22 +68,15 @@ export const TOUCH_UI =
 // Launched from a home screen rather than a browser tab (manifest display
 // fullscreen/standalone; navigator.standalone is iOS's own older signal).
 // Reported in the ?debug panel — "is this the installed app or the tab I
-// left open?" is the first question any home-screen bug report raises.
+// left open?" is the first question any home-screen bug report raises, and
+// app mode is where the layout differs (iOS sizes a standalone web view to
+// screen − status bar, so vp is SHORTER than screen there; that gap between
+// the two readouts is what diagnosed the portrait band).
 export const INSTALLED_APP =
   (typeof matchMedia !== 'undefined' &&
     (matchMedia('(display-mode: standalone)').matches ||
       matchMedia('(display-mode: fullscreen)').matches)) ||
   (!!NAV && NAV.standalone === true);
-// ...of which only iOS hands the page the status-bar band as usable pixels
-// (apple-mobile-web-app-status-bar-style: black-translucent) — which is what
-// makes the app truly full-screen there, and what needs --top-guard in
-// index.html: notched devices report that band as safe-area-inset-top, an
-// SE or a home-button iPad reports nothing and overlays the clock anyway.
-// navigator.standalone exists only on iOS/iPadOS Safari, so the pair is
-// exactly "iOS, launched from the home screen". Android keeps its own
-// status bar above a standalone window (and hides it outright in
-// fullscreen), so the floor must NOT apply there.
-export const STATUS_BAR_OVERLAY = INSTALLED_APP && !!NAV && NAV.standalone !== undefined;
 
 // Chart-visibility defaults for the current viewport: phones and narrow
 // windows would bury the map under the 320 px stack, and each further

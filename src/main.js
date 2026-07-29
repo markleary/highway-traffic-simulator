@@ -7,7 +7,6 @@ import {
   DEBUG_PANEL,
   TESLA_BROWSER,
   INSTALLED_APP,
-  STATUS_BAR_OVERLAY,
 } from './params.js';
 import { Simulation } from './sim/simulation.js';
 import { SceneRenderer } from './render/renderer.js';
@@ -21,10 +20,6 @@ import { Speedometer } from './ui/speedo.js';
 // toggle — CSS keys off this class the same way it keys off the phone
 // breakpoint, without dragging in the rest of the small-screen layout
 document.body.classList.toggle('touch-ui', TOUCH_UI);
-// iOS home-screen app: the page owns the status-bar band too, so CSS floors
-// the top clearance for the devices that overlay it without reporting a
-// safe-area inset (see --top-guard in index.html)
-document.body.classList.toggle('installed', STATUS_BAR_OVERLAY);
 
 const sim = new Simulation();
 const renderer = new SceneRenderer(document.getElementById('app'));
@@ -78,10 +73,7 @@ if (DEBUG_PANEL) {
     .catch(() => {
       gitLine.textContent = 'latest main: unavailable (offline or rate-limited)';
     });
-  line(
-    `detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI}` +
-      ` · installed ${INSTALLED_APP} · status-bar-overlay ${STATUS_BAR_OVERLAY}`
-  );
+  line(`detected: tesla ${TESLA_BROWSER} · touch-ui ${TOUCH_UI} · installed ${INSTALLED_APP}`);
   line(navigator.userAgent);
   line(
     `touch ${navigator.maxTouchPoints}` +
