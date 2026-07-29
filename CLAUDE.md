@@ -194,8 +194,13 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        changes; `params.scenery` hides the dressing live).
                        Canvas pointer routing arms crash picks only for the
                        primary button; a button-2 `contextmenu` pick starts
-                       the chase and claims the gesture when a vehicle was
-                       actually selected. main.js supplies `onVehiclePick`
+                       the chase. That handler suppresses the native menu
+                       UNCONDITIONALLY rather than leaving it to
+                       OrbitControls, whose suppressor only runs while
+                       enabled: startChase disables controls, so the browser
+                       menu could pop over the view right as a touch
+                       long-press chase began, or on a right-click during any
+                       chase. main.js supplies `onVehiclePick`
                        (ray → vehicle) and the renderer drives the chase from
                        both pick gestures. It hands back the CAR, not a
                        handled flag, so the long press can BIND its target at

@@ -371,16 +371,21 @@ export class SceneRenderer {
       { passive: false }
     );
     canvas.addEventListener('contextmenu', (e) => {
-      // A touch long-press may synthesize contextmenu with the primary button;
-      // only button 2 or macOS Control-click count as desktop secondary clicks.
-      if (!isSecondaryClick(e) || !this.onVehiclePick) return;
-      // No hold here, so picking at event time is exactly right.
-      const car = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
-      if (!car) return;
-      this.startChase(car);
-      // Claim the context gesture when a vehicle was picked. OrbitControls
-      // retains its existing context-menu behavior for empty-road pan input.
+      // A native context menu over the 3D canvas is never useful, and it must
+      // be suppressed HERE rather than left to OrbitControls, which only does
+      // it while enabled. startChase disables controls, so its suppressor
+      // returns early exactly when a chase is running: a touch long-press
+      // that just started a chase, or a right-click during one, could pop the
+      // browser menu on top of the view (Codex review). Suppressing first
+      // makes that independent of control state.
       e.preventDefault();
+      // Only button 2 or macOS Control-click are desktop secondary clicks; a
+      // touch long-press synthesizes this event with the primary button and
+      // is handled by its own timer in pointerdown above. No hold here, so
+      // picking at event time is exactly right.
+      if (!isSecondaryClick(e) || !this.onVehiclePick) return;
+      const car = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
+      if (car) this.startChase(car);
     });
 
     // Hover position for the car readout: buttons pressed means an orbit
