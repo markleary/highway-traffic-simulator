@@ -93,10 +93,15 @@
        height gates); this is the hard stop for a stack the user re-enabled
        anyway, or an FPS row that grew the HUD: cap it and scroll rather than
        cover. The reserve stacks on the SAME inset that moves the thing it is
-       clearing: the HUD's own top is max(12px, safe-area-inset-top), so a
+       clearing: the HUD's own top is
+       max(12px, safe-area-inset-top, --top-guard), so a
        notch pushes its bottom edge down and a fixed reserve would silently
        eat the gap and start overlapping again on a notched tablet (Codex
-       review). The bottom inset rides along for the same reason: the stack
+       review). --top-guard is in that max() for the identical reason one
+       step further: an installed iOS app on a device with NO inset still
+       moves the HUD down to 20px, and a cap that reserved only 12px would
+       grow 8px back into the clearance (Codex review).
+       The bottom inset rides along for the same reason: the stack
        sits 76px above the home indicator, not 76px above the glass, so both
        the offset and this cap carry env(safe-area-inset-bottom) or a
        landscape iPhone in app mode grows the stack back into the HUD by the
@@ -126,7 +131,7 @@
       bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
       width: 320px; padding: 8px 10px 10px;
       max-height: calc(
-        100dvh - max(12px, env(safe-area-inset-top, 0px))
+        100dvh - max(12px, env(safe-area-inset-top, 0px), var(--top-guard))
                - env(safe-area-inset-bottom, 0px) - 279px);
       overflow-y: auto; overscroll-behavior: contain;
       pointer-events: auto; touch-action: pan-y;
