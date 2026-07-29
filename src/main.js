@@ -32,12 +32,11 @@ renderer.onRoadClick = (ray) => {
   const car = sim.carNearRay(ray);
   if (car) sim.triggerAccident(car);
 };
-renderer.onRoadRightClick = (ray) => {
-  const car = sim.carNearRay(ray, 9, true);
-  if (!car) return false;
-  renderer.startChase(car);
-  return true;
-};
+// Resolve a ray to a visible vehicle; the renderer drives the chase itself
+// from both its pick gestures. It hands back the CAR rather than doing the
+// chase here so a touch long-press can bind its target at touch-down, before
+// the hold it still has to wait out (see renderer's pointerdown).
+renderer.onVehiclePick = (ray) => sim.carNearRay(ray, 9, true);
 
 // ?debug diagnostic panel (grew out of the Tesla dropdown hunt — the car has
 // no devtools, so a screenshot of this is how ground truth gets off the

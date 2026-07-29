@@ -274,10 +274,11 @@ export class SceneRenderer {
     this._v2 = new THREE.Vector3();
 
     // Primary-click detection (as opposed to an orbit drag): small movement,
-    // quick release. main.js assigns onRoadClick to crash a picked car and
-    // onRoadRightClick to chase a specifically picked car.
+    // quick release. main.js assigns onRoadClick to crash a picked car, and
+    // onVehiclePick to resolve a ray to a visible vehicle (this class then
+    // drives the chase itself, from either pick gesture).
     this.onRoadClick = null;
-    this.onRoadRightClick = null;
+    this.onVehiclePick = null;
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (e) => {
       this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -319,14 +320,25 @@ export class SceneRenderer {
       // itself; clearing _press stops the release also crashing that car.
       // Before this, a press over 500 ms did nothing at all: the click gate
       // rejected it and the synthesized contextmenu was ignored.
-      if (e.pointerType !== 'mouse') {
-        const { clientX, clientY } = e;
-        this._longPress = setTimeout(() => {
-          this._longPress = 0;
-          if (!this._press || !this.onRoadRightClick) return;
-          this._press = null;
-          this.onRoadRightClick(this.pickRay(clientX, clientY));
-        }, LONG_PRESS_MS);
+      //
+      // Bind the vehicle NOW rather than re-picking when the timer fires:
+      // traffic keeps moving through the hold, so the same screen point
+      // resolves to whatever has since driven into it. Measured on the
+      // default overview, a re-pick returned the touched car only 35% of the
+      // time and a DIFFERENT car 57% (just 16% right for free-flowing
+      // traffic, which covers ~15 m in 500 ms against a 9 m pick radius).
+      // The finger said "that one" (Codex review). No vehicle under it means
+      // no timer at all, so a press on empty road stays inert.
+      if (e.pointerType !== 'mouse' && this.onVehiclePick) {
+        const target = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
+        if (target) {
+          this._longPress = setTimeout(() => {
+            this._longPress = 0;
+            if (!this._press) return; // released, dragged, or a second finger
+            this._press = null;
+            this.startChase(target);
+          }, LONG_PRESS_MS);
+        }
       }
     });
     canvas.addEventListener('pointerup', (e) => {
@@ -361,11 +373,14 @@ export class SceneRenderer {
     canvas.addEventListener('contextmenu', (e) => {
       // A touch long-press may synthesize contextmenu with the primary button;
       // only button 2 or macOS Control-click count as desktop secondary clicks.
-      if (!isSecondaryClick(e) || !this.onRoadRightClick) return;
-      const handled = this.onRoadRightClick(this.pickRay(e.clientX, e.clientY));
+      if (!isSecondaryClick(e) || !this.onVehiclePick) return;
+      // No hold here, so picking at event time is exactly right.
+      const car = this.onVehiclePick(this.pickRay(e.clientX, e.clientY));
+      if (!car) return;
+      this.startChase(car);
       // Claim the context gesture when a vehicle was picked. OrbitControls
       // retains its existing context-menu behavior for empty-road pan input.
-      if (handled) e.preventDefault();
+      e.preventDefault();
     });
 
     // Hover position for the car readout: buttons pressed means an orbit

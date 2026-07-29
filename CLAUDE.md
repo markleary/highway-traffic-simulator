@@ -193,14 +193,23 @@ src/render/renderer.js three.js golden-hour diorama: gradient sky dome + sun dis
                        against a road+ramp keep-out corridor (re-run on shape
                        changes; `params.scenery` hides the dressing live).
                        Canvas pointer routing arms crash picks only for the
-                       primary button; a button-2 `contextmenu` pick delegates
-                       exact-vehicle chase to main.js and handles the gesture
-                       when a vehicle was actually selected. Touch reaches the
-                       same exact-vehicle chase through a 500 ms LONG PRESS
-                       (there is no right-click on a finger), fired on a timer
-                       so the camera cuts over while the finger is still down;
-                       moving cancels it (that is an orbit) and it clears the
-                       pending press so the release can't also crash the car.
+                       primary button; a button-2 `contextmenu` pick starts
+                       the chase and claims the gesture when a vehicle was
+                       actually selected. main.js supplies `onVehiclePick`
+                       (ray → vehicle) and the renderer drives the chase from
+                       both pick gestures. It hands back the CAR, not a
+                       handled flag, so the long press can BIND its target at
+                       touch-down. Touch reaches the same exact-vehicle chase
+                       through a 500 ms LONG PRESS (there is no right-click on
+                       a finger), fired on a timer so the camera cuts over
+                       while the finger is still down; moving cancels it (that
+                       is an orbit) and it clears the pending press so the
+                       release can't also crash the car. Re-picking when the
+                       timer FIRES is wrong: traffic moves during the hold, so
+                       the same screen point resolved to the touched car only
+                       35% of the time (16% in free flow, where a car covers
+                       ~15 m against a 9 m pick radius) and to a DIFFERENT car
+                       57%. No vehicle under the finger arms no timer.
                        Mouse presses never arm it. ANY second pointer cancels
                        every pending pick, chasing or not: a two-finger
                        OrbitControls gesture over traffic used to leave the
