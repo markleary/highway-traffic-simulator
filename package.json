@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Dev tooling only — the app itself is static and loads three.js from a CDN import map in index.html. Keep the three version here in sync with that import map.",
   "scripts": {
-    "test": "node test/smoke.js && node test/lane-changes.js && node test/drivers.js && node test/drivers-integration.js && node test/demand.js && node test/road-dynamics.js"
+    "test": "node test/smoke.js && node test/lane-changes.js && node test/drivers.js && node test/drivers-integration.js && node test/demand.js && node test/road-dynamics.js && node test/wheel-motion.js && node test/wheel-geometry.js"
   },
   "devDependencies": {
     "three": "0.170.0"

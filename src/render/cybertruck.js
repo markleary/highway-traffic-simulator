@@ -8,7 +8,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // Production dimensions / medium suspension setting, rounded to millimetres:
 // https://www.tesla.com/ownersmanual/cybertruck/en_ae/GUID-12A976DD-EB60-431B-AFF1-5A37E95006DB.html
 // 5.683 m long, 2.032 m body width, 1.790 m high, 3.635 m wheelbase.
-const AXLES = [1.963, -1.672];
+const AXLES = Object.freeze([1.963, -1.672]);
+const WHEEL_Y = 0.443;
+export const CYBERTRUCK_WHEELS = Object.freeze({ axles: AXLES, y: WHEEL_Y, radius: WHEEL_Y });
 const SIDE_X = 0.971;
 const FRONT_Z = 2.795;
 const REAR_Z = -2.795;
@@ -238,10 +240,10 @@ function wheelGeometry() {
   // Track is 1.772 m; the outer sidewalls remain inside the arch flares.
   for (const side of [-1, 1]) {
     for (const z of AXLES) {
-      const rings = [[-0.1225, 0.396], [-0.087, 0.443], [0.087, 0.443], [0.1225, 0.396]];
+      const rings = [[-0.1225, 0.396], [-0.087, WHEEL_Y], [0.087, WHEEL_Y], [0.1225, 0.396]];
       for (let r = 0; r < rings.length - 1; r++) {
         for (let i = 0; i < 12; i++) {
-          const point = (ring, angle) => [side * (0.886 + ring[0]), 0.443 + ring[1] * Math.sin(angle), z + ring[1] * Math.cos(angle)];
+          const point = (ring, angle) => [side * (0.886 + ring[0]), WHEEL_Y + ring[1] * Math.sin(angle), z + ring[1] * Math.cos(angle)];
           const a = i * Math.PI / 6;
           const b = (i + 1) * Math.PI / 6;
           parts.push(panel([point(rings[r], a), point(rings[r], b), point(rings[r + 1], b), point(rings[r + 1], a)],
@@ -250,7 +252,7 @@ function wheelGeometry() {
       }
       for (const face of [-1, 1]) {
         parts.push(new THREE.CylinderGeometry(0.396, 0.396, 0.003, 12)
-          .rotateZ(Math.PI / 2).translate(side * (0.886 + face * 0.121), 0.443, z));
+          .rotateZ(Math.PI / 2).translate(side * (0.886 + face * 0.121), WHEEL_Y, z));
       }
     }
   }
@@ -264,14 +266,14 @@ function hubGeometry() {
       const vertices = Array.from({ length: 14 }, (_, i) => {
         const a = i * Math.PI / 7;
         const radius = i % 2 === 0 ? 0.351 : 0.287;
-        return [side * 1.011, 0.443 + Math.sin(a) * radius, z + Math.cos(a) * radius];
+        return [side * 1.011, WHEEL_Y + Math.sin(a) * radius, z + Math.cos(a) * radius];
       });
       // A shallow seven-lobed aero cover, not a bright conventional hubcap.
       parts.push(...vertices.map((vertex, i) => panel([
-        [side * 1.016, 0.443, z], vertex, vertices[(i + 1) % vertices.length],
+        [side * 1.016, WHEEL_Y, z], vertex, vertices[(i + 1) % vertices.length],
       ], [side, 0, 0])));
       parts.push(new THREE.CylinderGeometry(0.071, 0.071, 0.01, 7)
-        .rotateZ(Math.PI / 2).translate(side * 1.01, 0.443, z));
+        .rotateZ(Math.PI / 2).translate(side * 1.01, WHEEL_Y, z));
     }
   }
   return merged(parts);

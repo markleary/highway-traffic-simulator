@@ -7,8 +7,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // footprint. These parts can later be supplied by an authored low-poly model.
 const FRONT_Z = 2.278;
 const REAR_Z = -2.278;
-const AXLES = [1.43, -1.36];
+const AXLES = Object.freeze([1.43, -1.36]);
 const WHEEL_Y = 0.342;
+export const EV_WHEELS = Object.freeze({ axles: AXLES, y: WHEEL_Y, radius: WHEEL_Y });
 const SIDE_SLOPE = 0.47;
 // z, half body width, belt height, roof/hood height. Broad planar facets keep
 // the shell legible at traffic scale without rounding away its low-poly feel.
@@ -211,7 +212,7 @@ function trimGeometry() {
 
 function wheelGeometry() {
   const parts = [];
-  const rings = [[-0.101, 0.301], [-0.074, 0.342], [0.074, 0.342], [0.101, 0.301]];
+  const rings = [[-0.101, 0.301], [-0.074, WHEEL_Y], [0.074, WHEEL_Y], [0.101, 0.301]];
   for (const side of [-1, 1]) {
     for (const z of AXLES) {
       const point = (ring, angle) => [side * (0.815 + ring[0]), WHEEL_Y + ring[1] * Math.sin(angle), z + ring[1] * Math.cos(angle)];

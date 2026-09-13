@@ -1,6 +1,6 @@
 # Highway Traffic Simulator
 
-[![A jammed loop of freeway at golden hour — cars colored by speed, the on-ramp queue backed up solid red](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
+[![Low-poly highway traffic with a semi-truck, police cruiser, Cybertruck and electric cars on a curved freeway with an on-ramp](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
 
 **[▶ Try it live](https://markleary.github.io/highway-traffic-simulator/)** — no install, works on phones (and adds to the home screen as a full-screen app).
 
@@ -161,6 +161,15 @@ branch → `main` / root**. That's it — there is nothing to build.
     cover, recessed polygonal wheel arches, aero wheels, and a front light bar.
     The compact EV has a grilleless nose, panoramic glass, flush handles,
     and aero wheels, with the same 4.6 m footprint as a standard car.
+    Civilian sedans and hatchbacks have open wheel arches, separate windows,
+    and distinct headlights and indicators. Police cruisers wear black-and-white
+    door markings and a push bumper; semis have raised dry-van trailers,
+    exposed chassis and eighteen tires, including dual drive/trailer wheels.
+    Every tire and hub rotates at its vehicle's speed, scaled to wheel size;
+    stopped traffic and a paused simulation hold their wheels still.
+    Ambulances and fire engines add medical markings, compartment hardware,
+    steps and equipment. Per-car mode gives semis painted cabs and neutral
+    trailers; speed/type colors still cover both.
     Close chase zoom centers the vehicle while you orbit it.
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
@@ -204,6 +213,9 @@ Car colors → Per car**, raise **Adaptive cruise (%)**, reset, and right-click
 either a Cybertruck or a compact EV to chase it; scroll in and drag to inspect
 its front and sides. Each new adaptive car independently picks either body
 with equal probability, so small groups will not always split exactly in half.
+For the rest of the fleet, raise **Trucks (%)** and reset, or use **Events →
+Emergency vehicle** to dispatch a responder. Right-click (or long-press on
+touch) to chase one, zoom in, and orbit around its wheels and bodywork.
 Watch a car change lanes: both the following traffic and the car itself respect
 the space it occupies throughout the crossing. For a queue experiment, enable
 ramp meters, raise inflow and lower the meter rate; the map will show demand
@@ -250,8 +262,8 @@ length, acceleration, following, braking, and top-speed characteristics.
 Everything is rendered with three.js (instanced meshes) — the low-poly cars,
 trucks, ambulance, police car, fire truck, and golden-hour landscape included —
 so thousands of cars stay smooth.
-All vehicle geometry remains procedural. The Cybertruck and EV geometry providers
-return named instanced parts with a common meter-scale coordinate system;
+All vehicle geometry remains procedural. Each vehicle family has a geometry
+provider returning named instanced parts with a common meter-scale coordinate system;
 an authored glTF/GLB could supply that contract later without changing driver
 behavior. No asset loader or additional runtime dependency is needed today.
 The landscape uses sparse, broad faceted ground relief, faint wheel-wear
