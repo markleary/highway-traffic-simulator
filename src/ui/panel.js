@@ -289,7 +289,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   };
   tip(
     fRoad.add(params, 'roadShape', shapeOptions).name('Shape').onFinishChange(geometryChanged),
-    'Shape of the highway loop. Changing it rebuilds the road and reseeds traffic — the physics is identical on every shape; only the scenery bends.'
+    'Shape of the highway loop. Changing it rebuilds the road and reseeds traffic. Enable Hills & curves below to let the geometry affect driving speeds.'
   );
   tip(
     fRoad
@@ -310,13 +310,17 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
       .add(params, 'lanes', 2, 4, 1)
       .name('Lanes')
       .onChange(() => {
-        sim.onLaneCountChanged();
+        if (sim.onLaneCountChanged()) renderer.exitChase();
         renderer.buildRoad();
         // the work zone closes whichever lane is innermost NOW — the cones
         // must move to it with the physics (Codex review)
         renderer.onWorkZoneChanged();
       }),
-    'Number of lanes. The outer edge stays fixed and lanes grow inward; cars in a removed lane move to the innermost remaining one.'
+    'Number of lanes. The outer edge stays fixed and lanes grow inward. Reducing the count resets traffic so cars cannot be squeezed into occupied gaps; use Work zone for a live closure.'
+  );
+  tip(
+    fRoad.add(params, 'roadDynamics').name('Hills & curves'),
+    'Drivers slow ahead of tight bends, and heavy vehicles lose climbing speed on the figure-eight bridge. These are illustrative comfort and uphill power limits. Off keeps the loop geometry from affecting speed.'
   );
 
   const fDrv = gui.addFolder('Drivers');
@@ -326,7 +330,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   );
   tip(
     fDrv.add(params, 'accShare', 0, 100, 5).name('Adaptive cruise (%)'),
-    'Share of non-semi vehicles using an idealized adaptive-cruise controller, shown as Cybertrucks. It softens abrupt following responses and can reduce stop-and-go waves; real ACC systems vary. This does not reproduce Tesla software. Applies to new spawns and on reset.'
+    'Share of non-semi vehicles using an idealized adaptive-cruise controller. Each picks a Cybertruck or a compact EV with equal probability; the EV is the same length as a standard car. The controller can soften stop-and-go waves; real ACC systems vary. This does not reproduce Tesla software. Applies to new arrivals and on reset.'
   );
   tip(
     fDrv
@@ -338,6 +342,14 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   tip(
     fDrv.add(params, 'speedVariation', 0, 0.4, 0.01).name('Speed spread'),
     'Per-car variation around the desired speed, sampled when a car spawns: 0.15 means ±15%. More spread = more overtaking.'
+  );
+  tip(
+    fDrv.add(params, 'driverVariation', 0, 0.5, 0.05).name('Driver differences'),
+    'Stable differences in human following distance, acceleration and courtesy. Each driver keeps their preferences; this slider changes their strength live. Zero makes human drivers uniform except for speed spread. ACC uses a consistent controller.'
+  );
+  tip(
+    fDrv.add(params, 'responseTime', 0, 1.2, 0.1).name('Human response (s)'),
+    'How gradually human drivers adjust normal acceleration and braking. Urgent braking responds immediately. This models response smoothing, not a measured perception delay. Zero restores immediate response; ACC and emergency vehicles remain immediate.'
   );
   tip(
     fDrv.add(params, 'timeHeadway', 0.6, 3, 0.1).name('Time headway (s)'),
@@ -390,6 +402,10 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   // knob); changing the count rebuilds the panel so this list stays true.
   const fRamps = gui.addFolder('Ramps');
   tip(
+    fRamps.add(params, 'arrivalMode', { Variable: 'random', Regular: 'regular' }).name('Arrival spacing'),
+    'Variable spaces demand requests randomly around the requested average; Regular uses equal intervals. A full ramp keeps unmet demand waiting upstream, shown on its map label. Setting a rate to zero stops new requests while existing queues drain.'
+  );
+  tip(
     fRamps.add(params, 'metering').name('🚦 Ramp meters'),
     'Signals at every on-ramp release one car per green. Compare mainline speed and achieved flow against extra ramp waiting; the benefit depends on demand and meter rate. Applies live.'
   );
@@ -398,7 +414,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
     'Greens per minute at each meter. Sweep it: too high and the meter never binds, too low and the ramps starve the road while queues explode.'
   );
   const onTip = (which) =>
-    `Cars per minute trying to enter at on-ramp ${which}. The map label shows how many actually merge — throughput drops when the ramp queue backs up.`;
+    `Average cars per minute requesting entry at on-ramp ${which}. The map label shows achieved merges, cars stopped on the ramp, and requests waiting upstream when the entrance fills.`;
   const offTip = (which) =>
     `Percentage of passing cars that choose exit ${which}. Each car decides about ${imp ? '700 ft' : '220 m'} upstream, then works its way to the outer lane.`;
   for (const ramp of RAMPS.filter((r) => r.type === 'on')) {

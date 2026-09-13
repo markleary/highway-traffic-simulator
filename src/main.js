@@ -298,7 +298,7 @@ setInterval(() => {
   if (params.showFps) el.fps.textContent = (fpsFrames / ((nowMs - fpsLast) / 1000)).toFixed(0);
   fpsFrames = 0;
   fpsLast = nowMs;
-  renderer.updateRampLabels(sim.rampFlows(), sim.rampQueues());
+  renderer.updateRampLabels(sim.rampFlows(), sim.rampQueues(), sim.rampDemand());
   charts.update(sim.history, sim.incidentStarts); // applies showCharts to the DOM
   // toggling the chart stack moves the free region's left edge; re-frame a
   // parked auto view around it (measured after the update call above)

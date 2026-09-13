@@ -1,10 +1,14 @@
-import { LOOP, RAMPS, ROAD, SHOULDER_LANE, wrap, forwardDist, pointAt, lateralOf, setShape } from './road.js';
+import { LOOP, RAMPS, ROAD, SHOULDER_LANE, wrap, forwardDist, pointAt, forwardAt, lateralOf, setShape } from './road.js';
 import { params } from '../params.js';
+import { driverFactor, driverResponse } from './drivers.js';
+import { roadSpeedLimit } from './road-dynamics.js';
+import { RampDemand } from './demand.js';
 import {
   Car,
   EMERGENCY_KINDS,
   VEHICLE_LEN,
   isEmergencyVehicle,
+  vehicleSpec,
 } from './car.js';
 
 // Spatial resolution of the space-time diagram's speed sampling (m of s).
@@ -35,6 +39,40 @@ const EMERGENCY_SIREN_RANGE = 260; // m
 const EMERGENCY_PASS_LOOKAHEAD = 3; // s used to turn leader gap into projected pace
 const EMERGENCY_PASS_SPEED_GAIN = 3; // m/s of projected pace: a real pass, not noise
 const EMERGENCY_LANE_HOLD = 4; // s after taking a passing opportunity
+
+// A lane change occupies BOTH lanes until the body has cleared the source.
+// This conservative reservation lets ordinary one-dimensional car following
+// account for a vehicle crossing the lane line, without instantaneous jumps.
+function occupiesLane(car, lane) {
+  return car.lane === lane || car.laneChange?.from === lane;
+}
+
+function maneuverDuration(car) {
+  if (isEmergencyVehicle(car.kind)) return car.kind === 'firetruck' ? 4.5 : 3;
+  if (car.kind === 'truck') return 5;
+  // Stable per-car variation, independent of the traffic random sequence.
+  return 3.6 + ((car.id * 17) % 11) * 0.08;
+}
+
+// Project onto the LOCAL approach to this ramp's join, not some unrelated
+// road segment at a crossing. Tangent corrections converge quickly near the
+// merge, and preserve the exact world position when converting coordinates.
+function localRoadProjection(point, initialS) {
+  let s = wrap(initialS);
+  const center = pointAt(s), tangent = forwardAt(s);
+  for (let i = 0; i < 6; i++) {
+    pointAt(s, 0, center); forwardAt(s, tangent);
+    const ds = (point.x - center.x) * tangent.x + (point.z - center.z) * tangent.z;
+    s = wrap(s + ds);
+    if (Math.abs(ds) < 1e-8) break;
+  }
+  return { s, offset: lateralOf(s, point), point };
+}
+
+function rampProjection(ramp, rampPos) {
+  const point = ramp.curve.getPointAt(Math.max(0, Math.min(1, rampPos / ramp.length)));
+  return localRoadProjection(point, ramp.sJoin - (ramp.length - rampPos));
+}
 
 // A siren run is budgeted in DISTANCE (laps driven), which stops counting
 // down at v = 0; a responder wedged behind a blockage would never retire,
@@ -74,7 +112,7 @@ function idm(car, vLead, gap, v0) {
   const hardBrake = -9 * car.brakeK * (1 - RAIN_HARD * rainNow); // wet road: less grip
   if (gap <= 0) return hardBrake;
   const v = car.v;
-  const aMax = p.maxAccel * car.accelK;
+  const aMax = p.maxAccel * car.accelK * driverFactor(car, 'accel', p.driverVariation);
   let acc = aMax * (1 - Math.pow(v / Math.max(v0, 0.1), 4));
   if (Number.isFinite(gap)) {
     const dv = v - vLead;
@@ -83,7 +121,8 @@ function idm(car, vLead, gap, v0) {
       p.minGap +
       Math.max(
         0,
-        v * p.timeHeadway * car.headwayK * (1 + RAIN_HEADWAY * rainNow) +
+        v * p.timeHeadway * car.headwayK * driverFactor(car, 'headway', p.driverVariation) *
+          (1 + RAIN_HEADWAY * rainNow) +
           (v * dv) / (2 * Math.sqrt(aMax * wetBrake * car.brakeK))
       );
     acc -= aMax * (sStar / gap) ** 2;
@@ -91,14 +130,26 @@ function idm(car, vLead, gap, v0) {
   return Math.max(acc, hardBrake);
 }
 
-// Adaptive cruise control: IDM tempered by the Constant-Acceleration
-// Heuristic (Treiber & Kesting, "Traffic Flow Dynamics", ch. 11). Plain IDM
-// panics when the gap falls below its desired s* — it brakes far harder than
-// physics requires, and that overreaction is exactly what amplifies a small
-// slowdown into a stop-and-go wave. The CAH computes the deceleration a
-// constant-acceleration prediction of the leader actually demands, and when
-// IDM wants to brake much harder than that, the blend below overrides the
-// panic. ACC cars therefore absorb perturbations instead of magnifying them.
+// Adapt a human driver's normal response once, after leader restrictions are
+// combined. Keep live hardware/grip limits and prescribed stop guards intact.
+function respond(car, target, h, gap, leaderSpeed) {
+  const p = params;
+  return Math.max(-9 * car.brakeK * (1 - RAIN_HARD * rainNow), Math.min(
+    p.maxAccel * car.accelK * driverFactor(car, 'accel', p.driverVariation),
+    driverResponse(car, target, h, {
+      responseTime: p.responseTime, variation: p.driverVariation, gap, leaderSpeed,
+      minGap: p.minGap, comfortBrake: p.comfortBrake * car.brakeK * (1 - RAIN_GRIP * rainNow),
+    })
+  ));
+}
+
+// Idealized ACC research controller: IDM tempered by the Constant-Acceleration
+// Heuristic (Treiber & Kesting, "Traffic Flow Dynamics", ch. 11). CAH estimates
+// the braking required if the leader maintains its current acceleration; the
+// blend softens some abrupt IDM responses to short gaps, such as cut-ins.
+// It can damp traffic waves in the staged scenarios, but string stability is
+// not guaranteed for arbitrary parameters or real commercial ACC systems.
+// The Cybertruck appearance does not imply calibration to Tesla's controller.
 const ACC_COOL = 0.99; // "coolness factor": how strongly CAH tempers IDM
 
 function accACC(car, leader, gap, aIDM) {
@@ -164,7 +215,7 @@ function insertSorted(arr, car) {
 export class Simulation {
   constructor() {
     this.cars = []; // every car, whatever its state
-    this.rampState = new Map(); // ramp id → { cars: [], credit: 0 }
+    this.rampState = new Map(); // ramp id → cars, measured flow, and upstream demand
     this.reset();
   }
 
@@ -185,16 +236,20 @@ export class Simulation {
     this.sampleTimer = 0;
     this.flowTimes = []; // sim timestamps of cars crossing s = 0
     this.counters = { entered: 0, merged: 0, exited: 0, laneChanges: 0 };
-    // per-ramp event timestamps (merges / exits) for measured-flow readouts
-    for (const ramp of RAMPS) this.rampState.set(ramp.id, { cars: [], credit: 0, flowTimes: [] });
+    // Clear removed interchange IDs as well as the active ramps on reset.
+    this.rampState.clear();
+    for (const ramp of RAMPS) this.rampState.set(ramp.id, {
+      cars: [], flowTimes: [], demand: ramp.type === 'on' ? new RampDemand() : null,
+    });
 
     const lanes = params.lanes;
+    this._laneCount = lanes;
     const perLane = Math.floor(params.initialCars / lanes);
     const extra = params.initialCars - perLane * lanes;
     // slot: own length + min gap — the exact feasibility requirement; any
     // extra breathing room comes out of the randomized slack below, so a
     // layout that fits at minGap spacing is never rejected
-    const need = (k) => VEHICLE_LEN[k] + params.minGap;
+    const need = (spec) => spec.len + params.minGap;
     // The innermost lane carries no trucks (on 3+ lanes), so sample trucks in
     // the eligible lanes at a boosted rate to keep the ROAD-WIDE mix at the
     // requested truckShare (capped at 100% when the knob asks for more than
@@ -209,40 +264,44 @@ export class Simulation {
       if (count === 0) continue;
       // no trucks in the innermost lane (they avoid it, see applyLaneChanges)
       const truckOk = !(lanes >= 3 && l === lanes - 1);
-      // Choose kinds first, then pack: every vehicle gets its required slot
+      // Choose kind AND model first, then pack: every vehicle gets its required slot
       // and the leftover road is dealt out as randomized extra gaps, so seeds
       // can never overlap at any density or mix. If the lane can't fit the
       // mix, trucks downgrade to cars; if it can't even fit the cars, the
       // lane seeds fewer vehicles than requested.
-      const kinds = [];
+      const specs = [];
       for (let j = 0; j < count; j++) {
-        kinds.push(
+        specs.push(vehicleSpec(
           truckOk && Math.random() * 100 < boostedShare ? 'truck' : this.sampleCarKind()
-        );
+        ));
       }
-      let totalReq = kinds.reduce((sum, k) => sum + need(k), 0);
-      for (let j = 0; totalReq > LOOP && j < kinds.length; j++) {
-        if (kinds[j] === 'truck') {
-          totalReq -= need('truck') - need('car');
-          kinds[j] = 'car';
+      let totalReq = specs.reduce((sum, spec) => sum + need(spec), 0);
+      for (let j = 0; totalReq > LOOP && j < specs.length; j++) {
+        if (specs[j].kind === 'truck') {
+          const replacement = vehicleSpec('car');
+          totalReq -= need(specs[j]) - need(replacement);
+          specs[j] = replacement;
         }
       }
-      while (totalReq > LOOP && kinds.length) totalReq -= need(kinds.pop());
+      while (totalReq > LOOP && specs.length) totalReq -= need(specs.pop());
       const slack = LOOP - totalReq;
-      const weights = kinds.map(() => 0.2 + Math.random());
+      const weights = specs.map(() => 0.2 + Math.random());
       const wSum = weights.reduce((a, b) => a + b, 0);
       let s = Math.random() * LOOP;
-      for (let j = 0; j < kinds.length; j++) {
-        const kind = kinds[j];
-        const car = new Car({ s: wrap(s), lane: l, v0Factor: this.sampleV0Factor(kind), kind });
+      for (let j = 0; j < specs.length; j++) {
+        const spec = specs[j];
+        const car = new Car({
+          s: wrap(s), lane: l, v0Factor: this.sampleV0Factor(spec.kind),
+          kind: spec.kind, model: spec.model,
+        });
         car.v = this.v0(car) * 0.85;
         this.cars.push(car);
         // centers: advance by half of this vehicle plus half of the next one
         // plus the gap, plus this slot's share of the slack (pair halves sum
         // to the same totalReq as need() around the loop)
-        const nextKind = kinds[(j + 1) % kinds.length];
+        const nextSpec = specs[(j + 1) % specs.length];
         s +=
-          (VEHICLE_LEN[kind] + VEHICLE_LEN[nextKind]) / 2 +
+          (spec.len + nextSpec.len) / 2 +
           params.minGap +
           (slack * weights[j]) / wSum;
       }
@@ -310,7 +369,7 @@ export class Simulation {
     const wz = this.workZone();
     if (wz) {
       const inside = forwardDist(wz.sStart, car.s) < wz.len;
-      if (car.lane === wz.lane) {
+      if (occupiesLane(car, wz.lane)) {
         const dist = inside ? 0 : forwardDist(car.s, wz.sStart);
         if (dist < WZ_WARN) {
           // Runway shrinking toward the cones: brake down like an exit car
@@ -344,7 +403,7 @@ export class Simulation {
         }
       }
     }
-    return v0;
+    return Math.min(v0, roadSpeedLimit(car, rainNow));
   }
 
   // A storm arc: rolls in over 40 s, pours for 90, clears over 50. The live
@@ -381,24 +440,138 @@ export class Simulation {
   }
 
   onLaneCountChanged() {
-    for (const car of this.cars) {
-      // trucks stay out of the innermost lane on 3+ lane roads
-      const maxLane =
-        car.kind === 'truck' && params.lanes >= 3 ? params.lanes - 2 : params.lanes - 1;
-      if (car.lane > maxLane) car.lane = maxLane;
+    // Removing pavement is a geometry edit, not a merge. Clamping all cars
+    // from removed lanes into one surviving lane can put several bodies at
+    // the same s. Re-seed safely with the selected count instead.
+    if (params.lanes < this._laneCount) {
+      this.reset();
+      return true;
     }
+    this._laneCount = params.lanes;
+    return false;
   }
 
   buildLaneIndex() {
     const arrs = Array.from({ length: params.lanes }, () => []);
     for (const car of this.cars) {
-      if (car.state === 'main') arrs[Math.min(car.lane, params.lanes - 1)].push(car);
+      if (car.state !== 'main') continue;
+      arrs[car.lane]?.push(car);
+      const source = car.laneChange?.from;
+      if (source !== car.lane && source >= 0) arrs[source]?.push(car);
     }
     for (const arr of arrs) arr.sort((a, b) => a.s - b.s);
     return arrs;
   }
 
+  beginLaneChange(car, targetLane, arrs, {
+    fromLane = car.lane, endRender = targetLane, toShoulder = false, cooldown = 3.5,
+  } = {}) {
+    if (car.laneChange) return false;
+    const duration = maneuverDuration(car);
+    car.laneChange = {
+      from: fromLane, to: targetLane, startRender: car.renderLane, endRender,
+      elapsed: 0, duration, toShoulder,
+    };
+    if (targetLane >= 0) {
+      car.lane = targetLane;
+      if (arrs && !arrs[targetLane].includes(car)) insertSorted(arrs[targetLane], car);
+    }
+    car.lcCooldown = duration + cooldown;
+    return true;
+  }
+
+  advanceLaneChange(car, h) {
+    const change = car.laneChange;
+    if (!change) return false;
+    // A crashed vehicle comes to rest wherever it was crossing the line;
+    // its source reservation survives until the wreck is removed.
+    if (car.incident?.kind === 'accident') return true;
+    change.elapsed = Math.min(change.elapsed + h, change.duration);
+    const u = change.elapsed / change.duration;
+    // Quintic smoothstep: continuous lateral speed/acceleration at each end.
+    const progress = u * u * u * (10 + u * (-15 + 6 * u));
+    car.renderLane = change.startRender + (change.endRender - change.startRender) * progress;
+    if (u >= 1) {
+      car.renderLane = change.endRender;
+      if (change.toShoulder) car.state = 'shoulder';
+      car.laneChange = null;
+    }
+    return true;
+  }
+
+  // Last safe waiting position on the ramp. Check the oriented body, not
+  // just its center: a long truck's nose reaches the road well before the
+  // center of a compact car. Geometry is cached per physical model length.
+  rampHoldPosition(ramp, car) {
+    ramp._holdPositions ??= new Map();
+    if (ramp._holdPositions.has(car.len)) return ramp._holdPositions.get(car.len);
+    const clear = (position) => {
+      const projection = rampProjection(ramp, position);
+      const tangent = ramp.curve.getTangentAt(position / ramp.length);
+      // All procedural road vehicles fit inside this 2.7 m wide envelope.
+      // Mainline half-width 1.35 m + .55 m clearance allows for curvature.
+      for (const longitudinal of [-car.len / 2, 0, car.len / 2]) {
+        for (const side of [-1.35, 1.35]) {
+          const corner = projection.point.clone();
+          corner.x += tangent.x * longitudinal - tangent.z * side;
+          corner.z += tangent.z * longitudinal + tangent.x * side;
+          if (localRoadProjection(corner, projection.s + longitudinal).offset < 1.9) return false;
+        }
+      }
+      return true;
+    };
+    let lo = 0, hi = ramp.length;
+    for (let i = 0; i < 24; i++) {
+      const middle = (lo + hi) / 2;
+      if (clear(middle)) lo = middle;
+      else hi = middle;
+    }
+    ramp._holdPositions.set(car.len, lo);
+    return lo;
+  }
+
+  syncRampMerge(car) {
+    const projection = rampProjection(car.ramp, car.rampPos);
+    car.s = projection.s;
+    car.renderLane = -projection.offset / ROAD.laneWidth;
+  }
+
+  setRampMergeS(car, s) {
+    // Invert the local, monotone projection after a mainline overlap repair,
+    // so the rendered ramp position and both following constraints agree.
+    const distance = forwardDist(s, car.ramp.sJoin);
+    let lo = 0, hi = car.rampPos;
+    for (let i = 0; i < 20; i++) {
+      const middle = (lo + hi) / 2;
+      const projected = rampProjection(car.ramp, middle);
+      if (forwardDist(projected.s, car.ramp.sJoin) > distance) lo = middle;
+      else hi = middle;
+    }
+    car.rampPos = lo;
+    this.syncRampMerge(car);
+  }
+
+  advanceRampMerge(car, h) {
+    car.sPrev = car.s;
+    car.rampPos += car.v * h;
+    car.laneChange.elapsed += h;
+    if (car.rampPos < car.ramp.length) {
+      this.syncRampMerge(car);
+      return;
+    }
+    const ramp = car.ramp;
+    car.s = wrap(ramp.sJoin + car.rampPos - ramp.length);
+    car.renderLane = 0;
+    const queue = this.rampState.get(ramp.id).cars;
+    queue.splice(queue.indexOf(car), 1);
+    car.ramp = null;
+    car.rampMerge = false;
+    car.laneChange = null;
+    car.lcCooldown = Math.max(3, car.lcCooldown);
+  }
+
   step(h) {
+    if (params.lanes !== this._laneCount) this.onLaneCountChanged();
     this.time += h;
 
     // live rain: the steady knob or the storm arc, whichever is wetter —
@@ -424,8 +597,8 @@ export class Simulation {
 
     let arrs = this.buildLaneIndex();
     if (this.applyLaneChanges(arrs)) arrs = this.buildLaneIndex();
-    this.accelMainline(arrs);
-    this.accelRamps(arrs[0]);
+    this.accelMainline(arrs, h);
+    this.accelRamps(arrs[0], h);
     this.accelWorkZone();
     this.accelIncidents();
 
@@ -434,19 +607,33 @@ export class Simulation {
       car.v = Math.max(0, car.v + car.a * h);
       if (car.state === 'onramp' || car.state === 'offramp') {
         car.rampPos += car.v * h;
+        if (car.state === 'onramp') {
+          const hold = this.rampHoldPosition(car.ramp, car);
+          if (car.rampPos > hold) {
+            car.rampPos = hold;
+            car.v = 0;
+          }
+        }
+      } else if (car.rampMerge) {
+        this.advanceRampMerge(car, h);
       } else {
         // 'main' and 'shoulder' both live in road coordinates
         car.sPrev = car.s;
         car.s = wrap(car.s + car.v * h);
-        const target = car.state === 'shoulder' ? SHOULDER_LANE : car.lane;
-        const dl = target - car.renderLane;
-        const maxStep = 2.0 * h; // lanes per second, rendering only
-        car.renderLane += Math.abs(dl) <= maxStep ? dl : Math.sign(dl) * maxStep;
+        if (!this.advanceLaneChange(car, h)) {
+          const target = car.state === 'shoulder' ? SHOULDER_LANE : car.lane;
+          const dl = target - car.renderLane;
+          const maxStep = 2.0 * h; // fallback for externally staged cars
+          car.renderLane += Math.abs(dl) <= maxStep ? dl : Math.sign(dl) * maxStep;
+        }
       }
     }
 
     arrs = this.buildLaneIndex();
-    this.preventOverlaps(arrs);
+    for (let pass = 0; pass < this.cars.length; pass++) {
+      this.preventOverlaps(arrs);
+      if (!this.preventRampOverlaps()) break;
+    }
     this.updateIncidents(arrs);
     this.handleMarkers();
     this.handleMerges(arrs[0]);
@@ -536,6 +723,8 @@ export class Simulation {
         car.signal = car.ramp.length - car.rampPos < car.ramp.mergeZone + 40 ? 1 : 0;
       } else if (car.state === 'offramp') {
         car.signal = 0;
+      } else if (car.laneChange) {
+        car.signal = Math.sign(car.laneChange.endRender - car.laneChange.startRender);
       } else if (Math.abs(car.renderLane - car.lane) > 0.15) {
         car.signal = car.lane > car.renderLane ? 1 : -1; // mid-maneuver
       } else if (
@@ -571,6 +760,14 @@ export class Simulation {
     return queues;
   }
 
+  // Demand waiting upstream has not entered the modeled ramp. Keep it
+  // separate from stopped ramp cars, road occupancy, and measured throughput.
+  rampDemand() {
+    return Object.fromEntries(RAMPS
+      .filter((ramp) => ramp.type === 'on')
+      .map((ramp) => [ramp.id, this.rampState.get(ramp.id).demand.stats()]));
+  }
+
   // Measured throughput of each ramp (cars/min over the last minute).
   rampFlows() {
     const window = Math.min(this.time, 60);
@@ -582,8 +779,14 @@ export class Simulation {
     return flows;
   }
 
-  accelMainline(arrs) {
+  accelMainline(arrs, h = 1 / 60) {
+    for (const car of this.cars) {
+      if (car.state === 'main') car._nextAcceleration = Infinity;
+    }
     for (const arr of arrs) {
+      // Take the more restrictive of the source and receiving lanes while
+      // crossing. Publish only after ALL lanes, so an ACC driver always sees
+      // the previous step's leader acceleration, including at s=0.
       for (let i = 0; i < arr.length; i++) {
         const car = arr[i];
         const leader = arr.length > 1 ? arr[(i + 1) % arr.length] : null;
@@ -591,15 +794,30 @@ export class Simulation {
         const aIDM = idm(car, leader ? leader.v : car.v, gap, this.effectiveV0(car));
         // ACC only tempers real following situations; ramp queues and
         // blocked-gap cases (gap <= 0) keep the plain IDM/hard-brake result.
-        car.a =
+        const acceleration =
           car.kind === 'acc' && leader && Number.isFinite(gap) && gap > 0
             ? accACC(car, leader, gap, aIDM)
             : aIDM;
+        // Response urgency depends on the gap AND closing speed. Evaluate
+        // each occupied lane against the same previous acceleration before
+        // taking the minimum; the most negative raw IDM target need not be
+        // the lane that requires an immediate braking response.
+        const realized = respond(car, acceleration, h, gap, leader ? leader.v : car.v);
+        if (realized < car._nextAcceleration) {
+          car._nextAcceleration = realized;
+          car._followingGap = gap;
+          car._leaderSpeed = leader ? leader.v : car.v;
+        }
+      }
+    }
+    for (const car of this.cars) {
+      if (car.state === 'main') {
+        car.a = car._nextAcceleration;
       }
     }
   }
 
-  accelRamps(lane0) {
+  accelRamps(lane0, h = 1 / 60) {
     const p = params;
     const rampV0 = p.rampSpeed * (1 - RAIN_V0 * rainNow);
     for (const ramp of RAMPS) {
@@ -614,6 +832,9 @@ export class Simulation {
       }
       for (let i = 0; i < st.cars.length; i++) {
         const car = st.cars[i];
+        // A car committed to the merge already follows lane0, but remains a
+        // physical leader for the queue behind it until it clears the curve.
+        if (car.rampMerge) continue;
         const leader = i + 1 < st.cars.length ? st.cars[i + 1] : null;
         let v0r = rampV0;
         if (ramp.type === 'on' && ramp.length - car.rampPos < ramp.mergeZone) {
@@ -626,11 +847,14 @@ export class Simulation {
         let acc = leader
           ? idm(car, leader.v, leader.rampPos - car.rampPos - halfLens(car, leader), v0r)
           : idm(car, car.v, Infinity, v0r);
+        acc = respond(car, acc, h,
+          leader ? leader.rampPos - car.rampPos - halfLens(car, leader) : Infinity,
+          leader ? leader.v : car.v);
         if (ramp.type === 'on') {
           // The ramp end is a wall, but only brake for it once physically
           // necessary — braking the IDM way the whole length of the ramp
           // would make every car crawl into the merge zone.
-          const rem = ramp.length - 3 - car.len / 2 - car.rampPos;
+          const rem = this.rampHoldPosition(ramp, car) - car.rampPos;
           if (rem < 0.5) acc = Math.min(acc, -9);
           else {
             const needed = (car.v * car.v) / (2 * rem);
@@ -689,15 +913,18 @@ export class Simulation {
     const p = params;
     const wz = this.workZone();
     let changed = false;
+    // Visit each driver once, but reserve accepted gaps immediately. Otherwise
+    // two drivers on opposite sides of a lane can both claim the same space.
+    const candidates = arrs.map((arr) => arr.slice());
     for (let l = 0; l < arrs.length; l++) {
       const arr = arrs[l];
-      for (let i = 0; i < arr.length; i++) {
-        const car = arr[i];
-        if (car.lcCooldown > 0) continue;
+      for (const car of candidates[l]) {
+        if (car.lcCooldown > 0 || car.laneChange || car.lane !== l) continue;
         // Wrecked cars sit still; breakdown cars only change lanes while
         // working their way over to the shoulder.
         const pullover = car.incident?.phase === 'pullover';
         if (car.incident && !pullover) continue;
+        const i = arr.indexOf(car);
 
         // Emergency driving: the responder hunts a meaningfully faster lane
         // with no politeness, then commits to the opening instead of reacting
@@ -826,12 +1053,13 @@ export class Simulation {
           if (nf) {
             nfNew = idm(nf, car.v, gapBehind, this.v0(nf));
             if (nfNew < -brakeLimit) continue;
-            const nfCurGap = nl ? forwardDist(nf.s, nl.s) - halfLens(nf, nl) : Infinity;
+            const nfCurGap = nl && nf !== nl ? forwardDist(nf.s, nl.s) - halfLens(nf, nl) : Infinity;
             nfOld = idm(nf, nl ? nl.v : nf.v, nfCurGap, this.v0(nf));
           }
 
           let score =
-            myNew - curAcc - (emergency ? 0 : p.politeness) * Math.max(0, nfOld - nfNew);
+            myNew - curAcc - (emergency ? 0 : p.politeness *
+              driverFactor(car, 'politeness', p.driverVariation)) * Math.max(0, nfOld - nfNew);
           // Emergency vehicles choose on projected pace above, with no directional
           // bias that could pull them straight back into the lane they left.
           // Everyone else keeps the mild keep-right bias.
@@ -850,10 +1078,9 @@ export class Simulation {
         }
 
         if (bestLane >= 0) {
-          car.lane = bestLane;
-          if (emergency) car.lcCooldown = EMERGENCY_LANE_HOLD;
-          else if (yielding) car.lcCooldown = 3.5;
-          else car.lcCooldown = mandatory ? 1.2 : 3.5;
+          this.beginLaneChange(car, bestLane, arrs, {
+            cooldown: emergency ? EMERGENCY_LANE_HOLD : mandatory ? 1.2 : 3.5,
+          });
           this.counters.laneChanges++;
           changed = true;
         } else {
@@ -872,25 +1099,42 @@ export class Simulation {
   // IDM should keep cars apart on its own; this is a belt-and-braces clamp so
   // extreme parameter combinations can't make cars drive through each other.
   preventOverlaps(arrs) {
-    for (const arr of arrs) {
-      if (arr.length < 2) continue;
-      for (let i = 0; i < arr.length; i++) {
-        const car = arr[i];
-        const leader = arr[(i + 1) % arr.length];
-        const gap = forwardDist(car.s, leader.s) - halfLens(car, leader);
-        if (gap < 0.2) {
-          car.s = wrap(leader.s - halfLens(car, leader) - 0.25);
-          car.v = Math.min(car.v, leader.v);
+    // A crossing vehicle participates in two ordering constraints. Moving it
+    // back in one lane can tighten the other lane, so propagate corrections
+    // until neither lane has an overlap. In normal operation the first pass
+    // makes no correction; the bound also handles a compressed queue spanning
+    // many cars without recursive stack growth.
+    let moved = false;
+    for (let pass = 0; pass < this.cars.length; pass++) {
+      let corrected = false;
+      for (const arr of arrs) {
+        if (arr.length < 2) continue;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const car = arr[i];
+          const leader = arr[(i + 1) % arr.length];
+          const gap = forwardDist(car.s, leader.s) - halfLens(car, leader);
+          if (gap < 0.2) {
+            car.s = wrap(leader.s - halfLens(car, leader) - 0.25);
+            if (car.rampMerge) this.setRampMergeS(car, car.s);
+            car.v = Math.min(car.v, leader.v);
+            corrected = true;
+            moved = true;
+          }
         }
       }
+      if (!corrected) break;
     }
+    // A repair across s=0 rotates an otherwise valid circular ordering. The
+    // subsequent ramp/reentry searches use binary search, which also needs
+    // the ordinary ascending ordering restored at that seam.
+    if (moved) for (const arr of arrs) arr.sort((a, b) => a.s - b.s);
   }
 
   // Point-crossing events: the flow counter at s = 0, exit decisions at each
   // off-ramp's decision marker, and the diverge itself.
   handleMarkers() {
     for (const car of this.cars) {
-      if (car.state !== 'main') continue;
+      if (car.state !== 'main' || car.rampMerge) continue;
       const traveled = forwardDist(car.sPrev, car.s);
       // 0 = didn't move; > 30 = was pushed backward by the overlap clamp and
       // the wrapped "distance" is bogus. Real per-step travel is < 1 m.
@@ -909,7 +1153,7 @@ export class Simulation {
           if (Math.random() * 100 < params[ramp.rateKey]) car.exitRamp = ramp;
         }
         if (car.exitRamp === ramp && forwardDist(car.sPrev, ramp.sDiverge) < traveled) {
-          if (car.lane === 0) {
+          if (car.lane === 0 && !car.laneChange) {
             car.state = 'offramp';
             car.ramp = ramp;
             car.rampPos = forwardDist(ramp.sDiverge, car.s);
@@ -933,10 +1177,15 @@ export class Simulation {
       // Front-most ramp car first; it has priority for the next gap.
       for (let i = st.cars.length - 1; i >= 0; i--) {
         const car = st.cars[i];
+        if (car.state !== 'onramp') continue;
         const remaining = ramp.length - car.rampPos;
         if (remaining > ramp.mergeZone) break;
-
-        const sIns = wrap(ramp.sJoin - remaining);
+        // Reserve lane0 just before this body's nose reaches it. The curve
+        // itself completes the merge, so neither position nor direction
+        // jumps when changing the simulation's following constraints.
+        if (car.rampPos < this.rampHoldPosition(ramp, car) - 10) break;
+        const projection = rampProjection(ramp, car.rampPos);
+        const sIns = projection.s;
         const { leader, follower } = neighborsAt(lane0, sIns);
         const gapAhead = leader ? forwardDist(sIns, leader.s) - halfLens(car, leader) : Infinity;
         const gapBehind = follower ? forwardDist(follower.s, sIns) - halfLens(follower, car) : Infinity;
@@ -946,7 +1195,8 @@ export class Simulation {
         // merge); fast traffic demands long ones. A car running out of ramp
         // gets desperate and noses in, forcing the follower to yield — which
         // is where merge-induced jam waves come from.
-        const desperation = 1 + 2 * Math.max(0, 1 - remaining / 20);
+        const usableRemaining = Math.max(0, this.rampHoldPosition(ramp, car) - car.rampPos);
+        const desperation = 1 + 2 * Math.max(0, 1 - usableRemaining / 20);
         const shed = 2 * p.safeBrake * (1 - RAIN_HARD * rainNow) * 1.5 * desperation;
         const needAhead =
           p.minGap +
@@ -957,20 +1207,19 @@ export class Simulation {
             (0.5 * follower.v) / desperation +
             Math.max(0, follower.v ** 2 - car.v ** 2) / shed
           : 0;
-        if (gapAhead < needAhead || gapBehind < needBehind) continue;
+        // The single ramp lane cannot pass its own queue head. Reserving a
+        // gap for a follower while the head waits would make them block each
+        // other: the follower cannot drive through the head, and its lane0
+        // reservation would then deny the head's reentry gap forever.
+        if (gapAhead < needAhead || gapBehind < needBehind) break;
 
-        st.cars.splice(i, 1);
         car.state = 'main';
         car.lane = 0;
-        // Start rendering from the car's actual lateral spot on the ramp so
-        // it slides into the lane instead of teleporting.
-        const pt = ramp.curve.getPointAt(Math.min(car.rampPos / ramp.length, 1));
-        car.renderLane = -lateralOf(sIns, pt) / ROAD.laneWidth;
+        car.renderLane = -projection.offset / ROAD.laneWidth;
         car.s = sIns;
-        car.sPrev = wrap(sIns - 0.01);
-        car.ramp = null;
-        car.lcCooldown = 3;
-        insertSorted(lane0, car);
+        car.sPrev = sIns;
+        car.rampMerge = true;
+        this.beginLaneChange(car, 0, [lane0], { fromLane: -1, cooldown: 3 });
         st.flowTimes.push(this.time);
         this.counters.merged++;
       }
@@ -985,7 +1234,7 @@ export class Simulation {
     const wz = this.workZone();
     if (!wz) return;
     for (const car of this.cars) {
-      if (car.state !== 'main' || car.lane !== wz.lane || car.incident) continue;
+      if (car.state !== 'main' || !occupiesLane(car, wz.lane) || car.incident) continue;
       const dist = forwardDist(car.s, wz.sStart);
       // far away, or already inside (a live toggle caught it: it escapes
       // outward under full merge urgency instead of stopping dead)
@@ -1003,7 +1252,7 @@ export class Simulation {
         if (inc.kind === 'accident') {
           car.a = -9; // emergency stop, then stays put
         } else if (inc.phase === 'stopping') {
-          car.a = -Math.max(params.comfortBrake * 1.5, 2);
+          car.a = Math.min(car.a, -Math.max(params.comfortBrake * 1.5, 2));
         } else if (inc.phase === 'parked') {
           car.a = 0;
           car.v = 0;
@@ -1035,16 +1284,24 @@ export class Simulation {
       const car = inc.cars[0];
       const phaseTime = this.time - inc.phaseStart;
       if (inc.phase === 'pullover') {
-        if (car.lane === 0 && Math.abs(car.renderLane) < 0.25) {
-          car.state = 'shoulder';
+        if (car.lane === 0 && !car.laneChange && Math.abs(car.renderLane) < 0.25) {
+          this.beginLaneChange(car, -1, arrs, {
+            endRender: SHOULDER_LANE, toShoulder: true, cooldown: 0,
+          });
           this.setPhase(inc, 'stopping');
-        } else if (phaseTime > 20 && car.lane > 0 && car.lcCooldown <= 0) {
-          // out of patience: force the way over, following traffic must yield
-          car.lane -= 1;
-          car.lcCooldown = 1.5;
+        } else if (phaseTime > 20 && car.lane > 0 && car.lcCooldown <= 0 && !car.laneChange) {
+          // Out of patience: accept a smaller comfort margin, never an
+          // occupied space. Keep the index current for other breakdowns.
+          const targetLane = car.lane - 1;
+          const { leader, follower } = neighborsAt(arrs[targetLane], car.s);
+          const gapAhead = leader ? forwardDist(car.s, leader.s) - halfLens(car, leader) : Infinity;
+          const gapBehind = follower ? forwardDist(follower.s, car.s) - halfLens(follower, car) : Infinity;
+          if (gapAhead >= p.minGap && gapBehind >= p.minGap) {
+            this.beginLaneChange(car, targetLane, arrs, { cooldown: 1.5 });
+          }
         }
       } else if (inc.phase === 'stopping') {
-        if (car.v < 0.05) {
+        if (car.v < 0.05 && car.state === 'shoulder') {
           car.v = 0;
           this.setPhase(inc, 'parked');
           inc.parkedUntil = this.time + p.incidentDuration;
@@ -1066,13 +1323,13 @@ export class Simulation {
             (0.5 * follower.v) / desperation +
             Math.max(0, follower.v ** 2 - car.v ** 2) / shed
           : 0;
-        // after 25 s of waiting, force the merge — nobody idles on a shoulder forever
-        if ((gapAhead > needAhead && gapBehind > needBehind) || phaseTime > 25) {
+        // Patience changes the accepted headway above, but a timeout cannot
+        // create a gap. Stay on the shoulder until traffic provides one.
+        if (gapAhead > needAhead && gapBehind > needBehind) {
           car.state = 'main';
           car.lane = 0;
           car.incident = null;
-          car.lcCooldown = 3;
-          insertSorted(arrs[0], car);
+          this.beginLaneChange(car, 0, arrs, { fromLane: -1, cooldown: 3 });
           this.incidents.splice(i, 1);
         }
       }
@@ -1104,7 +1361,7 @@ export class Simulation {
       let best = null;
       let bestD = 25;
       for (const c of this.cars) {
-        if (c.state !== 'main' || c.incident || c.lane !== otherLane) continue;
+        if (c.state !== 'main' || c.incident || !occupiesLane(c, otherLane)) continue;
         const d = Math.min(forwardDist(car.s, c.s), forwardDist(c.s, car.s));
         if (d < bestD) {
           bestD = d;
@@ -1130,7 +1387,7 @@ export class Simulation {
 
   randomEligibleCar() {
     const eligible = this.cars.filter(
-      (c) => c.state === 'main' && !c.incident && !isEmergencyVehicle(c.kind)
+      (c) => c.state === 'main' && !c.rampMerge && !c.incident && !isEmergencyVehicle(c.kind)
     );
     return eligible.length ? eligible[Math.floor(Math.random() * eligible.length)] : null;
   }
@@ -1145,6 +1402,11 @@ export class Simulation {
   removeCar(car) {
     const i = this.cars.indexOf(car);
     if (i >= 0) this.cars.splice(i, 1);
+    if (car.ramp) {
+      const queue = this.rampState.get(car.ramp.id)?.cars;
+      const index = queue?.indexOf(car) ?? -1;
+      if (index >= 0) queue.splice(index, 1);
+    }
   }
 
   // Find the safest placement in the innermost lane for a vehicle of `kind`.
@@ -1230,7 +1492,7 @@ export class Simulation {
     let bestD = range;
     const active = this._emergencyVehicles?.length ? this._emergencyVehicles : this._ambs || [];
     for (const emergency of active) {
-      if (emergency === car || (lane !== null && emergency.lane !== lane)) continue;
+      if (emergency === car || (lane !== null && !occupiesLane(emergency, lane))) continue;
       const d = forwardDist(emergency.s, car.s);
       if (d < bestD) {
         bestD = d;
@@ -1298,25 +1560,63 @@ export class Simulation {
     for (const ramp of RAMPS) {
       if (ramp.type !== 'on') continue;
       const st = this.rampState.get(ramp.id);
-      st.credit = Math.min(st.credit + (params[ramp.rateKey] / 60) * h, 2);
-      if (st.credit < 1) continue;
+      st.demand.advance(h, params[ramp.rateKey] / 60, params.arrivalMode,
+        () => vehicleSpec(this.sampleKind()));
+      const spec = st.demand.peek();
+      if (!spec) continue;
       // st.cars is sorted by rampPos; index 0 is nearest the ramp entrance.
       // The new vehicle spawns centered at 0, so clearance needs both halves.
-      const kind = this.sampleKind();
+      // The FIFO head was sampled at request time. Never reroll a blocked
+      // Cybertruck, or let a shorter EV jump the queue when only it would fit.
       if (
         st.cars.length &&
-        st.cars[0].rampPos < (st.cars[0].len + VEHICLE_LEN[kind]) / 2 + 4
+        st.cars[0].rampPos < (st.cars[0].len + spec.len) / 2 + 4
       )
         continue;
-      st.credit -= 1;
-      const car = new Car({ v: 12, v0Factor: this.sampleV0Factor(kind), kind });
+      st.demand.admit();
+      // A driver joining the back of an upstream queue is already matching
+      // its pace. Spawning at 12 m/s into four metres behind a stopped car
+      // would require more stopping distance than this entrance provides.
+      const entranceLeader = st.cars[0];
+      const car = new Car({
+        v: Math.min(12, entranceLeader?.v ?? 12),
+        v0Factor: this.sampleV0Factor(spec.kind), kind: spec.kind, model: spec.model,
+      });
       car.state = 'onramp';
       car.ramp = ramp;
       car.rampPos = 0;
-      st.cars.push(car);
+      st.cars.unshift(car); // preserve nearest-entrance-first ordering immediately
       this.cars.push(car);
       this.counters.entered++;
     }
+  }
+
+  preventRampOverlaps() {
+    // Keep the same emergency backstop as the mainline during severe
+    // backpressure, including the short stopping queues at ramp meters.
+    // The front-to-back pass propagates a correction through the whole queue.
+    let mainlineMoved = false;
+    for (const ramp of RAMPS) {
+      const cars = this.rampState.get(ramp.id).cars;
+      let leader = null;
+      for (let i = cars.length - 1; i >= 0; i--) {
+        const car = cars[i];
+        if (car.state !== 'onramp' && car.state !== 'offramp' && !car.rampMerge) continue;
+        if (leader) {
+          const limit = leader.rampPos - halfLens(car, leader) - 0.25;
+          if (car.rampPos > limit) {
+            car.rampPos = limit;
+            car.v = Math.min(car.v, leader.v);
+            if (car.rampMerge) {
+              this.syncRampMerge(car);
+              mainlineMoved = true;
+            }
+          }
+        }
+        leader = car;
+      }
+    }
+    return mainlineMoved;
   }
 
   stats() {
@@ -1329,11 +1629,15 @@ export class Simulation {
       }
     }
     const window = Math.min(this.time, 60);
+    const upstreamWaiting = [...this.rampState.values()]
+      .reduce((sum, st) => sum + (st.demand?.waiting ?? 0), 0);
     return {
       count: this.cars.length,
       mainCount: n, // mainline only — the loop's density excludes ramp queues
       avgSpeed: n ? sum / n : 0, // m/s; display layer converts
       flowPerMin: window > 5 ? this.flowTimes.length * (60 / window) : 0,
+      requested: this.counters.entered + upstreamWaiting,
+      upstreamWaiting,
       ...this.counters,
     };
   }

@@ -1,7 +1,10 @@
+import { driverProfile } from './drivers.js';
+
 let nextId = 1;
 
-// 'acc' uses an illustrative adaptive-cruise controller and a Cybertruck
-// body/footprint. This is not a model of Tesla's proprietary controller.
+// 'acc' selects the illustrative adaptive-cruise controller; the separately
+// sampled model selects the body and footprint. Neither EV model implies
+// calibration to a manufacturer's proprietary controller.
 // Emergency vehicles share the siren-run behavior in simulation.js, but their
 // size, target speed, and IDM response reflect the very different hardware.
 export const EMERGENCY_PROFILES = Object.freeze({
@@ -43,24 +46,55 @@ export function isEmergencyVehicle(kind) {
   return Object.prototype.hasOwnProperty.call(EMERGENCY_PROFILES, kind);
 }
 
-export function vehicleLabel(kind) {
+export function vehicleLabel(carOrKind) {
+  const kind = typeof carOrKind === 'object' ? carOrKind?.kind : carOrKind;
+  if (carOrKind && typeof carOrKind === 'object' && kind === 'acc') {
+    if (carOrKind.model === 'cybertruck') return 'ACC Cybertruck';
+    if (carOrKind.model === 'ev') return 'ACC electric car';
+  }
   return VEHICLE_LABELS[kind] ?? 'Vehicle';
 }
 
-export const VEHICLE_LEN = Object.freeze({
+export const MODEL_LEN = Object.freeze({
   car: 4.6,
+  ev: 4.6, // compact electric sedan: exactly the ordinary car's footprint
+  cybertruck: 5.683,
   truck: 16.5,
-  acc: 5.683, // Cybertruck overall length; matches the procedural render model
   ...Object.fromEntries(
     EMERGENCY_KINDS.map((kind) => [kind, EMERGENCY_PROFILES[kind].length])
   ),
 }); // m
 
+// Compatibility for callers that use a kind's old default length. ACC now
+// has two footprints: runtime packing/clearance must use vehicleSpec().len.
+export const VEHICLE_LEN = Object.freeze({
+  car: MODEL_LEN.car,
+  truck: MODEL_LEN.truck,
+  acc: MODEL_LEN.cybertruck,
+  ...Object.fromEntries(EMERGENCY_KINDS.map((kind) => [kind, MODEL_LEN[kind]])),
+});
+
+// Sample once, before testing whether this specific body fits. Passing a
+// model explicitly supports controlled IDM/ACC comparisons with the same
+// body, dimensions and driver factors; neither controller owns a geometry.
+export function vehicleSpec(kind = 'car', model) {
+  model ??= kind === 'acc' ? (Math.random() < 0.5 ? 'cybertruck' : 'ev') : kind;
+  const passenger = kind === 'car' || kind === 'acc';
+  if (!Object.hasOwn(VEHICLE_LEN, kind) ||
+      !(passenger ? ['car', 'ev', 'cybertruck'].includes(model) : model === kind)) {
+    throw new Error(`Invalid vehicle kind/model: ${kind}/${model}`);
+  }
+  return { kind, model, len: MODEL_LEN[model] };
+}
+
 export class Car {
-  constructor({ s = 0, lane = 0, v = 0, v0Factor, kind = 'car' } = {}) {
+  constructor({ s = 0, lane = 0, v = 0, v0Factor, kind = 'car', model } = {}) {
+    const spec = vehicleSpec(kind, model);
     this.id = nextId++;
     this.kind = kind; // 'car' | 'truck' | 'acc' | an EMERGENCY_KINDS entry
-    this.len = VEHICLE_LEN[kind];
+    this.model = spec.model; // stable geometry, independent of the controller/category
+    this.len = spec.len;
+    this.driver = driverProfile(this.id, kind); // stable preferences; no extra random draws
     const emergency = EMERGENCY_PROFILES[kind];
     if (kind === 'truck') {
       // Loaded semi: accelerates lazily, brakes gently, follows at a bigger

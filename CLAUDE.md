@@ -247,6 +247,9 @@ src/sim/car.js         Car state record + per-kind lengths/driver factors;
                        `isEmergencyVehicle()` classifies the three siren kinds
 src/sim/simulation.js  all traffic logic: IDM, lane changes, ramp merge/exit logic,
                        and the shared emergency-vehicle corridor/dispatch behavior
+src/sim/drivers.js     stable human preferences and bounded acceleration adaptation
+src/sim/demand.js      conserved upstream request FIFO and independent arrival clock
+src/sim/road-dynamics.js optional curve comfort and uphill heavy-vehicle speed targets
 src/render/renderer.js sizes itself from its CONTAINER (#app inside #stage),
                        never from window.inner*, and watches it with a
                        ResizeObserver — the installed-app ICB is short, and
@@ -368,10 +371,12 @@ test/smoke.js          runs the sim headless under several parameter regimes
   drift toward lane 0 when the car has chosen an upcoming exit).
 - `s` = arc length along lane 0's centerline; wraps at `LOOP` (shape- and
   scale-dependent, ~1050–4000 m). All lanes share `s` — the model treats the loop
-  as a straight road that wraps; curvature is purely cosmetic, and so is
-  elevation: `s` is PLAN-VIEW arc length, a shape's optional `elev(s)` profile
-  only feeds `pointAt`'s y / `elevAt` for rendering (the eight's bridge adds
-  no driven length).
+  as a straight road that wraps. `s` is PLAN-VIEW arc length; the optional
+  `roadDynamics` speed targets read `curvatureAt` / `gradeAt` for comfortable
+  cornering and heavy-vehicle climbing pace. Curve caps convert physical lane
+  speed to shared ds/dt. A shape's `elev(s)` also feeds rendering; the bridge
+  still adds no driven coordinate length. Road dynamics stays opt-in because
+  the compact diorama curves are much tighter than a high-speed freeway.
 - The loop's centerline is a closed path of straight + circular-arc segments
   (`road.js` SHAPES: circle, speedway, beltway, gp, eight), so arc length,
   tangents and lateral offsets are exact. A shape must return to its start
@@ -420,9 +425,21 @@ test/smoke.js          runs the sim headless under several parameter regimes
   gap they wait at the ramp end — ramp queues backing up are a feature, not a
   bug. Exit choice is rolled per car when it crosses a decision marker ~220 m
   before each off-ramp.
-- `car.renderLane` is the smoothed lateral position used only for rendering;
-  physics switches lanes discretely. Negative values are outside lane 0 — used
-  by merging ramp cars and the breakdown shoulder (`SHOULDER_LANE`).
+- `car.lane` is the target lane; `car.laneChange` reserves the source too for
+  3–5 seconds, while a quintic trajectory advances `renderLane`. Every following,
+  insertion and overlap gate sees both occupied lanes. Acceleration takes the
+  most restrictive leader and integrates each vehicle once. A mid-maneuver wreck
+  freezes the lateral pose and retains both reservations. Negative renderLane
+  values are outside lane 0 — ramp merges and the breakdown shoulder.
+  Reducing lane count resets safely; adding lanes preserves traffic. Work zones
+  are the live-closure mechanism, rather than forcibly remapping removed lanes.
+  Ramp handoffs retain `car.ramp` + `rampMerge` while reserving lane0; the car
+  follows its original curve and remains a ramp-queue leader until the endpoint.
+  A cached oriented-body hold position stops denied merges outside mainline
+  traffic. Only the first unreserved ramp car may claim a gap. Mainline and
+  ramp overlap repairs synchronize both coordinates and propagate corrections;
+  removal clears any retained ramp membership. Random breakdowns skip an active
+  ramp merge, while click-to-crash remains supported there.
 - Vehicle lights (`sim.updateLights`, cosmetic): brake lights are EV-regen
   style — lit past a deceleration threshold with hysteresis; below a ~5 mph
   crawl any slowing lights them, and a standstill holds them even while the
@@ -439,7 +456,7 @@ test/smoke.js          runs the sim headless under several parameter regimes
   red/blue warning-light meshes; the ambulance has no indicator clusters and
   keeps its strobe-only treatment.
 - Incidents (`sim.incidents`): breakdowns pull over to the shoulder, park with
-  hazards, then re-merge (with growing desperation, forced after a timeout);
+  hazards, then re-merge (with growing desperation, while always requiring a clear gap);
   accidents pin 1–2 cars in-lane as wrecks that vanish when their timer ends.
   Both project a "rubbernecking" zone ~200 m upstream that caps passing cars'
   desired speed, strongest in adjacent lanes (see `effectiveV0`). Click a car
@@ -501,9 +518,10 @@ test/smoke.js          runs the sim headless under several parameter regimes
   (nothing between ~2 and the 12 m/s spawn speed), so the cut isn't delicate.
   Signals (stop bar + two-lamp post, `buildMeter`/`updateMeters`) show per
   ramp; green flashes ~1 s per release. The rush preset's
-  `meterRate` 8 is a restrictive comparison, not a guaranteed rescue. Speed outcomes
-  depend on traffic patterns and demand. Treat the smoke test's selected
-  calibration regimes as comparisons, not a universal guarantee.
+  `meterRate` 8 is a restrictive comparison, not a guaranteed rescue. Correct
+  gap reservations changed its trajectories, and held-out seeds showed mixed
+  speed outcomes. The smoke benchmark reports paired 20-minute speed/flow
+  results; release-rate and conservation checks remain actual invariants.
 - Work zone (`sim.workZone()`, Events panel; `workZone`/`workZonePos`/
   `workZoneLen` params): cones close the INNERMOST lane over a stretch —
   ramps attach to lane 0 and exits drift there, so the inner lane is the only
@@ -545,25 +563,61 @@ test/smoke.js          runs the sim headless under several parameter regimes
 - 'acc' vehicles use an idealized IDM + Constant-Acceleration Heuristic
   research controller, not a calibrated Tesla or universal commercial ACC
   model. They can damp some perturbations; behavior depends on parameters.
-  Their physical length is 5.683 m to match the procedural Cybertruck pickup.
-  `src/render/cybertruck.js` supplies named body/glass/trim/wheel/hub/lens
+  `car.model` selects geometry separately from the controller/category in
+  `car.kind`: ACC samples Cybertruck (5.683 m) or compact EV (4.6 m, exactly
+  the standard-car length) with equal probability. `MODEL_LEN` and
+  `vehicleSpec()` in car.js own these footprints. Reset samples the complete
+  spec before packing; a ramp's `demand` FIFO retains requested kind/model while
+  blocked so shorter cars do not gain a selection bias. Explicit model
+  overrides on `Car` also allow the same passenger body under IDM or ACC in
+  controlled tests. New requests sample live knobs; a waiting request keeps
+  its assigned model. `VEHICLE_LEN.acc` is a compatibility alias only;
+  ordinary traffic clearance must use the selected spec/car length.
+  `src/render/cybertruck.js` and `src/render/ev.js` supply named body/glass/trim/wheel/hub/lens
   buffers and light mounts in meters, +z forward, origin on the road at the
   footprint center. Preserve this contract if authored low-poly assets are
-  introduced later; keep physics independent of asset loading. The body has
+  introduced later; keep physics independent of asset loading. The Cybertruck has
   actual wheel cutouts, a forward roof peak, separate glass roof and ribbed
   tonneau, aero covers, and a dormant pale front light bar. Per-car mode shows
-  stainless; speed/type modes preserve analytical tint. Dynamic lamps remain
-  aligned with the dormant lens mounts.
+  stainless; the compact EV has a grilleless nose, panoramic glass and aero
+  wheels with individual paint colors. Speed/type modes preserve analytical
+  tint, with type still keyed by controller. Geometry, dynamic lamp mounts,
+  shadows, hover height and chase framing use the model; hover and speedometer
+  labels distinguish both ACC bodies. Dynamic lamps remain aligned with the
+  dormant lens mounts.
 - Renderer lighting includes one procedurally generated, prefiltered sky/ground
   reflection map, built once and dimmed with rain. The custom sky shader uses
   tone-mapping and color-space output chunks, like standard scene materials.
   Dashed lane paint has 0.15 m physical width with approx. 10 ft marks / 30 ft
   gaps and follows bridge elevation. Chase look-ahead contracts at close zoom
   and when orbiting, keeping the followed vehicle visible.
+- Each lane-change acceptance reserves the destination immediately while
+  keeping the source. ACC resolves all accelerations before publishing them
+  so lane traversal order and s=0 do not change the leader prediction.
+  Breakdown impatience never bypasses a clear physical gap.
+- `src/sim/drivers.js`: stable human-only profile factors for headway, accel,
+  courtesy and response; `driverVariation` scales their strength live.
+  `responseTime` controls exact first-order acceleration adaptation, with urgent
+  braking bypass; ACC and emergency vehicles use immediate neutral profiles.
+  Each occupied lane evaluates response urgency against the same previous
+  acceleration before choosing the minimum; a closing leader in one lane must
+  not lose its urgent-braking veto to a slower raw target in the other lane.
+  Hardware limits and prescribed stop/incident constraints apply afterward.
+- `src/sim/demand.js`: separate arrival clock and compact FIFO of controller/body
+  requests (one byte each, chunked). `arrivalMode` random uses exponential
+  intervals, regular uses equal spacing. Requests never disappear when a ramp
+  is full; rate zero pauses new demand but allows backlog admission. `rampDemand()`
+  reports requested/admitted/waiting; stats exposes requested and upstreamWaiting
+  separately from entered and actual road occupancy. Admission speed matches a
+  stopped/crawling entrance leader; a ramp overlap backstop protects queued
+  traffic under extreme settings. Reset clears all ramp state.
+- `src/sim/road-dynamics.js`: optional advance curve-speed targets and heavy
+  vehicle uphill pace using specific-power / grade resistance. This is an
+  illustrative target-speed model, not a full powertrain or tire model.
 
 ## Roadmap
 
-See README.md for the visual-audit follow-ups: finite-duration lane changes,
-driver diversity and reaction/anticipation calibration, explicit upstream
-ramp demand, and optional grade/curve effects. Procedural art remains the
-default; the named geometry-part contract keeps an authored-asset path open.
+See README.md for follow-ups: empirical driver/traffic calibration, perception
+delay, multi-vehicle anticipation, explicit upstream geometry and a comparison
+control that holds fleet bodies constant. Procedural art remains the default;
+the named geometry-part contract keeps an authored-asset path open.

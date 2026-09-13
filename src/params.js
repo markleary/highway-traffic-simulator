@@ -114,6 +114,7 @@ export const params = {
   roadScale: 1,        // multiplies the shape's radii and straights; applied on reset
   interchanges: 2,     // requested interchange count (2-4); shapes build what fits
   lanes: 3,
+  roadDynamics: false, // optional curve comfort and heavy-vehicle uphill speed limits
 
   // traffic mix
   truckShare: 5,  // % of vehicles that are semi trucks (new spawns / reset)
@@ -122,6 +123,8 @@ export const params = {
   // driver model (IDM)
   desiredSpeed: 70 * MPH, // m/s
   speedVariation: 0.15,   // per-car spread around desired speed (fraction, at spawn)
+  driverVariation: 0.2,   // strength of stable human headway/acceleration/courtesy differences
+  responseTime: 0.6,      // s — human response smoothing, with urgent braking bypass
   timeHeadway: 1.4,       // s — "following distance" in time
   minGap: 2.0,            // m — bumper-to-bumper gap when stopped
   maxAccel: 1.4,          // m/s²
@@ -146,6 +149,7 @@ export const params = {
   offRampC: 6,
   offRampD: 6,
   rampSpeed: 40 * MPH, // m/s
+  arrivalMode: 'random', // 'random' exponential request spacing | 'regular' constant spacing
   metering: false, // signals at every on-ramp release one car per green (live, no reset)
   meterRate: 8,    // greens per minute at each meter — the calibrated rush-flood
                    // rate (see the meters preset / smoke test). Higher rates

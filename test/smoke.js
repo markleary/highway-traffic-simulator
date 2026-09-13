@@ -2,15 +2,17 @@
 // parameter regimes and asserts basic physical plausibility. No browser needed.
 import { params, KMH } from '../src/params.js';
 import { Simulation, BIN_M } from '../src/sim/simulation.js';
-import { LOOP, RAMPS, SHAPES, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
+import { LOOP, RAMPS, SHAPES, wrap, forwardDist, pointAt, forwardAt, elevAt } from '../src/sim/road.js';
 import { PRESETS, applyPreset } from '../src/presets.js';
 import {
   Car,
   EMERGENCY_KINDS,
   EMERGENCY_PROFILES,
   VEHICLE_LEN,
+  MODEL_LEN,
   isEmergencyVehicle,
   vehicleLabel,
+  vehicleSpec,
 } from '../src/sim/car.js';
 import { isSecondaryClick } from '../src/render/renderer.js';
 
@@ -117,7 +119,12 @@ run('baseline regime (no trucks), 120 sim-seconds', { truckShare: 0 }, 120, (sim
 
 run('flood: heavy inflow, no exits → jam builds', { onRampA: 35, onRampB: 35, offRampA: 0, offRampB: 0, initialCars: 120 }, 180, (sim) => {
   const s = sim.stats();
-  check('car count grew well past seed', s.count > 160, `(count=${s.count})`);
+  // A physically full ramp can keep demand outside the rendered network.
+  // Count that waiting population instead of requiring unsafe extra admissions.
+  check('traffic plus upstream demand grew well past seed', s.count + s.upstreamWaiting > 160,
+    `(on road=${s.count}, upstream=${s.upstreamWaiting})`);
+  check('flood demand is conserved through admission and upstream waiting',
+    s.requested === s.entered + s.upstreamWaiting && s.count === 120 + s.entered);
   check('nobody exited', s.exited === 0, `(exited=${s.exited})`);
   check('congestion slowed traffic', s.avgSpeed < 26.5, `(avg=${s.avgSpeed.toFixed(1)} m/s)`);
   // the cars-on-road chart series should show the growth
@@ -812,7 +819,9 @@ rngState = emergencyTestRngState;
   check('responder caught by a live closure merges out', escaped);
   check('responder caught by a live closure finishes its run', cleared > 0, `(alive at 600 s)`);
 
-  // The cap must never wedge: repeated dispatch over a long work-zone run.
+  // Repeated dispatch may legitimately fill all eight slots in slow traffic.
+  // Refusals must have a physical/cap reason, and the run deadlines must
+  // eventually free every slot even if responders cannot finish their laps.
   Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
     initialCars: 110,
     workZone: true,
@@ -822,13 +831,30 @@ rngState = emergencyTestRngState;
   const repeat = new Simulation();
   for (let i = 0; i < Math.round(60 / H); i++) repeat.step(H);
   let refused = 0;
+  let unjustifiedRefusals = 0;
+  const dispatched = [];
   for (let k = 0; k < 10; k++) {
-    if (!repeat.spawnEmergencyVehicle()) refused++;
+    const active = repeat.cars.filter((c) => isEmergencyVehicle(c.kind)).length;
+    const lane = repeat.buildLaneIndex()[params.lanes - 2];
+    const hasSpace = EMERGENCY_KINDS.some((kind) => repeat.emergencySpawnSlot(lane, kind));
+    const responder = repeat.spawnEmergencyVehicle();
+    if (responder) dispatched.push(responder);
+    else {
+      refused++;
+      if (active < 8 && hasSpace) unjustifiedRefusals++;
+    }
     for (let i = 0; i < Math.round(25 / H); i++) repeat.step(H);
   }
-  check('repeated dispatch is never refused', refused === 0, `(${refused} refused)`);
-  const live8 = repeat.cars.filter((c) => isEmergencyVehicle(c.kind)).length;
-  check('responders do not accumulate against the cap', live8 < 8, `(${live8} on the road)`);
+  check('dispatch refuses only when capacity or physical space is unavailable',
+    unjustifiedRefusals === 0 && dispatched.length > 0, `(${refused} refused)`);
+  const recoveryRngState = rngState;
+  const lastDeadline = Math.max(...dispatched.map((car) => car.emergencyUntil));
+  while (repeat.time <= lastDeadline + H) repeat.step(H);
+  check('all dispatched responders eventually release their capacity',
+    dispatched.every((car) => !repeat.cars.includes(car)));
+  check('dispatch capacity recovers after slow runs',
+    repeat.cars.filter((c) => isEmergencyVehicle(c.kind)).length === 0);
+  rngState = recoveryRngState; // the extra recovery probe must not reseed later scenarios
   assertSane(repeat, 'work zone with repeated dispatch');
 
   // Backstop: the distance budget stops counting down at v = 0, so the run
@@ -1037,7 +1063,9 @@ run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
 run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
   const accs = sim.cars.filter((c) => c.kind === 'acc');
   check('ACC cars present', accs.length > 10, `(${accs.length})`);
-  check('ACC cars use their model length', accs.every((c) => c.len === VEHICLE_LEN.acc));
+  check('ACC cars use their own model length', accs.every((c) => c.len === MODEL_LEN[c.model]));
+  check('both ACC body styles appear',
+    accs.some((c) => c.model === 'ev') && accs.some((c) => c.model === 'cybertruck'));
   check(
     'trucks never get ACC',
     sim.cars.every((c) => c.kind !== 'truck' || (c.accelK < 1 && c.len > 10))
@@ -1160,52 +1188,48 @@ run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
     `(${JSON.stringify(rq)})`
   );
 
-  // The classic counterintuitive result, as a regression: metering the
-  // rush-hour flood RAISES settled mainline speed without costing flow past
-  // the start line. Measured as a MEAN across a few fixed seeds rather than one
-  // recorded trajectory — that was the bug behind issue #49. The old pin ran a
-  // single stream at meterRate 12 and kept passing while the effect quietly
-  // went flat: 12/min sits so close to the flood's own merge rate it barely
-  // shapes demand (a seed lottery, ±noise, sometimes negative). Recalibrated to
-  // 8/min the rescue is robust — across seeds the settled-speed gain is ~+14%
-  // at 25 min (~+5% and noisier at 10 min), so this check reads the mean at a
-  // 20-min horizon where it has clearly emerged. Mix pinned to the calibration
-  // regime: at the ambient accShare default ACC wave-damping absorbs most of
-  // what metering fixes and the comparison goes flat — this check controls its
-  // own inputs; the meters preset pins the same mix.
+  // Paired 20-minute benchmark, with the mix pinned to the two rush presets.
+  // Speed/flow changes are descriptive, not a guaranteed metering benefit.
+  // After fixing competing lane changes, the previous +0.7 m/s assertion
+  // failed (+0.51 here); four held-out seeds averaged -0.63 m/s. Selecting a
+  // smaller positive threshold would hide that scenario/seed dependence.
+  // The release rate, stop-line integrity and queues are tested above; long
+  // runs additionally enforce vehicle conservation and the meter's rate cap.
   const rush = { initialCars: 100, onRampA: 30, onRampB: 30, offRampA: 5, offRampB: 5,
                  truckShare: 10, accShare: 0 };
   const settle = (seedVal, extra) => {
     rngState = seedVal | 0; // seed each arm independently — a proper paired A/B
     Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), rush, extra);
     const s = new Simulation();
+    const initialCount = s.cars.length;
     for (let i = 0; i < Math.round(1200 / H); i++) s.step(H);
     // history holds the last 300 samples — the settled tail of the run
     const avg = (k) => s.history.reduce((a, p) => a + p[k], 0) / s.history.length;
-    return { v: avg('v'), f: avg('f') };
+    return {
+      v: avg('v'), f: avg('f'),
+      conserved: s.cars.length === initialCount + s.counters.entered - s.counters.exited,
+      rateHeld: !extra.metering || s.counters.merged <=
+        RAMPS.filter((ramp) => ramp.type === 'on').length *
+        (Math.floor(s.time * params.meterRate / 60) + 1),
+    };
   };
-  // A fixed spread of seeds (one deliberately modest, not all big winners) so
-  // the mean tests generalization, not a lucky path. Measured mean Δv ≈
-  // +1.18 m/s, Δf ≈ +3.1/min; thresholds leave ~1.7× margin.
+  // Retain the existing seeds for continuity; do not substitute seeds selected
+  // for a favorable speed or throughput result.
   const seeds = [0x2f6e2b1, 99999, 555];
   let vMet = 0, vDry = 0, fMet = 0, fDry = 0;
   for (const sv of seeds) {
     const dry = settle(sv, { metering: false });
     const met = settle(sv, { metering: true, meterRate: 8 });
+    check(`long rush runs conserve vehicles (seed ${sv})`, dry.conserved && met.conserved);
+    check(`long metered run respects the release-rate cap (seed ${sv})`, met.rateHeld);
+    console.log(`  benchmark seed ${sv}: speed ${dry.v.toFixed(3)} → ${met.v.toFixed(3)} m/s; ` +
+      `flow ${dry.f.toFixed(3)} → ${met.f.toFixed(3)} /min`);
     vDry += dry.v; vMet += met.v; fDry += dry.f; fMet += met.f;
   }
   const n = seeds.length;
   vDry /= n; vMet /= n; fDry /= n; fMet /= n;
-  check(
-    'metering rescues the rush-hour mainline (mean across seeds)',
-    vMet > vDry + 0.7,
-    `(${vMet.toFixed(2)} vs ${vDry.toFixed(2)} m/s)`
-  );
-  check(
-    'without losing throughput past the start',
-    fMet > fDry - 0.5,
-    `(${fMet.toFixed(1)} vs ${fDry.toFixed(1)} /min)`
-  );
+  console.log(`  benchmark mean: speed ${vDry.toFixed(3)} → ${vMet.toFixed(3)} m/s; ` +
+    `flow ${fDry.toFixed(3)} → ${fMet.toFixed(3)} /min (outcomes depend on scenario and seed)`);
 }
 
 {
@@ -1408,16 +1432,30 @@ run('aggressive tailgating params stay stable', { timeHeadway: 0.6, minGap: 0.5,
 
 {
   console.log('\nrain: wet roads slow the same regime; the storm arc completes');
-  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 110 });
+  // Isolate weather with the exact same closed-road fleet and preferences.
+  // Two saturated open networks at a single endpoint confound weather with
+  // stochastic admissions, lane choices and the phase of their jam waves.
+  const weatherRegime = {
+    initialCars: 80, onRampA: 0, onRampB: 0, onRampC: 0, onRampD: 0,
+    offRampA: 0, offRampB: 0, offRampC: 0, offRampD: 0,
+    laneChangeThreshold: 1e6,
+  };
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), weatherRegime);
   const dry = new Simulation();
+  const initialFleet = dry.cars.map((car) => ({ ...car }));
   for (let i = 0; i < Math.round(90 / H); i++) dry.step(H);
-  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), { initialCars: 110, rain: 0.8 });
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), weatherRegime, { initialCars: 0, rain: 0.8 });
   const wet = new Simulation();
+  wet.cars = initialFleet.map((initial) => Object.assign(new Car({ kind: initial.kind, model: initial.model }), initial));
   for (let i = 0; i < Math.round(90 / H); i++) wet.step(H);
+  const meanSpeed = (sim) => {
+    const settled = sim.history.slice(-30);
+    return settled.reduce((sum, sample) => sum + sample.v, 0) / settled.length;
+  };
   check(
     'wet traffic runs markedly slower than dry',
-    wet.stats().avgSpeed < 0.85 * dry.stats().avgSpeed,
-    `(wet=${wet.stats().avgSpeed.toFixed(1)} vs dry=${dry.stats().avgSpeed.toFixed(1)} m/s)`
+    meanSpeed(wet) < 0.85 * meanSpeed(dry),
+    `(30s means: wet=${meanSpeed(wet).toFixed(1)} vs dry=${meanSpeed(dry).toFixed(1)} m/s)`
   );
   check(
     'history samples carry the rain level',
@@ -1441,6 +1479,226 @@ run('aggressive tailgating params stay stable', { timeHeadway: 0.6, minGap: 0.5,
     `(peak=${peak.toFixed(2)}, now=${sim.rainNow})`
   );
   assertSane(sim, 'storm scenario');
+}
+
+{
+  console.log('\ncompeting lane changes reserve the receiving gap');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0, lanes: 3, onRampA: 0, onRampB: 0, offRampA: 0, offRampB: 0,
+  });
+  for (const offset of [0, LOOP - 110]) {
+    const sim = new Simulation();
+    const add = (s, lane, v, cooldown) => {
+      const car = new Car({ s: wrap(s + offset), lane, v });
+      car.lcCooldown = cooldown;
+      sim.cars.push(car);
+      return car;
+    };
+    const outer = add(100, 0, 20, 0);
+    add(120, 0, 5, 10);
+    const inner = add(100, 2, 20, 0);
+    add(120, 2, 5, 10);
+    const lanes = sim.buildLaneIndex();
+    sim.applyLaneChanges(lanes);
+    check(
+      `only one competing driver enters the same gap (offset ${offset.toFixed(1)})`,
+      [outer, inner].filter((car) => car.lane === 1).length === 1 &&
+        sim.counters.laneChanges === 1
+    );
+    check(
+      'lane index immediately reflects every accepted move',
+      lanes.every((arr, lane) => arr.every((car) => car.lane === lane || car.laneChange?.from === lane)) &&
+        new Set(lanes.flat()).size === sim.cars.length &&
+        lanes.flat().length === sim.cars.length + sim.cars.filter((car) => car.laneChange).length
+    );
+    const positions = sim.cars.map((car) => car.s);
+    sim.preventOverlaps(sim.buildLaneIndex());
+    check('accepted lane changes need no backward overlap repair',
+      sim.cars.every((car, i) => car.s === positions[i]));
+  }
+}
+
+{
+  console.log('\nACC response is invariant under rotation across the loop seam');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0, lanes: 3, onRampA: 0, onRampB: 0, offRampA: 0, offRampB: 0,
+    driverVariation: 0, responseTime: 0, // isolate position from differing personal profiles
+  });
+  const accelerations = [];
+  for (const offset of [0, LOOP - 110]) {
+    const sim = new Simulation();
+    const follower = new Car({ s: wrap(100 + offset), lane: 0, v: 20, kind: 'acc', model: 'cybertruck' });
+    const leader = new Car({ s: wrap(120 + offset), lane: 0, v: 20 });
+    const stopped = new Car({ s: wrap(130 + offset), lane: 0, v: 0 });
+    sim.cars = [follower, leader, stopped];
+    sim.accelMainline(sim.buildLaneIndex());
+    accelerations.push(sim.cars.map((car) => car.a));
+  }
+  check('identical platoons brake identically on either side of s=0',
+    accelerations[0].every((a, i) => Math.abs(a - accelerations[1][i]) < 1e-10),
+    `(${accelerations.map((a) => a.map((v) => v.toFixed(3)).join(', ')).join(' vs ')})`);
+}
+
+{
+  console.log('\nbreakdown patience never permits an occupied gap');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0, lanes: 3, onRampA: 0, onRampB: 0, offRampA: 0, offRampB: 0,
+  });
+  for (const phase of ['pullover', 'reenter']) {
+    const sim = new Simulation();
+    const car = new Car({ s: LOOP - 0.4, lane: phase === 'pullover' ? 1 : 0, v: 0 });
+    car.lcCooldown = 0;
+    if (phase === 'reenter') car.state = 'shoulder';
+    const blocker = new Car({ s: 0.4, lane: 0, v: 0 });
+    const inc = { kind: 'breakdown', cars: [car], phase, phaseStart: -30 };
+    car.incident = inc;
+    sim.cars = [car, blocker];
+    sim.incidents = [inc];
+    sim.updateIncidents(sim.buildLaneIndex());
+    check(`${phase} timeout respects an occupied gap across s=0`,
+      phase === 'pullover' ? car.lane === 1 : car.state === 'shoulder');
+    check(`${phase} stays active while its gap is blocked`, sim.incidents.includes(inc));
+    sim.removeCar(blocker);
+    const lanes = sim.buildLaneIndex();
+    sim.updateIncidents(lanes);
+    check(`${phase} proceeds when the gap opens`, car.state === 'main' && car.lane === 0);
+    check(`${phase} publishes its new lane occupancy`,
+      lanes[0].includes(car) &&
+      lanes.flat().filter((c) => c === car).length === (phase === 'pullover' ? 2 : 1));
+  }
+}
+
+{
+  console.log('\nACC bodies are independent of their following controller');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0, onRampA: 0, onRampB: 0, offRampA: 0, offRampB: 0,
+  });
+  for (const model of ['car', 'ev', 'cybertruck']) {
+    const responses = [];
+    const drivers = [];
+    for (const kind of ['car', 'acc']) {
+      const sim = new Simulation();
+      const driver = new Car({ s: 100, lane: 0, v: 20, v0Factor: 1, kind, model });
+      const leader = new Car({ s: 100 + (driver.len + MODEL_LEN.car) / 2 + 8, lane: 0, v: 20 });
+      sim.cars = [driver, leader];
+      sim.accelMainline(sim.buildLaneIndex());
+      responses.push(driver.a);
+      drivers.push(driver);
+    }
+    check(`${model}: IDM and ACC use identical bodies and hardware`,
+      drivers.every((car) => car.model === model && car.len === MODEL_LEN[model]) &&
+      ['accelK', 'headwayK', 'brakeK', 'v0Factor'].every((key) => drivers[0][key] === drivers[1][key]));
+    check(`${model}: the selected controller changes following behavior`,
+      responses[0] < responses[1] && responses.every(Number.isFinite),
+      `(IDM=${responses[0].toFixed(3)}, ACC=${responses[1].toFixed(3)} m/s²)`);
+  }
+  check('EV exactly matches the standard car footprint', MODEL_LEN.ev === MODEL_LEN.car);
+  check('model-aware ACC labels preserve kind-only callers',
+    vehicleLabel('acc') === 'ACC car' &&
+    vehicleLabel({ kind: 'acc', model: 'cybertruck' }) === 'ACC Cybertruck' &&
+    vehicleLabel({ kind: 'acc', model: 'ev' }) === 'ACC electric car');
+
+  console.log('\nACC body selection and dense reset packing');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 300, accShare: 100, truckShare: 0,
+  });
+  let evCount = 0;
+  let totalCount = 0;
+  for (let i = 0; i < 10; i++) {
+    const sim = new Simulation();
+    totalCount += sim.cars.length;
+    evCount += sim.cars.filter((car) => car.model === 'ev').length;
+  }
+  const evShare = evCount / totalCount;
+  check('seeded adaptive fleet uses approximately 50% of each model',
+    evShare > 0.46 && evShare < 0.54, `(${(evShare * 100).toFixed(1)}% EV of ${totalCount})`);
+
+  for (const truckShare of [0, 50]) {
+    Object.assign(params, { initialCars: 2000, truckShare, lanes: 2 });
+    const sim = new Simulation();
+    let smallestGap = Infinity;
+    for (const lane of sim.buildLaneIndex()) {
+      for (let i = 0; i < lane.length; i++) {
+        const car = lane[i];
+        const next = lane[(i + 1) % lane.length];
+        smallestGap = Math.min(smallestGap,
+          forwardDist(car.s, next.s) - (car.len + next.len) / 2);
+      }
+    }
+    check(`dense reset fits actual model lengths, including across s=0 (${truckShare}% trucks)`,
+      sim.cars.length < params.initialCars && smallestGap >= params.minGap - 1e-8 &&
+      sim.cars.every((car) => car.len === MODEL_LEN[car.model]),
+      `(minimum gap ${smallestGap.toFixed(3)} m)`);
+  }
+
+  console.log('\nramp arrivals keep their model while waiting for space');
+  Object.assign(params, JSON.parse(JSON.stringify(DEFAULTS)), {
+    initialCars: 0, accShare: 100, truckShare: 0,
+    onRampA: 0, onRampB: 0, onRampC: 0, onRampD: 0,
+  });
+  const sim = new Simulation();
+  const ramp = RAMPS.find((r) => r.type === 'on');
+  const st = sim.rampState.get(ramp.id);
+  const blocker = new Car({ model: 'car' });
+  blocker.state = 'onramp';
+  blocker.ramp = ramp;
+  blocker.rampPos = MODEL_LEN.car + 4.2; // fits an EV, but not a Cybertruck
+  st.cars = [blocker];
+  sim.cars = [blocker];
+  let selections = 0;
+  sim.sampleKind = () => { selections++; return params.accShare ? 'acc' : 'car'; };
+  const seededRandom = Math.random;
+  try {
+    Math.random = () => 0; // assign a Cybertruck to this arrival
+    st.demand.enqueue(vehicleSpec(sim.sampleKind()));
+    sim.spawnFromRamps(H);
+    const waiting = st.demand.peek();
+    check('a Cybertruck waits when only the shorter model fits',
+      waiting?.model === 'cybertruck' && sim.counters.entered === 0 && st.demand.waiting === 1);
+    Math.random = () => 0.9; // retries must not resample an EV that slips into the gap
+    params.accShare = 0; // and a new slider setting must not replace the waiting arrival
+    for (let i = 0; i < 20; i++) sim.spawnFromRamps(H);
+    check('blocked arrival preserves model, kind and queue position across retries and slider changes',
+      st.demand.peek() === waiting && selections === 1 &&
+      waiting.kind === 'acc' && st.demand.waiting === 1 && sim.counters.entered === 0);
+    blocker.rampPos = (MODEL_LEN.car + MODEL_LEN.cybertruck) / 2 + 4.01;
+    sim.spawnFromRamps(H);
+    const admitted = sim.cars.find((car) => car !== blocker);
+    check('the checked Cybertruck is the one admitted when its full footprint fits',
+      admitted?.model === 'cybertruck' && admitted.len === MODEL_LEN.cybertruck &&
+      admitted.kind === 'acc' && st.demand.peek() === null && st.demand.waiting === 0);
+    st.cars = [];
+    st.demand.enqueue(vehicleSpec(sim.sampleKind()));
+    sim.spawnFromRamps(H);
+    check('the next arrival uses the updated ACC setting',
+      selections === 2 && st.cars[0]?.kind === 'car');
+
+    st.cars = [blocker];
+    blocker.rampPos = MODEL_LEN.car + 4.01;
+    st.demand.enqueue(vehicleSpec('acc', 'ev'));
+    sim.spawnFromRamps(H);
+    const ev = st.cars.find((car) => car !== blocker);
+    check('the EV fits the same entrance clearance as a standard car',
+      ev?.model === 'ev' && ev.len === MODEL_LEN.car && st.demand.waiting === 0);
+  } finally {
+    Math.random = seededRandom;
+  }
+
+  params.accShare = 100;
+  const arrivals = new Simulation();
+  const arrivalState = arrivals.rampState.get(ramp.id);
+  for (let i = 0; i < 1000; i++) {
+    // Admit one freely fitting arrival, then clear the entrance for the next.
+    // Every body still passes through the normal sampling/fit/creation path.
+    arrivalState.cars = [];
+    arrivalState.demand.enqueue(vehicleSpec(arrivals.sampleKind()));
+    arrivals.spawnFromRamps(H);
+  }
+  const arrivingEvShare = arrivals.cars.filter((car) => car.model === 'ev').length / arrivals.cars.length;
+  check('ramp arrivals also use approximately 50% of each ACC model',
+    arrivals.cars.length === 1000 && arrivingEvShare > 0.44 && arrivingEvShare < 0.56 &&
+    arrivals.cars.every((car) => car.kind === 'acc' && car.len === MODEL_LEN[car.model]),
+    `(${(arrivingEvShare * 100).toFixed(1)}% EV of ${arrivals.cars.length})`);
 }
 
 console.log(failures === 0 ? '\nAll smoke checks passed.' : `\n${failures} check(s) FAILED`);
