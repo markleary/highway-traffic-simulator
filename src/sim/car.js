@@ -1,8 +1,7 @@
 let nextId = 1;
 
-// 'acc' is an adaptive-cruise-control car: same size and speed habits as a
-// human-driven car, but it follows with the constant-acceleration heuristic
-// (see simulation.js) so it absorbs jam waves instead of amplifying them.
+// 'acc' uses an illustrative adaptive-cruise controller and a Cybertruck
+// body/footprint. This is not a model of Tesla's proprietary controller.
 // Emergency vehicles share the siren-run behavior in simulation.js, but their
 // size, target speed, and IDM response reflect the very different hardware.
 export const EMERGENCY_PROFILES = Object.freeze({
@@ -51,7 +50,7 @@ export function vehicleLabel(kind) {
 export const VEHICLE_LEN = Object.freeze({
   car: 4.6,
   truck: 16.5,
-  acc: 4.6,
+  acc: 5.683, // Cybertruck overall length; matches the procedural render model
   ...Object.fromEntries(
     EMERGENCY_KINDS.map((kind) => [kind, EMERGENCY_PROFILES[kind].length])
   ),

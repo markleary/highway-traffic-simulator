@@ -123,24 +123,24 @@ branch → `main` / root**. That's it — there is nothing to build.
     develop and travel), number of interchanges (2–4 — each shape fits what
     its geometry allows; bigger roads unlock more), and number of lanes (2–4)
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
-    keep right), percentage of cars on **adaptive cruise control** (the angular
-    wedge-shaped ones — they never brake harder than physics requires, so they
-    absorb stop-and-go waves instead of amplifying them), desired speed, per-car
+    keep right), percentage of non-semi vehicles on **adaptive cruise control**
+    (shown as Cybertrucks, using an idealized controller that can soften
+    stop-and-go waves, not a simulation of Tesla software), desired speed, per-car
     speed spread, time headway (following distance), minimum gap, acceleration,
     comfortable braking
   - **Lane changing** — politeness, incentive threshold, safety braking limit
   - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each
     exit, and **ramp meters**: signals at every on-ramp that release one car
     per green at a rate you set, instead of letting platoons shove into the
-    mainline. Queues grow on the ramps, but merges stop triggering waves —
-    the counterintuitive classic where admitting *fewer* cars moves *more*.
+    mainline. Compare the mainline flow against the extra ramp waiting:
+    metering's benefit depends on demand, rate, and the run's traffic pattern.
     The map label at each ramp shows its *measured* flow over the last minute:
     on-ramps show achieved vs. requested (they fall behind when the merge
     queue backs up — or when the meter holds them), exits show what their
     share % currently amounts to in cars/min.
   - **View** — color cars by speed (red = stopped → green = at desired speed),
     **by type** (human / adaptive cruise / truck, matching the legend), or per
-    car; live charts, **space-time diagram**, and **fundamental diagram**
+    car (stainless steel for Cybertrucks); live charts, **space-time diagram**, and **fundamental diagram**
     toggles; an FPS counter; a **Scenery** toggle for the landscape dressing
     (trees, hills, clouds — off for modest GPUs); overhead vs. perspective
     camera; and a **chase camera** that rides along behind a random car with a
@@ -148,6 +148,9 @@ branch → `main` / root**. That's it — there is nothing to build.
     (Esc to exit). Chase view also shows the vehicle art up close: faceted
     paint, real window panes, low-poly hubs, mirrors, trim, dormant lamp lenses,
     and contact shadows that keep every vehicle planted on the road.
+    The Cybertruck has a forward roof peak, separate glass roof and ribbed bed
+    cover, recessed polygonal wheel arches, aero wheels, and a front light bar.
+    Close chase zoom centers the vehicle while you orbit it.
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
   Individual cars trace bright diagonal lines; jams appear as red bands that
@@ -180,13 +183,15 @@ flip a toggle yourself, your setting wins), and the camera re-frames itself
 around whichever panels are actually open.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
-backwards from the merge points — then pick **Metered rush hour**: same flood,
-but the meters hold the merges to a trickle and the mainline runs faster. Give
-it a few minutes — the gain builds over the run — then untick Ramp meters
-mid-run and watch average speed sag as the merges take back over. Pick
-**ACC wave lab**, then
-raise the adaptive-cruise share and reset — the jam stripes dissolve; the 2018
-Stern experiment, reproducible from your couch. Or pick **Sudden downpour**
+backwards from the merge points — then pick **Metered rush hour** with the
+same demand. Compare speed, achieved flow and ramp queues over several runs;
+the meter does not guarantee a faster mainline. Pick **ACC wave lab**, then
+raise the adaptive-cruise share and reset to compare the jam stripes. This is
+an illustrative research controller, not a replication of the Stern experiment
+or a production ACC system. To inspect the new vehicle art, choose **View →
+Car colors → Per car**, raise **Adaptive cruise (%)**, reset, and right-click
+a Cybertruck to chase it; scroll in and drag to inspect its front and sides.
+Or pick **Sudden downpour**
 and watch a comfortably flowing road collapse into stop-and-go one minute
 later when the storm arrives. Right-click a vehicle you want to follow through
 one of those waves and the chase camera will lock onto that exact car. Or pick
@@ -203,17 +208,25 @@ Each car runs the [Intelligent Driver Model](https://en.wikipedia.org/wiki/Intel
 rule for lane changes. On-ramp cars queue on the ramp and merge into gaps in the
 outer lane; cars roll a die upstream of each exit to decide whether to leave, then
 work their way to the outer lane in time. Adaptive-cruise cars temper IDM with the
-constant-acceleration heuristic, so they absorb perturbations instead of
-amplifying them. Rain scales the whole driver model — slower targets, longer
+constant-acceleration heuristic, which can reduce abrupt braking responses.
+Real ACC performance varies; this model is not calibrated to a manufacturer.
+The Cybertruck's 5.683 m collision footprint follows its rendered pickup size.
+Rain scales the whole driver model — slower targets, longer
 headways, less grip — which is why a stable regime tips when a storm rolls in.
 Emergency vehicles share the same siren-aware lane logic, with model-specific
 length, acceleration, following, braking, and top-speed characteristics.
 Everything is rendered with three.js (instanced meshes) — the low-poly cars,
 trucks, ambulance, police car, fire truck, and golden-hour landscape included —
 so thousands of cars stay smooth.
+All vehicle geometry remains procedural. The Cybertruck's geometry provider
+returns named instanced parts with a common meter-scale coordinate system;
+an authored glTF/GLB could supply that contract later without changing driver
+behavior. No asset loader or additional runtime dependency is needed today.
 The landscape uses sparse, broad faceted ground relief, faint wheel-wear
 ribbons, and a polygonal sun halo to keep the diorama graphic without looking
-busy. Rain
+busy. A small generated environment supplies soft sky reflections for metal
+and glass, the sky shares the scene's color conversion, and dashed lane paint
+has physical width so it remains readable in chase view. Rain
 grades the whole scene: the sky dome, terrain, clouds, hills, and fog all darken
 with the same live rain level that drives the physics. An optional ambient
 soundscape (🔊 Sound in the panel) hums along with the traffic, sirens and
@@ -221,5 +234,19 @@ weather, fading with the camera's distance from the road.
 
 ## Roadmap
 
-The original roadmap — including direct right-click vehicle chasing and the
-three-model emergency fleet — has shipped. Ideas welcome.
+Next realism priorities: lane changes with several seconds of occupancy in
+both lanes; stable per-driver following and courtesy preferences; calibrated
+reaction/anticipation; variable ramp arrivals with an explicit upstream queue;
+and optional grade/curve effects on truck performance. These are future work,
+not behaviors the current model claims to reproduce.
+Vehicle shape and controller should eventually be independent: changing ACC
+share currently changes the mix of 4.6 m cars and 5.683 m pickups as well as
+the following model, so it is not a controlled comparison of software alone.
+
+Known live-edit limitation: reducing the lane count can stack vehicles from
+removed lanes into the same remaining gap. Reset after a lane reduction;
+a staged lane closure or an explicit reset-on-change remains future work.
+
+Keep procedural low-poly art as the default. Authored low-poly glTF/GLB vehicle
+parts remain an option if visual iteration becomes cumbersome, provided they
+preserve instancing, physical dimensions, live colors, and small material counts.

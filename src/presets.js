@@ -28,7 +28,7 @@ export const PRESETS = {
   },
   meters: {
     label: 'Metered rush hour',
-    tip: 'The Rush hour flood, but signals on every on-ramp release one car per green. Ramp queues grow — yet the mainline runs faster and throughput holds. Give it a few minutes: the gain builds over the run (small at first, clearest past ~15 min). Untick Ramp meters and watch average speed sag as the merges take back over; the flow chart tells the story.',
+    tip: 'The Rush hour demand with one car released per green at each on-ramp. Compare mainline speed, achieved flow, and ramp waiting over several runs. The outcome depends on demand and meter rate; a faster mainline is not guaranteed.',
     patch: {
       initialCars: 100,
       onRampA: 30,
@@ -38,12 +38,9 @@ export const PRESETS = {
       truckShare: 10, // pinned with rush — see note there
       accShare: 0,
       metering: true,
-      // 8/min recalibrated (issue #49): the old 12/min sat so close to the
-      // flood's own merge rate it barely shaped demand — a seed lottery that
-      // averaged flat. At 8 the rescue is robust across seeds: settled
-      // mainline speed ~+14% at 25 min (~+5% and noisier at 10 min), flow
-      // holding. It's a distribution, not a fixed number — some seeds win big,
-      // a minority don't; the long horizon is where it reliably shows.
+      // Deliberately restrictive release rate for an observable queue/flow
+      // tradeoff. The smoke benchmark reports paired outcomes across seeds;
+      // this rate does not guarantee a faster mainline.
       meterRate: 8,
       showCharts: true,
     },
@@ -62,7 +59,7 @@ export const PRESETS = {
   // otherwise apply the regime and see nothing of what the tip advertises.
   accLab: {
     label: 'ACC wave lab',
-    tip: 'The edge-of-instability regime: the space-time diagram fills with diagonal stop-and-go stripes. Now raise Adaptive cruise % and press Reset — the stripes dissolve. Cars are colored by type so the wave-absorbers stand out.',
+    tip: 'An edge-of-instability regime: watch stop-and-go stripes, then raise Adaptive cruise % and press Reset to compare. The idealized controller can damp the waves; real commercial ACC varies. Cars are colored by type.',
     patch: {
       initialCars: 130,
       onRampA: 14,
