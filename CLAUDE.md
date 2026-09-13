@@ -143,8 +143,13 @@ assets/icon-*.png      home-screen / install icons (180 apple-touch, 192, 512,
                        repo has no build step and these are committed binaries)
 assets/social.png      1200×630 social-preview card — og:image in index.html
                        (absolute URL; unfurlers don't resolve relative paths)
-                       and the README hero. Regenerate by staging a jam and
-                       exporting the WebGL canvas at 2400×1260, then halving
+                       and the README hero. Stage slow mixed traffic on a
+                       four-lane circle in per-car colors, with a semi, police
+                       cruiser and both ACC bodies near an on-ramp. Frame a
+                       close elevated three-quarter view with the road curving
+                       into the background. Export the actual WebGL canvas at
+                       2400×1260, then halve to 1200×630 with canvas smoothing;
+                       omit DOM controls/labels and keep preview alt text in sync
 assets/audio/          six ElevenLabs-generated mp3s (~0.8 MB total): traffic
                        and rain beds, three siren loops keyed by emergency
                        kind, one crash impact. Fetched lazily by src/audio.js
@@ -170,6 +175,9 @@ src/audio.js           opt-in ambient soundscape (params.sound, root-panel
                        against a WeakSet, armed only while sound is on so
                        enabling audio never replays old wrecks
 src/main.js            bootstrap + fixed-timestep loop (h = 1/60 s of sim time);
+                       advances renderer wheel phases after each physics step;
+                       holds the paused pose until the first resumed step so
+                       bodies/wheels cannot briefly interpolate backward;
                        also owns the keyboard shortcuts (space/esc/c/v/f), the
                        desktop right-click-to-chase picker (the exact visible
                        vehicle, including ramps/incidents/emergency vehicles; left-click
@@ -297,13 +305,31 @@ src/render/renderer.js sizes itself from its CONTAINER (#app inside #stage),
                        chasing starts a pinch and suppresses the orbit drag.
                        applyWeather lerps the whole palette — sky uniforms, fog,
                        lights, clouds, hills — from sim.rainNow. Vehicles are
-                       per-kind InstancedMeshes: lofted low-poly shells (loft()
-                       stitches {z, hw, y0, y1} cross-sections; sedan vs
-                       hatchback picked by a car.id bit) + matte greenhouse +
-                       shared dark wheel sets; trucks are a lofted conventional
-                       cab + box trailer + five axles. Emergency pools render a
-                       white Type-I ambulance, police cruiser, and long fire
-                       truck with distinct body geometry and warning-light mounts
+                       per-family InstancedMeshes from named geometry providers,
+                       grouped so transforms and counts reach every material part.
+                       Sedan vs hatchback is still picked by a car.id bit, with
+                       one shared wheel pool. Emergency liveries stay fixed;
+                       semi trailers are neutral in per-car mode and follow
+                       speed/type/hazard colors in analytical modes.
+src/render/passenger.js sedan/hatch shells with actual wheel openings, segmented
+                       glazing, separate headlight/indicator lenses and shared rims
+src/render/police.js   black-and-white patrol sedan, procedural POLICE lettering,
+                       push bumper, wheel openings, aligned lamp/strobe mounts
+src/render/semi.js     conventional tractor and raised dry-van trailer, 18 tires,
+                       exposed dual-wheel tandems, frame, metalwork and reflectors
+src/render/service-vehicles.js Type-I ambulance and fire engine, wheel clearance,
+                       medical marking, doors/steps, pump and ladder equipment
+src/render/vehicle-geometry.js small shared procedural geometry helpers; side
+                       strips follow each profile station to avoid warped panels
+                       across width changes; all parts use metres and +z forward
+src/render/wheel-motion.js per-car WeakMap of wheel phases; integrates resolved
+                       speed / rolling radius in fixed sim time, interpolated
+                       with body poses, independent of render rate/pool ordering
+src/render/wheel-material.js axle pivots on tire/hub vertices + one shared
+                       per-instance angle buffer per model rotate positions and
+                       normals in the vertex shader without extra draw calls;
+                       providers export wheel layouts alongside geometry so
+                       later authored models can supply the same presentation data
 src/ui/panel.js        lil-gui control panel; collapses to its title bar by
                        default on phones, tracking the breakpoint live until
                        the user toggles the panel themselves (open state

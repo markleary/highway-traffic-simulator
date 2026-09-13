@@ -5,13 +5,20 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../sim/road.js';
 import { params, KMH, MPH, FT } from '../params.js';
 import { isEmergencyVehicle, vehicleLabel } from '../sim/car.js';
-import { buildCybertruckGeometry, CYBERTRUCK_LIGHTS } from './cybertruck.js';
-import { buildEVGeometry, EV_LIGHTS } from './ev.js';
+import { buildCybertruckGeometry, CYBERTRUCK_LIGHTS, CYBERTRUCK_WHEELS } from './cybertruck.js';
+import { buildEVGeometry, EV_LIGHTS, EV_WHEELS } from './ev.js';
+import { buildPassengerGeometry, buildPassengerWheels, PASSENGER_LIGHTS, PASSENGER_WHEELS } from './passenger.js';
+import { buildPoliceGeometry, POLICE_LIGHTS, POLICE_STROBE, POLICE_WHEELS } from './police.js';
+import { buildSemiGeometry, SEMI_LIGHTS, SEMI_WHEELS } from './semi.js';
+import { buildAmbulanceGeometry, buildFiretruckGeometry, AMBULANCE_LIGHTS, FIRETRUCK_LIGHTS, AMBULANCE_STROBE, FIRETRUCK_STROBE, AMBULANCE_WHEELS, FIRETRUCK_WHEELS } from './service-vehicles.js';
+import { annotateRollingGeometry, makeWheelMaterial } from './wheel-material.js';
+import { WheelMotion } from './wheel-motion.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
 const MAX_EMERGENCY = 8; // simulation caps all emergency kinds at this total
 const MAX_SHADOWS = MAX_CARS * 4 + MAX_TRUCKS + MAX_EMERGENCY; // every render pool combined
+const TRAILER_PAINT = new THREE.Color(0xdce1df);
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
 // 'By type' color mode: the charts' categorical trio (speed/flow/cars series
@@ -70,58 +77,23 @@ const _sky = new THREE.Color(); // applyWeather scratch
 // 'car' holds one entry per body style, indexed by the same car.id bit that
 // picks the loft in update().
 const LIGHT_DIMS = {
-  car: [
-    {
-      rear: -2.3, front: 2.3, halfW: 0.58, y: 0.6,
-      brakeZ: -2.435, brakeY: 0.82, brakeHalfW: 0.58, brakeW: 0.32, brakeH: 0.11,
-      blinkZR: -2.423, blinkYR: 0.6, blinkHalfWR: 0.58,
-      blinkWR: 0.32, blinkHR: 0.11, blinkDepthR: 0.025,
-      blinkZF: 2.423, blinkYF: 0.78, blinkHalfWF: 0.58,
-      blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
-    }, // sedan
-    {
-      rear: -2.19, front: 2.19, halfW: 0.62, y: 0.64,
-      brakeZ: -2.325, brakeY: 0.86, brakeHalfW: 0.58, brakeW: 0.32, brakeH: 0.11,
-      blinkZR: -2.313, blinkYR: 0.64, blinkHalfWR: 0.58,
-      blinkWR: 0.32, blinkHR: 0.11, blinkDepthR: 0.025,
-      blinkZF: 2.313, blinkYF: 0.78, blinkHalfWF: 0.58,
-      blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
-    }, // hatchback
-  ],
+  car: PASSENGER_LIGHTS,
   cybertruck: CYBERTRUCK_LIGHTS,
   ev: EV_LIGHTS,
-  truck: {
-    rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95,
-    brakeZ: -7.895, brakeY: 0.72, brakeHalfW: 0.88, brakeW: 0.36, brakeH: 0.15,
-    blinkZR: -7.895, blinkYR: 0.98, blinkHalfWR: 0.88,
-    blinkWR: 0.36, blinkHR: 0.12, blinkDepthR: 0.025,
-    blinkZF: 8.278, blinkYF: 1.15, blinkHalfWF: 0.75,
-    blinkWF: 0.28, blinkHF: 0.09, blinkDepthF: 0.025,
-  }, // front = hood flanks
-  ambulance: {
-    rear: -2.69, front: 2.69, halfW: 0.85, y: 1.0,
-    brakeZ: -2.785, brakeY: 0.74, brakeHalfW: 0.68, brakeW: 0.36, brakeH: 0.14,
-  },
-  police: {
-    rear: -2.487, front: 2.39, halfW: 0.75, y: 0.8,
-    // Each rear housing is one horizontal lamp: red on its inner half, amber
-    // on its outer half. Dynamic light mounts sit over those exact halves.
-    brakeZ: -2.487, brakeY: 0.8, brakeHalfW: 0.505, brakeW: 0.26, brakeH: 0.15,
-    blinkZR: -2.491, blinkYR: 0.8, blinkHalfWR: 0.745,
-    blinkWR: 0.2, blinkHR: 0.15, blinkDepthR: 0.015,
-    // Front indicators wrap around the bumper corners instead of forming a
-    // second, rear-looking row beneath the headlights.
-    blinkZF: 2.39, blinkYF: 0.72, blinkHalfWF: 0.82,
-    blinkWF: 0.28, blinkHF: 0.13, blinkDepthF: 0.08, blinkYawF: 0.55,
-  },
-  firetruck: {
-    rear: -5.225, front: 5.225, halfW: 0.9, y: 1.05,
-    brakeZ: -5.225, brakeY: 0.88, brakeHalfW: 0.9, brakeW: 0.42, brakeH: 0.18,
-    blinkZR: -5.225, blinkYR: 1.16, blinkHalfWR: 0.9,
-    blinkWR: 0.42, blinkHR: 0.14, blinkDepthR: 0.025,
-    blinkZF: 5.225, blinkYF: 1.2, blinkHalfWF: 0.78,
-    blinkWF: 0.34, blinkHF: 0.12, blinkDepthF: 0.025,
-  },
+  truck: SEMI_LIGHTS,
+  ambulance: AMBULANCE_LIGHTS,
+  police: POLICE_LIGHTS,
+  firetruck: FIRETRUCK_LIGHTS,
+};
+
+const WHEEL_LAYOUTS = {
+  car: PASSENGER_WHEELS,
+  cybertruck: CYBERTRUCK_WHEELS,
+  ev: EV_WHEELS,
+  truck: SEMI_WHEELS,
+  ambulance: AMBULANCE_WHEELS,
+  police: POLICE_WHEELS,
+  firetruck: FIRETRUCK_WHEELS,
 };
 
 // Shared presentation dimensions keep the long/tall emergency models out of
@@ -131,18 +103,18 @@ const RENDER_DIMS = {
   car: { shadowHalfW: 0.92, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
   cybertruck: { shadowHalfW: 1.02, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
   ev: { shadowHalfW: 0.94, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
-  truck: { shadowHalfW: 1.22, shadowInset: 0.5, hoverY: 4.2, chaseUp: 8.5 },
+  truck: { shadowHalfW: 1.25, shadowInset: 0.35, hoverY: 4.5, chaseUp: 8.5 },
   ambulance: {
     shadowHalfW: 1.17, shadowInset: 0.22, hoverY: 3.1, chaseUp: 6,
-    strobe: { x: 0.55, y: 2.6, z: 0.1, sx: 0.5, sy: 0.22, sz: 0.5 },
+    strobe: AMBULANCE_STROBE,
   },
   police: {
     shadowHalfW: 1.0, shadowInset: 0.2, hoverY: 2.7, chaseUp: 6,
-    strobe: { x: 0.43, y: 1.65, z: -0.1, sx: 0.4, sy: 0.13, sz: 0.22 },
+    strobe: POLICE_STROBE,
   },
   firetruck: {
     shadowHalfW: 1.24, shadowInset: 0.5, hoverY: 4.4, chaseUp: 8.5,
-    strobe: { x: 0.62, y: 3.18, z: 3.65, sx: 0.52, sy: 0.17, sz: 0.3 },
+    strobe: FIRETRUCK_STROBE,
   },
 };
 
@@ -268,6 +240,7 @@ export class SceneRenderer {
     // Physics remains authoritative; this cache only smooths presentation
     // between its 60 Hz steps (see captureCarPoses / carPose).
     this._previousCarPoses = new WeakMap();
+    this._wheelMotion = new WheelMotion();
     this._renderAlpha = 1;
 
     // chase camera state. Yaw/pitch are a held-drag orbit offset around the
@@ -1162,7 +1135,8 @@ export class SceneRenderer {
   }
 
   buildCars() {
-    // DoubleSide forgives winding parity on the hand-built lofts (see loft())
+    // Procedural body panels keep the faceted style; show their inner faces
+    // as well when the camera looks through an open wheel arch.
     const bodyMat = new THREE.MeshStandardMaterial({
       roughness: 0.5,
       metalness: 0.25,
@@ -1177,63 +1151,45 @@ export class SceneRenderer {
       side: THREE.DoubleSide,
     });
     const trimMat = new THREE.MeshStandardMaterial({ color: 0x2d3237, roughness: 0.82 });
-    const frontLensMat = new THREE.MeshStandardMaterial({
-      color: 0xc6b987,
-      roughness: 0.38,
-      metalness: 0.12,
-    });
     const indicatorLensMat = new THREE.MeshStandardMaterial({
       color: 0x8a5d16,
       roughness: 0.45,
       metalness: 0.08,
     });
     const rearLensMat = new THREE.MeshStandardMaterial({ color: 0x761c22, roughness: 0.42 });
-    // passenger cars: two lofted body styles — car.id picks one for life —
-    // each a painted shell/roof, tinted greenhouse and restrained dark trim.
-    this.sedan = new THREE.InstancedMesh(passengerBodyGeo(SEDAN_BODY, false), bodyMat, MAX_CARS);
-    this.sedanCabin = new THREE.InstancedMesh(loft(SEDAN_CABIN), glassMat, MAX_CARS);
-    this.sedanTrim = new THREE.InstancedMesh(passengerTrimGeo(false), trimMat, MAX_CARS);
-    this.sedanIndicators = new THREE.InstancedMesh(passengerIndicatorGeo(false), indicatorLensMat, MAX_CARS);
-    this.sedanRearLenses = new THREE.InstancedMesh(passengerBrakeLensGeo(false), rearLensMat, MAX_CARS);
-    this.hatch = new THREE.InstancedMesh(passengerBodyGeo(HATCH_BODY, true), bodyMat, MAX_CARS);
-    this.hatchCabin = new THREE.InstancedMesh(loft(HATCH_CABIN), glassMat, MAX_CARS);
-    this.hatchTrim = new THREE.InstancedMesh(passengerTrimGeo(true), trimMat, MAX_CARS);
-    this.hatchIndicators = new THREE.InstancedMesh(passengerIndicatorGeo(true), indicatorLensMat, MAX_CARS);
-    this.hatchRearLenses = new THREE.InstancedMesh(passengerBrakeLensGeo(true), rearLensMat, MAX_CARS);
-    // one four-wheel set serves the sedans and hatchbacks. Track width keeps
-    // the outer faces proud of the widest shell (hw 0.95): dead flush and
-    // the coplanar faces z-fight — flickering rear wheels.
-    this.wheels = new THREE.InstancedMesh(
-      wheelsGeo([[0.84, 1.4], [-0.84, 1.4], [0.84, -1.4], [-0.84, -1.4]], 0.34, 0.26),
-      wheelMat,
-      MAX_CARS
-    );
-    this.hubs = new THREE.InstancedMesh(
-      hubcapsGeo([[0.84, 1.4], [-0.84, 1.4], [0.84, -1.4], [-0.84, -1.4]], 0.34, 0.26),
-      hubMat,
-      MAX_CARS
-    );
-    // semi trucks: conventional-cab tractor loft, box trailer, five axles
-    const trailerGeo = new THREE.BoxGeometry(2.45, 3.1, 11.8).translate(0, 1.85, -1.85);
-    const truckWheelSpots = [7.3, 4.55, 3.55, -6.15, -7.15]
-      .flatMap((z) => [[0.98, z], [-0.98, z]]);
-    this.trailer = new THREE.InstancedMesh(trailerGeo, bodyMat, MAX_TRUCKS);
-    this.cab = new THREE.InstancedMesh(loft(TRUCK_CAB), bodyMat, MAX_TRUCKS);
-    this.truckGlass = new THREE.InstancedMesh(truckGlassGeo(), glassMat, MAX_TRUCKS);
-    this.truckTrim = new THREE.InstancedMesh(truckTrimGeo(), trimMat, MAX_TRUCKS);
-    this.truckFrontLenses = new THREE.InstancedMesh(truckFrontLensGeo(), frontLensMat, MAX_TRUCKS);
-    this.truckRearLenses = new THREE.InstancedMesh(truckTailLensGeo(), rearLensMat, MAX_TRUCKS);
-    this.truckIndicators = new THREE.InstancedMesh(truckIndicatorGeo(), indicatorLensMat, MAX_TRUCKS);
-    this.truckWheels = new THREE.InstancedMesh(
-      wheelsGeo(truckWheelSpots, 0.5, 0.42),
-      wheelMat,
-      MAX_TRUCKS
-    );
-    this.truckHubs = new THREE.InstancedMesh(
-      hubcapsGeo(truckWheelSpots, 0.5, 0.42),
-      hubMat,
-      MAX_TRUCKS
-    );
+    // Named procedural parts preserve body styles while separating paint,
+    // glass and wheel openings. Both styles still share one wheel pool.
+    const passengerLensMat = new THREE.MeshStandardMaterial({ color: 0xe0e8ed, roughness: 0.35 });
+    for (const [prefix, hatch] of [['sedan', false], ['hatch', true]]) {
+      const parts = buildPassengerGeometry(hatch);
+      this[prefix] = new THREE.InstancedMesh(parts.body, bodyMat, MAX_CARS);
+      this[prefix + 'Cabin'] = new THREE.InstancedMesh(parts.glass, glassMat, MAX_CARS);
+      this[prefix + 'Trim'] = new THREE.InstancedMesh(parts.trim, trimMat, MAX_CARS);
+      this[prefix + 'FrontLenses'] = new THREE.InstancedMesh(parts.frontLens, passengerLensMat, MAX_CARS);
+      this[prefix + 'Indicators'] = new THREE.InstancedMesh(parts.indicators, indicatorLensMat, MAX_CARS);
+      this[prefix + 'RearLenses'] = new THREE.InstancedMesh(parts.rearLens, rearLensMat, MAX_CARS);
+      this['_' + prefix + 'Meshes'] = ['', 'Cabin', 'Trim', 'FrontLenses', 'Indicators', 'RearLenses'].map(suffix => this[prefix + suffix]);
+    }
+    const passengerWheels = buildPassengerWheels();
+    this.wheels = new THREE.InstancedMesh(passengerWheels.wheels, wheelMat, MAX_CARS);
+    this.hubs = new THREE.InstancedMesh(passengerWheels.hubs, hubMat, MAX_CARS);
+    // Tractor and trailer keep visible clearance above their real dual tires.
+    const semi = buildSemiGeometry();
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0xb3bec5, roughness: 0.48, metalness: 0.55 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xe8ece9, roughness: 0.55 });
+    this._truckMeshes = [];
+    for (const [name, part, material] of [
+      ['cab', 'cab', bodyMat], ['trailer', 'trailer', bodyMat],
+      ['truckGlass', 'glass', glassMat], ['truckTrim', 'trim', trimMat],
+      ['truckFrontLenses', 'frontLens', passengerLensMat], ['truckRearLenses', 'rearLens', rearLensMat],
+      ['truckIndicators', 'indicators', indicatorLensMat], ['truckWheels', 'wheels', wheelMat],
+      ['truckHubs', 'hubs', metalMat], ['truckChassis', 'chassis', trimMat],
+      ['truckMetal', 'metal', metalMat], ['truckReflectorWhite', 'reflectorWhite', whiteMat],
+      ['truckReflectorRed', 'reflectorRed', new THREE.MeshStandardMaterial({ color: 0xbc3035, roughness: 0.6 })],
+    ]) {
+      this[name] = new THREE.InstancedMesh(semi[part], material, MAX_TRUCKS);
+      this._truckMeshes.push(this[name]);
+    }
     // Geometry providers share metres / +z-forward / road-level origin. An
     // authored asset could later supply the same buffers without touching
     // the simulation or instance update path.
@@ -1265,103 +1221,71 @@ export class SceneRenderer {
     this.evRearLens = new THREE.InstancedMesh(ev.rearLens, rearLensMat, MAX_CARS);
     this._evMeshes = [this.ev, this.evGlass, this.evTrim, this.evWheels,
       this.evHubs, this.evFrontLens, this.evRearLens];
-    // ambulance: a Type-I style rig rather than a plain box — hood and cab
-    // up front, the taller patient module behind (+z = front, 5.4 m total
-    // to match VEHICLE_LEN), dark glass over the cab, red belt stripe on
-    // the module. Roof strobes are separate unlit instances whose red/blue
-    // swap sides on the hazard blink clock, so the bar reads as flashing
-    // from any angle.
-    const ambBodyGeo = mergeSolids([
-      new THREE.BoxGeometry(2.3, 2.15, 3.0).translate(0, 1.42, -1.2), // patient module
-      new THREE.BoxGeometry(2.05, 1.5, 1.35).translate(0, 1.1, 0.92), // cab
-      new THREE.BoxGeometry(1.9, 0.85, 1.2).translate(0, 0.78, 2.1), // hood
-    ]);
-    const stripeGeo = ambulanceStripeGeo();
-    const ambWheelSpots = [[1.02, 1.85], [-1.02, 1.85], [1.02, -1.6], [-1.02, -1.6]];
-    this.ambBody = new THREE.InstancedMesh(ambBodyGeo, bodyMat, MAX_EMERGENCY);
-    this.ambStripe = new THREE.InstancedMesh(
-      stripeGeo,
-      new THREE.MeshStandardMaterial({ color: 0xc63a30, roughness: 0.5, metalness: 0.25 }),
-      MAX_EMERGENCY
-    );
-    this.ambGlass = new THREE.InstancedMesh(ambulanceGlassGeo(), glassMat, MAX_EMERGENCY);
-    this.ambTrim = new THREE.InstancedMesh(ambulanceTrimGeo(), trimMat, MAX_EMERGENCY);
-    this.ambFrontLenses = new THREE.InstancedMesh(ambulanceLensGeo(true), frontLensMat, MAX_EMERGENCY);
-    this.ambRearLenses = new THREE.InstancedMesh(ambulanceLensGeo(false), rearLensMat, MAX_EMERGENCY);
-    this.ambWheels = new THREE.InstancedMesh(
-      wheelsGeo(ambWheelSpots, 0.4, 0.32),
-      wheelMat,
-      MAX_EMERGENCY
-    );
-    this.ambHubs = new THREE.InstancedMesh(
-      hubcapsGeo(ambWheelSpots, 0.4, 0.32),
-      hubMat,
-      MAX_EMERGENCY
-    );
+    const ambulance = buildAmbulanceGeometry();
+    this._ambMeshes = [];
+    for (const [name, part, material] of [
+      ['ambBody', 'body', bodyMat], ['ambGlass', 'glass', glassMat], ['ambTrim', 'trim', trimMat],
+      ['ambStripe', 'stripe', new THREE.MeshStandardMaterial({ color: 0xc63a30, roughness: 0.5, metalness: 0.25 })],
+      ['ambEquipment', 'equipment', metalMat],
+      ['ambMarkings', 'markings', new THREE.MeshStandardMaterial({ color: 0x236c9a, roughness: 0.6 })],
+      ['ambFrontLenses', 'frontLens', passengerLensMat], ['ambRearLenses', 'rearLens', rearLensMat],
+      ['ambWheels', 'wheels', wheelMat], ['ambHubs', 'hubs', metalMat],
+    ]) {
+      this[name] = new THREE.InstancedMesh(ambulance[part], material, MAX_EMERGENCY);
+      this._ambMeshes.push(this[name]);
+    }
 
-    // Police interceptor: a broader five-metre sedan in dark charcoal with
-    // black panels, push bar and a low roof light bar. It owns a render pool
-    // instead of borrowing the civilian sedan so an all-police run stays safe.
-    const policeWheelSpots = [[0.88, 1.55], [-0.88, 1.55], [0.88, -1.55], [-0.88, -1.55]];
-    const policeTrimMat = new THREE.MeshStandardMaterial({
-      color: 0x11161b,
-      roughness: 0.78,
-      metalness: 0.18,
-    });
-    this.policeBody = new THREE.InstancedMesh(policeBodyGeo(), bodyMat, MAX_EMERGENCY);
-    this.policeRoof = new THREE.InstancedMesh(
-      policeRoofGeo(),
-      new THREE.MeshStandardMaterial({ color: 0xf1ede2, roughness: 0.54, metalness: 0.12 }),
-      MAX_EMERGENCY
-    );
-    this.policeGlass = new THREE.InstancedMesh(loft(POLICE_CABIN), glassMat, MAX_EMERGENCY);
-    this.policePanels = new THREE.InstancedMesh(policePanelGeo(), policeTrimMat, MAX_EMERGENCY);
-    this.policeTrim = new THREE.InstancedMesh(policeTrimGeo(), policeTrimMat, MAX_EMERGENCY);
-    this.policeFrontLenses = new THREE.InstancedMesh(policeLensGeo(true), frontLensMat, MAX_EMERGENCY);
-    this.policeRearLenses = new THREE.InstancedMesh(policeLensGeo(false), rearLensMat, MAX_EMERGENCY);
-    this.policeIndicators = new THREE.InstancedMesh(policeIndicatorGeo(), indicatorLensMat, MAX_EMERGENCY);
-    this.policeWheels = new THREE.InstancedMesh(
-      wheelsGeo(policeWheelSpots, 0.36, 0.28),
-      wheelMat,
-      MAX_EMERGENCY
-    );
-    this.policeHubs = new THREE.InstancedMesh(
-      hubcapsGeo(policeWheelSpots, 0.36, 0.28),
-      hubMat,
-      MAX_EMERGENCY
-    );
+    // A contrasting patrol livery reads as police even between strobe flashes.
+    const police = buildPoliceGeometry();
+    const policeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf1ede2, roughness: 0.54, metalness: 0.12 });
+    const policeTrimMat = new THREE.MeshStandardMaterial({ color: 0x11161b, roughness: 0.78, metalness: 0.18 });
+    this._policeMeshes = [];
+    for (const [name, part, material] of [
+      ['policeBody', 'body', bodyMat], ['policeRoof', 'roof', policeWhiteMat],
+      ['policeGlass', 'glass', glassMat], ['policePanels', 'panels', policeWhiteMat],
+      ['policeTrim', 'trim', policeTrimMat], ['policeFrontLenses', 'frontLens', passengerLensMat],
+      ['policeRearLenses', 'rearLens', rearLensMat], ['policeIndicators', 'indicators', indicatorLensMat],
+      ['policeWheels', 'wheels', wheelMat], ['policeHubs', 'hubs', metalMat],
+    ]) {
+      this[name] = new THREE.InstancedMesh(police[part], material, MAX_EMERGENCY);
+      this._policeMeshes.push(this[name]);
+    }
 
-    // Ten-and-a-half-metre pumper: forward-control cab, tall apparatus body,
-    // three axles, gold belt stripe, and silver pump/ladder equipment. Bumpers
-    // terminate at z +/-5.25, matching the simulation footprint exactly.
-    const fireWheelSpots = [3.72, -3.18, -4.25]
-      .flatMap((z) => [[1.12, z], [-1.12, z]]);
-    this.fireBody = new THREE.InstancedMesh(firetruckBodyGeo(), bodyMat, MAX_EMERGENCY);
-    this.fireStripe = new THREE.InstancedMesh(
-      firetruckStripeGeo(),
-      new THREE.MeshStandardMaterial({ color: 0xf0c64b, roughness: 0.48, metalness: 0.18 }),
-      MAX_EMERGENCY
-    );
-    this.fireGlass = new THREE.InstancedMesh(firetruckGlassGeo(), glassMat, MAX_EMERGENCY);
-    this.fireTrim = new THREE.InstancedMesh(firetruckTrimGeo(), trimMat, MAX_EMERGENCY);
-    this.fireEquipment = new THREE.InstancedMesh(
-      firetruckEquipmentGeo(),
-      new THREE.MeshStandardMaterial({ color: 0xbac3c9, roughness: 0.36, metalness: 0.62 }),
-      MAX_EMERGENCY
-    );
-    this.fireFrontLenses = new THREE.InstancedMesh(firetruckLensGeo(true), frontLensMat, MAX_EMERGENCY);
-    this.fireRearLenses = new THREE.InstancedMesh(firetruckLensGeo(false), rearLensMat, MAX_EMERGENCY);
-    this.fireIndicators = new THREE.InstancedMesh(firetruckIndicatorGeo(), indicatorLensMat, MAX_EMERGENCY);
-    this.fireWheels = new THREE.InstancedMesh(
-      wheelsGeo(fireWheelSpots, 0.52, 0.42),
-      wheelMat,
-      MAX_EMERGENCY
-    );
-    this.fireHubs = new THREE.InstancedMesh(
-      hubcapsGeo(fireWheelSpots, 0.52, 0.42),
-      hubMat,
-      MAX_EMERGENCY
-    );
+    // A compact pumper with separate dark pump faces and silver equipment.
+    const fire = buildFiretruckGeometry();
+    this._fireMeshes = [];
+    for (const [name, part, material] of [
+      ['fireBody', 'body', bodyMat], ['fireGlass', 'glass', glassMat], ['fireTrim', 'trim', trimMat],
+      ['fireStripe', 'stripe', new THREE.MeshStandardMaterial({ color: 0xf0c64b, roughness: 0.48, metalness: 0.18 })],
+      ['fireEquipment', 'equipment', metalMat], ['fireFrontLenses', 'frontLens', passengerLensMat],
+      ['fireRearLenses', 'rearLens', rearLensMat], ['fireIndicators', 'indicators', indicatorLensMat],
+      ['fireWheels', 'wheels', wheelMat], ['fireHubs', 'hubs', metalMat],
+    ]) {
+      this[name] = new THREE.InstancedMesh(fire[part], material, MAX_EMERGENCY);
+      this._fireMeshes.push(this[name]);
+    }
+
+    // Rotate each axle in the vertex shader while retaining one batched tire
+    // mesh and one hub mesh per model. Both share a single angle per vehicle.
+    this._wheelAngles = {};
+    for (const [model, tires, hubs] of [
+      ['car', this.wheels, this.hubs],
+      ['truck', this.truckWheels, this.truckHubs],
+      ['cybertruck', this.cyberWheels, this.cyberHubs],
+      ['ev', this.evWheels, this.evHubs],
+      ['ambulance', this.ambWheels, this.ambHubs],
+      ['police', this.policeWheels, this.policeHubs],
+      ['firetruck', this.fireWheels, this.fireHubs],
+    ]) {
+      const angles = new THREE.InstancedBufferAttribute(new Float32Array(tires.instanceMatrix.count), 1);
+      angles.setUsage(THREE.DynamicDrawUsage);
+      this._wheelAngles[model] = angles;
+      for (const mesh of [tires, hubs]) {
+        annotateRollingGeometry(mesh.geometry, WHEEL_LAYOUTS[model]);
+        mesh.geometry.setAttribute('wheelAngle', angles);
+        mesh.material = makeWheelMaterial(mesh.material);
+      }
+    }
 
     this.strobes = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
@@ -1397,23 +1321,12 @@ export class SceneRenderer {
       MAX_SHADOWS
     );
     this._meshes = [
-      this.sedan, this.sedanCabin, this.sedanTrim, this.sedanIndicators, this.sedanRearLenses,
-      this.hatch, this.hatchCabin, this.hatchTrim, this.hatchIndicators, this.hatchRearLenses,
-      this.wheels, this.hubs,
-      this.trailer, this.cab, this.truckGlass, this.truckTrim,
-      this.truckFrontLenses, this.truckRearLenses, this.truckIndicators,
-      this.truckWheels, this.truckHubs,
+      ...this._sedanMeshes, ...this._hatchMeshes, this.wheels, this.hubs,
+      ...this._truckMeshes,
       this.cyber, this.cyberTrim, this.cyberWheels, this.cyberHubs,
       this.cyberGlass, this.cyberFrontLens, this.cyberRearLens,
       ...this._evMeshes,
-      this.ambBody, this.ambStripe, this.ambGlass, this.ambTrim,
-      this.ambFrontLenses, this.ambRearLenses, this.ambWheels, this.ambHubs,
-      this.policeBody, this.policeRoof, this.policeGlass, this.policePanels, this.policeTrim,
-      this.policeFrontLenses, this.policeRearLenses, this.policeIndicators,
-      this.policeWheels, this.policeHubs,
-      this.fireBody, this.fireStripe, this.fireGlass, this.fireTrim, this.fireEquipment,
-      this.fireFrontLenses, this.fireRearLenses, this.fireIndicators,
-      this.fireWheels, this.fireHubs,
+      ...this._ambMeshes, ...this._policeMeshes, ...this._fireMeshes,
       this.contactShadows, this.strobes, this.brakeLights, this.blinkers,
     ];
     for (const m of this._meshes) {
@@ -1448,6 +1361,14 @@ export class SceneRenderer {
     d.scale.set(sx, sy, sz);
     d.updateMatrix();
     mesh.setMatrixAt(idx, d.matrix);
+  }
+
+  // Called after each physics step, using the resolved speed (including jam
+  // and collision stops). Simulation time keeps pause/time scale consistent.
+  advanceWheels(cars, dt) {
+    for (const car of cars) {
+      this._wheelMotion.advance(car, dt, (WHEEL_LAYOUTS[modelOf(car)] ?? WHEEL_LAYOUTS.car).radius);
+    }
   }
 
   // Called immediately before each fixed simulation step. If a display frame
@@ -1545,56 +1466,30 @@ export class SceneRenderer {
       // Emergency liveries remain recognizable under every color mode.
       if (emergency && !car.incident) this._bodyColor.copy(TYPE_COLORS[car.kind]);
       if (truck) {
-        this.trailer.setMatrixAt(ti, this._dummy.matrix);
-        this.cab.setMatrixAt(ti, this._dummy.matrix);
-        this.truckGlass.setMatrixAt(ti, this._dummy.matrix);
-        this.truckTrim.setMatrixAt(ti, this._dummy.matrix);
-        this.truckFrontLenses.setMatrixAt(ti, this._dummy.matrix);
-        this.truckRearLenses.setMatrixAt(ti, this._dummy.matrix);
-        this.truckIndicators.setMatrixAt(ti, this._dummy.matrix);
-        this.truckWheels.setMatrixAt(ti, this._dummy.matrix);
-        this.truckHubs.setMatrixAt(ti, this._dummy.matrix);
-        this.trailer.setColorAt(ti, this._bodyColor);
+        this._wheelAngles.truck.setX(ti, this._wheelMotion.angle(car, this._renderAlpha));
+        for (const mesh of this._truckMeshes) mesh.setMatrixAt(ti, this._dummy.matrix);
+        // Neutral dry-van panels contrast with the cab paint in presentation
+        // mode; speed/type/hazard colors still cover the complete vehicle.
+        this.trailer.setColorAt(ti, params.colorMode === 'random' && !car.incident ? TRAILER_PAINT : this._bodyColor);
         this.cab.setColorAt(ti, this._bodyColor);
         ti++;
       } else if (ambu) {
-        this.ambBody.setMatrixAt(mi, this._dummy.matrix);
-        this.ambStripe.setMatrixAt(mi, this._dummy.matrix);
-        this.ambGlass.setMatrixAt(mi, this._dummy.matrix);
-        this.ambTrim.setMatrixAt(mi, this._dummy.matrix);
-        this.ambFrontLenses.setMatrixAt(mi, this._dummy.matrix);
-        this.ambRearLenses.setMatrixAt(mi, this._dummy.matrix);
-        this.ambWheels.setMatrixAt(mi, this._dummy.matrix);
-        this.ambHubs.setMatrixAt(mi, this._dummy.matrix);
+        this._wheelAngles.ambulance.setX(mi, this._wheelMotion.angle(car, this._renderAlpha));
+        for (const mesh of this._ambMeshes) mesh.setMatrixAt(mi, this._dummy.matrix);
         this.ambBody.setColorAt(mi, this._bodyColor);
         mi++;
       } else if (police) {
-        this.policeBody.setMatrixAt(pi, this._dummy.matrix);
-        this.policeRoof.setMatrixAt(pi, this._dummy.matrix);
-        this.policeGlass.setMatrixAt(pi, this._dummy.matrix);
-        this.policePanels.setMatrixAt(pi, this._dummy.matrix);
-        this.policeTrim.setMatrixAt(pi, this._dummy.matrix);
-        this.policeFrontLenses.setMatrixAt(pi, this._dummy.matrix);
-        this.policeRearLenses.setMatrixAt(pi, this._dummy.matrix);
-        this.policeIndicators.setMatrixAt(pi, this._dummy.matrix);
-        this.policeWheels.setMatrixAt(pi, this._dummy.matrix);
-        this.policeHubs.setMatrixAt(pi, this._dummy.matrix);
+        this._wheelAngles.police.setX(pi, this._wheelMotion.angle(car, this._renderAlpha));
+        for (const mesh of this._policeMeshes) mesh.setMatrixAt(pi, this._dummy.matrix);
         this.policeBody.setColorAt(pi, this._bodyColor);
         pi++;
       } else if (firetruck) {
-        this.fireBody.setMatrixAt(fi, this._dummy.matrix);
-        this.fireStripe.setMatrixAt(fi, this._dummy.matrix);
-        this.fireGlass.setMatrixAt(fi, this._dummy.matrix);
-        this.fireTrim.setMatrixAt(fi, this._dummy.matrix);
-        this.fireEquipment.setMatrixAt(fi, this._dummy.matrix);
-        this.fireFrontLenses.setMatrixAt(fi, this._dummy.matrix);
-        this.fireRearLenses.setMatrixAt(fi, this._dummy.matrix);
-        this.fireIndicators.setMatrixAt(fi, this._dummy.matrix);
-        this.fireWheels.setMatrixAt(fi, this._dummy.matrix);
-        this.fireHubs.setMatrixAt(fi, this._dummy.matrix);
+        this._wheelAngles.firetruck.setX(fi, this._wheelMotion.angle(car, this._renderAlpha));
+        for (const mesh of this._fireMeshes) mesh.setMatrixAt(fi, this._dummy.matrix);
         this.fireBody.setColorAt(fi, this._bodyColor);
         fi++;
       } else if (cyber) {
+        this._wheelAngles.cybertruck.setX(ai, this._wheelMotion.angle(car, this._renderAlpha));
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
@@ -1605,22 +1500,16 @@ export class SceneRenderer {
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
       } else if (ev) {
+        this._wheelAngles.ev.setX(ei, this._wheelMotion.angle(car, this._renderAlpha));
         for (const mesh of this._evMeshes) mesh.setMatrixAt(ei, this._dummy.matrix);
         this.ev.setColorAt(ei++, this._bodyColor);
       } else {
         const body = hatch ? this.hatch : this.sedan;
-        const cabin = hatch ? this.hatchCabin : this.sedanCabin;
-        const trim = hatch ? this.hatchTrim : this.sedanTrim;
-        const indicators = hatch ? this.hatchIndicators : this.sedanIndicators;
-        const rearLenses = hatch ? this.hatchRearLenses : this.sedanRearLenses;
         const idx = hatch ? hi++ : ci++;
-        body.setMatrixAt(idx, this._dummy.matrix);
-        cabin.setMatrixAt(idx, this._dummy.matrix);
-        trim.setMatrixAt(idx, this._dummy.matrix);
-        indicators.setMatrixAt(idx, this._dummy.matrix);
-        rearLenses.setMatrixAt(idx, this._dummy.matrix);
+        for (const mesh of hatch ? this._hatchMeshes : this._sedanMeshes) mesh.setMatrixAt(idx, this._dummy.matrix);
         body.setColorAt(idx, this._bodyColor);
         if (wi < MAX_CARS) {
+          this._wheelAngles.car.setX(wi, this._wheelMotion.angle(car, this._renderAlpha));
           this.wheels.setMatrixAt(wi, this._dummy.matrix);
           this.hubs.setMatrixAt(wi++, this._dummy.matrix);
         }
@@ -1648,7 +1537,7 @@ export class SceneRenderer {
               this.placeLight(
                 this.brakeLights, li++, rotY,
                 side * L.brakeHalfW, L.brakeY, L.brakeZ,
-                L.brakeW, L.brakeH, 0.025
+                L.brakeW, L.brakeH, L.brakeDepth ?? 0.025
               );
             }
           } else if (li < MAX_LIGHTS) {
@@ -1680,27 +1569,11 @@ export class SceneRenderer {
         }
       }
     }
-    this.sedan.count = ci;
-    this.sedanCabin.count = ci;
-    this.sedanTrim.count = ci;
-    this.sedanIndicators.count = ci;
-    this.sedanRearLenses.count = ci;
-    this.hatch.count = hi;
-    this.hatchCabin.count = hi;
-    this.hatchTrim.count = hi;
-    this.hatchIndicators.count = hi;
-    this.hatchRearLenses.count = hi;
+    for (const mesh of this._sedanMeshes) mesh.count = ci;
+    for (const mesh of this._hatchMeshes) mesh.count = hi;
     this.wheels.count = wi;
     this.hubs.count = wi;
-    this.trailer.count = ti;
-    this.cab.count = ti;
-    this.truckGlass.count = ti;
-    this.truckTrim.count = ti;
-    this.truckFrontLenses.count = ti;
-    this.truckRearLenses.count = ti;
-    this.truckIndicators.count = ti;
-    this.truckWheels.count = ti;
-    this.truckHubs.count = ti;
+    for (const mesh of this._truckMeshes) mesh.count = ti;
     this.cyber.count = ai;
     this.cyberTrim.count = ai;
     this.cyberWheels.count = ai;
@@ -1709,38 +1582,14 @@ export class SceneRenderer {
     for (const mesh of this._evMeshes) mesh.count = ei;
     this.cyberFrontLens.count = ai;
     this.cyberRearLens.count = ai;
-    this.ambBody.count = mi;
-    this.ambStripe.count = mi;
-    this.ambGlass.count = mi;
-    this.ambTrim.count = mi;
-    this.ambFrontLenses.count = mi;
-    this.ambRearLenses.count = mi;
-    this.ambWheels.count = mi;
-    this.ambHubs.count = mi;
-    this.policeBody.count = pi;
-    this.policeRoof.count = pi;
-    this.policeGlass.count = pi;
-    this.policePanels.count = pi;
-    this.policeTrim.count = pi;
-    this.policeFrontLenses.count = pi;
-    this.policeRearLenses.count = pi;
-    this.policeIndicators.count = pi;
-    this.policeWheels.count = pi;
-    this.policeHubs.count = pi;
-    this.fireBody.count = fi;
-    this.fireStripe.count = fi;
-    this.fireGlass.count = fi;
-    this.fireTrim.count = fi;
-    this.fireEquipment.count = fi;
-    this.fireFrontLenses.count = fi;
-    this.fireRearLenses.count = fi;
-    this.fireIndicators.count = fi;
-    this.fireWheels.count = fi;
-    this.fireHubs.count = fi;
+    for (const mesh of this._ambMeshes) mesh.count = mi;
+    for (const mesh of this._policeMeshes) mesh.count = pi;
+    for (const mesh of this._fireMeshes) mesh.count = fi;
     this.contactShadows.count = sh;
     this.strobes.count = si;
     this.brakeLights.count = li;
     this.blinkers.count = ki;
+    for (const angles of Object.values(this._wheelAngles)) angles.needsUpdate = true;
     for (const m of this._meshes) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -2159,454 +2008,12 @@ function triangleSurfaceGeo(tris) {
   return geo;
 }
 
-// Normalize hand-built and primitive geometry before merging: loft() carries
-// no UVs while three.js primitives do. These models use flat colors, so UVs
-// would only prevent otherwise compatible parts from becoming one draw mesh.
-function mergeSolids(parts) {
-  return mergeGeometries(
-    parts.map((g) => {
-      const out = g.index ? g.toNonIndexed() : g;
-      out.deleteAttribute('uv');
-      return out;
-    })
-  );
-}
-
-function passengerBodyGeo(sections, hatch) {
-  const roof = hatch
-    ? new THREE.BoxGeometry(1.34, 0.06, 1.55).translate(0, 1.49, -0.5)
-    : new THREE.BoxGeometry(1.3, 0.06, 0.94).translate(0, 1.46, -0.25);
-  return mergeSolids([loft(sections), roof]);
-}
-
-// Dark trim is deliberately chunky: at simulator camera distances a real
-// one-inch molding disappears, while these toy-scale bumpers, rockers and
-// mirrors preserve the front/back silhouette without breaking the low-poly
-// language.
-function passengerTrimGeo(hatch) {
-  const front = hatch ? 2.19 : 2.3;
-  const rear = hatch ? -2.19 : -2.3;
-  return mergeSolids([
-    new THREE.BoxGeometry(1.58, 0.14, 0.14).translate(0, 0.43, front),
-    new THREE.BoxGeometry(1.62, 0.14, 0.14).translate(0, 0.43, rear),
-    new THREE.BoxGeometry(0.1, 0.12, 2.65).translate(0.94, 0.36, -0.08),
-    new THREE.BoxGeometry(0.1, 0.12, 2.65).translate(-0.94, 0.36, -0.08),
-    new THREE.BoxGeometry(0.62, 0.16, 0.05).translate(0, 0.61, front + 0.08),
-    new THREE.BoxGeometry(0.18, 0.1, 0.26).translate(1.04, 1.03, 0.62),
-    new THREE.BoxGeometry(0.18, 0.1, 0.26).translate(-1.04, 1.03, 0.62),
-  ]);
-}
-
-function passengerBrakeLensGeo(hatch) {
-  const z = hatch ? -2.265 : -2.375;
-  const y = hatch ? 0.86 : 0.82;
-  return mergeSolids([
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, y, z),
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, y, z),
-  ]);
-}
-
-// Front and rear amber lenses share one per-style instance, keeping both ends
-// of the car visually consistent without adding another draw call. Live
-// blinker cubes sit just proud of these same rectangles (LIGHT_DIMS).
-function passengerIndicatorGeo(hatch) {
-  const frontZ = hatch ? 2.265 : 2.375;
-  const rearZ = hatch ? -2.265 : -2.375;
-  const rearY = hatch ? 0.64 : 0.6;
-  return mergeSolids([
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, 0.78, frontZ),
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, 0.78, frontZ),
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(0.58, rearY, rearZ),
-    new THREE.BoxGeometry(0.36, 0.14, 0.07).translate(-0.58, rearY, rearZ),
-  ]);
-}
-
-function truckGlassGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(1.76, 1.14, 0.045)
-      .rotateX(-0.33)
-      .translate(0, 2.25, 6.54),
-    new THREE.BoxGeometry(0.045, 0.82, 0.86).translate(1.115, 2.27, 5.92),
-    new THREE.BoxGeometry(0.045, 0.82, 0.86).translate(-1.115, 2.27, 5.92),
-  ]);
-}
-
-function truckTrimGeo() {
-  const parts = [
-    new THREE.BoxGeometry(2.02, 0.22, 0.24).translate(0, 0.44, 8.12), // bumper
-    new THREE.BoxGeometry(1.62, 0.64, 0.06).translate(0, 1.15, 8.13), // grille
-    new THREE.BoxGeometry(1.15, 0.24, 11.0).translate(0, 0.46, -1.45), // chassis
-    new THREE.BoxGeometry(0.12, 0.18, 10.4).translate(1.25, 0.73, -1.85),
-    new THREE.BoxGeometry(0.12, 0.18, 10.4).translate(-1.25, 0.73, -1.85),
-    new THREE.BoxGeometry(0.2, 0.14, 0.34).translate(1.28, 2.4, 6.3), // mirrors
-    new THREE.BoxGeometry(0.2, 0.14, 0.34).translate(-1.28, 2.4, 6.3),
-    new THREE.BoxGeometry(0.08, 2.45, 0.05).translate(0, 1.82, -7.775), // rear door seam
-  ];
-  for (const side of [-1, 1]) {
-    parts.push(
-      new THREE.CylinderGeometry(0.34, 0.34, 1.18, 8)
-        .rotateX(Math.PI / 2)
-        .translate(side * 1.08, 0.64, 5.25)
-    );
-  }
-  return mergeSolids(parts);
-}
-
-function truckTailLensGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(0.42, 0.2, 0.07).translate(0.88, 0.72, -7.82),
-    new THREE.BoxGeometry(0.42, 0.2, 0.07).translate(-0.88, 0.72, -7.82),
-  ]);
-}
-
-function truckFrontLensGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(0.46, 0.2, 0.07).translate(0.66, 1.38, 8.23),
-    new THREE.BoxGeometry(0.46, 0.2, 0.07).translate(-0.66, 1.38, 8.23),
-  ]);
-}
-
-function truckIndicatorGeo() {
-  return mergeSolids([
-    // Small amber elements tuck beneath the pale front lamp rectangles.
-    new THREE.BoxGeometry(0.32, 0.12, 0.07).translate(0.75, 1.15, 8.23),
-    new THREE.BoxGeometry(0.32, 0.12, 0.07).translate(-0.75, 1.15, 8.23),
-    // Rear indicators stack above the red brake lenses as one tidy cluster.
-    new THREE.BoxGeometry(0.42, 0.16, 0.07).translate(0.88, 0.98, -7.82),
-    new THREE.BoxGeometry(0.42, 0.16, 0.07).translate(-0.88, 0.98, -7.82),
-  ]);
-}
-
-function ambulanceStripeGeo() {
-  // The old stripe was a box wrapped around an equally long module. Their
-  // rear faces occupied exactly the same plane, so depth precision chose a
-  // different winner as the camera moved. Separate side and rear belts keep
-  // a visible air gap from the white body at every face.
-  return mergeSolids([
-    new THREE.BoxGeometry(0.035, 0.32, 2.94).translate(1.18, 1.16, -1.19),
-    new THREE.BoxGeometry(0.035, 0.32, 2.94).translate(-1.18, 1.16, -1.19),
-    new THREE.BoxGeometry(2.36, 0.32, 0.03).translate(0, 1.16, -2.735),
-  ]);
-}
-
-function ambulanceGlassGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(1.72, 0.54, 0.045).translate(0, 1.59, 1.615),
-    new THREE.BoxGeometry(0.045, 0.54, 0.72).translate(1.035, 1.59, 0.98),
-    new THREE.BoxGeometry(0.045, 0.54, 0.72).translate(-1.035, 1.59, 0.98),
-  ]);
-}
-
-function ambulanceTrimGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(2.02, 0.18, 0.18).translate(0, 0.43, 2.67),
-    new THREE.BoxGeometry(2.2, 0.2, 0.18).translate(0, 0.46, -2.68),
-    new THREE.BoxGeometry(0.74, 0.26, 0.05).translate(0, 0.8, 2.705),
-    new THREE.BoxGeometry(0.12, 0.14, 3.7).translate(1.19, 0.46, -0.52),
-    new THREE.BoxGeometry(0.12, 0.14, 3.7).translate(-1.19, 0.46, -0.52),
-    new THREE.BoxGeometry(0.05, 1.72, 0.025).translate(0, 1.45, -2.77),
-    new THREE.BoxGeometry(0.2, 0.12, 0.28).translate(1.16, 1.58, 1.3),
-    new THREE.BoxGeometry(0.2, 0.12, 0.28).translate(-1.16, 1.58, 1.3),
-  ]);
-}
-
-function ambulanceLensGeo(front) {
-  const z = front ? 2.72 : -2.72;
-  const y = front ? 0.84 : 0.74;
-  return mergeSolids([
-    new THREE.BoxGeometry(0.42, 0.18, 0.06).translate(0.68, y, z),
-    new THREE.BoxGeometry(0.42, 0.18, 0.06).translate(-0.68, y, z),
-  ]);
-}
-
-function policeBodyGeo() {
-  return loft(POLICE_BODY);
-}
-
-function policeRoofGeo() {
-  // Separate fixed-livery panel: warm white through every color mode and even
-  // while the tintable charcoal shell flashes an incident hazard color.
-  return new THREE.BoxGeometry(1.34, 0.06, 1.08).translate(0, 1.52, -0.18);
-}
-
-function policePanelGeo() {
-  const parts = [];
-  for (const side of [-1, 1]) {
-    parts.push(
-      // Near-black front/rear door panels sit subtly against the charcoal
-      // shell instead of creating the previous white-and-black livery.
-      new THREE.BoxGeometry(0.035, 0.68, 1.34).translate(side * 0.992, 0.72, 0.14),
-      new THREE.BoxGeometry(0.035, 0.66, 1.18).translate(side * 0.992, 0.72, -1.14)
-    );
-  }
-  return mergeSolids(parts);
-}
-
-function policeTrimGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(1.72, 0.15, 0.08).translate(0, 0.43, 2.46),
-    new THREE.BoxGeometry(1.76, 0.15, 0.08).translate(0, 0.43, -2.46),
-    new THREE.BoxGeometry(0.1, 0.13, 2.9).translate(0.98, 0.35, -0.05),
-    new THREE.BoxGeometry(0.1, 0.13, 2.9).translate(-0.98, 0.35, -0.05),
-    new THREE.BoxGeometry(0.74, 0.2, 0.02).translate(0, 0.66, 2.487), // grille
-    new THREE.BoxGeometry(1.28, 0.08, 0.3).translate(0, 1.575, -0.1), // light-bar base
-    new THREE.BoxGeometry(0.18, 0.1, 0.27).translate(1.06, 1.04, 0.68),
-    new THREE.BoxGeometry(0.18, 0.1, 0.27).translate(-1.06, 1.04, 0.68),
-    // Square push bar, kept within the five-metre physical footprint.
-    new THREE.BoxGeometry(1.38, 0.09, 0.025).translate(0, 0.58, 2.485),
-    new THREE.BoxGeometry(0.09, 0.5, 0.025).translate(0.58, 0.67, 2.485),
-    new THREE.BoxGeometry(0.09, 0.5, 0.025).translate(-0.58, 0.67, 2.485),
-    // One dark housing per side unifies the split red/amber rear lamp halves.
-    new THREE.BoxGeometry(0.53, 0.21, 0.035).translate(0.61, 0.8, -2.465),
-    new THREE.BoxGeometry(0.53, 0.21, 0.035).translate(-0.61, 0.8, -2.465),
-  ]);
-}
-
-function policeLensGeo(front) {
-  if (!front) {
-    // Inner red half of each rear combination lamp. The outer halves live in
-    // policeIndicatorGeo with the same y/z plane and shared dark housing.
-    return mergeSolids([
-      new THREE.BoxGeometry(0.26, 0.15, 0.035).translate(0.505, 0.8, -2.475),
-      new THREE.BoxGeometry(0.26, 0.15, 0.035).translate(-0.505, 0.8, -2.475),
-    ]);
-  }
-  return mergeSolids([
-    // Pale headlamps stay inboard, leaving the amber indicators to wrap the
-    // bumper corners rather than reading as a second horizontal lamp row.
-    new THREE.BoxGeometry(0.34, 0.15, 0.035).translate(0.5, 0.84, 2.47),
-    new THREE.BoxGeometry(0.34, 0.15, 0.035).translate(-0.5, 0.84, 2.47),
-  ]);
-}
-
-function policeIndicatorGeo() {
-  const parts = [];
-  for (const side of [-1, 1]) {
-    parts.push(
-      // Rotated corner lenses follow the interceptor's tapered front flanks.
-      new THREE.BoxGeometry(0.28, 0.13, 0.08)
-        .rotateY(side * 0.55)
-        .translate(side * 0.82, 0.72, 2.38),
-      // Outer amber half of the rear combination lamp.
-      new THREE.BoxGeometry(0.2, 0.15, 0.035).translate(side * 0.745, 0.8, -2.475)
-    );
-  }
-  return mergeSolids(parts);
-}
-
-function firetruckBodyGeo() {
-  return mergeSolids([
-    loft(FIRETRUCK_CAB),
-    // Apparatus body ends just ahead of the rear bumper and overlaps the cab
-    // slightly, reading as one compact pumper instead of a tractor/trailer.
-    new THREE.BoxGeometry(2.5, 2.55, 5.9).translate(0, 1.65, -2.18),
-    new THREE.BoxGeometry(2.18, 0.08, 3.5).translate(0, 3.04, 2.83), // cab roof
-  ]);
-}
-
-function firetruckStripeGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(0.035, 0.3, 4.12).translate(1.215, 1.34, 2.86),
-    new THREE.BoxGeometry(0.035, 0.3, 4.12).translate(-1.215, 1.34, 2.86),
-    new THREE.BoxGeometry(0.035, 0.3, 5.76).translate(1.266, 1.34, -2.2),
-    new THREE.BoxGeometry(0.035, 0.3, 5.76).translate(-1.266, 1.34, -2.2),
-    new THREE.BoxGeometry(2.5, 0.3, 0.025).translate(0, 1.34, -5.145),
-  ]);
-}
-
-function firetruckGlassGeo() {
-  return mergeSolids([
-    // Split windshield sells the flat-front fire-engine cab.
-    new THREE.BoxGeometry(0.95, 0.82, 0.035).translate(0.54, 2.32, 5.13),
-    new THREE.BoxGeometry(0.95, 0.82, 0.035).translate(-0.54, 2.32, 5.13),
-    new THREE.BoxGeometry(0.035, 0.88, 1.46).translate(1.215, 2.3, 3.87),
-    new THREE.BoxGeometry(0.035, 0.88, 1.46).translate(-1.215, 2.3, 3.87),
-    new THREE.BoxGeometry(0.035, 0.88, 1.25).translate(1.215, 2.3, 2.33),
-    new THREE.BoxGeometry(0.035, 0.88, 1.25).translate(-1.215, 2.3, 2.33),
-  ]);
-}
-
-function firetruckTrimGeo() {
-  return mergeSolids([
-    // The 0.10 m bumpers centered at +/-5.20 define the exact +/-5.25 extent.
-    new THREE.BoxGeometry(2.34, 0.22, 0.1).translate(0, 0.46, 5.2),
-    new THREE.BoxGeometry(2.46, 0.22, 0.1).translate(0, 0.46, -5.2),
-    new THREE.BoxGeometry(1.55, 0.68, 0.045).translate(0, 1.25, 5.16), // grille
-    new THREE.BoxGeometry(1.25, 0.24, 8.7).translate(0, 0.45, -0.35), // chassis
-    new THREE.BoxGeometry(0.14, 0.18, 8.1).translate(1.25, 0.72, -0.45),
-    new THREE.BoxGeometry(0.14, 0.18, 8.1).translate(-1.25, 0.72, -0.45),
-    new THREE.BoxGeometry(0.22, 0.15, 0.38).translate(1.36, 2.36, 4.08),
-    new THREE.BoxGeometry(0.22, 0.15, 0.38).translate(-1.36, 2.36, 4.08),
-    new THREE.BoxGeometry(0.07, 2.0, 0.03).translate(0, 1.68, -5.155), // rear door seam
-  ]);
-}
-
-function firetruckEquipmentGeo() {
-  const parts = [
-    // Pump panels and roll-up compartment faces on both sides.
-    new THREE.BoxGeometry(0.04, 1.28, 1.62).translate(1.278, 1.83, -0.18),
-    new THREE.BoxGeometry(0.04, 1.28, 1.62).translate(-1.278, 1.83, -0.18),
-    new THREE.BoxGeometry(0.04, 1.38, 1.75).translate(1.278, 1.82, -2.08),
-    new THREE.BoxGeometry(0.04, 1.38, 1.75).translate(-1.278, 1.82, -2.08),
-    new THREE.BoxGeometry(0.04, 1.38, 1.65).translate(1.278, 1.82, -3.88),
-    new THREE.BoxGeometry(0.04, 1.38, 1.65).translate(-1.278, 1.82, -3.88),
-    // Two ladder rails sit on the apparatus roof.
-    new THREE.BoxGeometry(0.1, 0.11, 5.6).translate(0.54, 3.06, -2.05),
-    new THREE.BoxGeometry(0.1, 0.11, 5.6).translate(-0.54, 3.06, -2.05),
-  ];
-  for (let z = -4.55; z <= 0.45; z += 0.62) {
-    parts.push(new THREE.BoxGeometry(1.16, 0.09, 0.09).translate(0, 3.08, z));
-  }
-  // Horizontal highlights imply the slats of the equipment doors without
-  // needing textures or a new draw call.
-  for (const side of [-1, 1]) {
-    for (const y of [1.35, 1.7, 2.05, 2.4]) {
-      parts.push(new THREE.BoxGeometry(0.025, 0.045, 5.25).translate(side * 1.302, y, -2.2));
-    }
-  }
-  return mergeSolids(parts);
-}
-
-function firetruckLensGeo(front) {
-  const z = front ? 5.18 : -5.18;
-  const y = front ? 1.48 : 0.88;
-  const halfW = front ? 0.78 : 0.9;
-  return mergeSolids([
-    new THREE.BoxGeometry(0.46, 0.22, 0.05).translate(halfW, y, z),
-    new THREE.BoxGeometry(0.46, 0.22, 0.05).translate(-halfW, y, z),
-  ]);
-}
-
-function firetruckIndicatorGeo() {
-  return mergeSolids([
-    new THREE.BoxGeometry(0.38, 0.15, 0.05).translate(0.78, 1.2, 5.18),
-    new THREE.BoxGeometry(0.38, 0.15, 0.05).translate(-0.78, 1.2, 5.18),
-    new THREE.BoxGeometry(0.46, 0.17, 0.05).translate(0.9, 1.16, -5.18),
-    new THREE.BoxGeometry(0.46, 0.17, 0.05).translate(-0.9, 1.16, -5.18),
-  ]);
-}
-
-// Bright polygon hubs on the outward tire faces make the wheels legible at
-// a glance while leaving the tire geometry itself matte and nearly black.
-function hubcapsGeo(spots, r, w) {
-  return mergeGeometries(
-    spots.map(([x, z]) =>
-      new THREE.CylinderGeometry(r * 0.48, r * 0.48, 0.04, 8)
-        .rotateZ(Math.PI / 2)
-        .translate(x + Math.sign(x) * (w / 2 + 0.025), r, z)
-    )
-  );
-}
-
 // Soft-edged shadows would fight the graphic style; a twelve-sided translucent
 // footprint grounds each vehicle and remains cheap enough to instance by kind.
 function contactShadowGeo() {
   return new THREE.CircleGeometry(1, 12)
     .rotateX(-Math.PI / 2)
     .translate(0, 0.002, 0);
-}
-
-// Low-poly vehicle shell: a loft of rectangular cross-sections along the
-// vehicle's length (+z = front, same frame as cybertruck.js). Each section is
-// {z, hw, y0, y1} — half-width plus rocker and top heights; walls stitch
-// between neighbours and the ends are capped. Non-indexed triangles +
-// computeVertexNormals = flat facets, and the DoubleSide vehicle material
-// forgives winding parity, exactly like the wedge above.
-function loft(sections) {
-  const tris = [];
-  const corners = sections.map((s) => ({
-    tl: [-s.hw, s.y1, s.z],
-    tr: [s.hw, s.y1, s.z],
-    bl: [-s.hw, s.y0, s.z],
-    br: [s.hw, s.y0, s.z],
-  }));
-  const quad = (a, b, c, d) => tris.push([a, b, c], [a, c, d]);
-  for (let i = 0; i < corners.length - 1; i++) {
-    const f = corners[i]; // the section nearer the nose
-    const r = corners[i + 1];
-    quad(f.tl, f.tr, r.tr, r.tl); // top
-    quad(f.br, f.bl, r.bl, r.br); // bottom
-    quad(f.tr, f.br, r.br, r.tr); // right wall
-    quad(f.bl, f.tl, r.tl, r.bl); // left wall
-  }
-  const nose = corners[0];
-  const tail = corners[corners.length - 1];
-  quad(nose.tl, nose.bl, nose.br, nose.tr);
-  quad(tail.tr, tail.br, tail.bl, tail.tl);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
-// Cross-sections (nose → tail), meters, matched to the sim's 4.6 m car and
-// 16.5 m truck footprints. LIGHT_DIMS up top must track these faces.
-const SEDAN_BODY = [
-  { z: 2.28, hw: 0.72, y0: 0.42, y1: 0.66 }, // nose face
-  { z: 2.1, hw: 0.9, y0: 0.3, y1: 0.75 }, // bumper shelf
-  { z: 0.95, hw: 0.95, y0: 0.28, y1: 0.98 }, // hood rising to the cowl
-  { z: -1.55, hw: 0.95, y0: 0.28, y1: 1.02 }, // doors through the rear deck
-  { z: -2.1, hw: 0.88, y0: 0.32, y1: 0.96 }, // trunk drop
-  { z: -2.28, hw: 0.7, y0: 0.44, y1: 0.8 }, // tail face
-];
-const SEDAN_CABIN = [
-  { z: 0.98, hw: 0.78, y0: 0.9, y1: 0.97 }, // cowl
-  { z: 0.3, hw: 0.7, y0: 0.9, y1: 1.46 }, // raked windshield to roof
-  { z: -0.75, hw: 0.7, y0: 0.9, y1: 1.44 }, // roof
-  { z: -1.6, hw: 0.76, y0: 0.9, y1: 0.98 }, // rear glass to deck
-];
-const HATCH_BODY = [
-  { z: 2.17, hw: 0.74, y0: 0.44, y1: 0.7 },
-  { z: 1.98, hw: 0.91, y0: 0.3, y1: 0.82 },
-  { z: 1.05, hw: 0.95, y0: 0.28, y1: 1.02 },
-  { z: -1.95, hw: 0.95, y0: 0.28, y1: 1.06 },
-  { z: -2.17, hw: 0.84, y0: 0.38, y1: 1.0 }, // tall tail: hatchback
-];
-const HATCH_CABIN = [
-  { z: 1.02, hw: 0.8, y0: 0.94, y1: 1.0 },
-  { z: 0.35, hw: 0.73, y0: 0.94, y1: 1.5 },
-  { z: -1.35, hw: 0.73, y0: 0.94, y1: 1.48 }, // long roof
-  { z: -2.05, hw: 0.78, y0: 0.94, y1: 1.04 }, // steep tailgate glass
-];
-const POLICE_BODY = [
-  { z: 2.44, hw: 0.76, y0: 0.43, y1: 0.68 },
-  { z: 2.25, hw: 0.93, y0: 0.3, y1: 0.78 },
-  { z: 1.08, hw: 0.99, y0: 0.28, y1: 0.98 },
-  { z: -1.72, hw: 0.99, y0: 0.28, y1: 1.02 },
-  { z: -2.25, hw: 0.92, y0: 0.32, y1: 0.95 },
-  { z: -2.44, hw: 0.75, y0: 0.43, y1: 0.8 },
-];
-const POLICE_CABIN = [
-  { z: 1.08, hw: 0.81, y0: 0.92, y1: 0.98 },
-  { z: 0.34, hw: 0.73, y0: 0.92, y1: 1.5 },
-  { z: -0.95, hw: 0.73, y0: 0.92, y1: 1.49 },
-  { z: -1.72, hw: 0.8, y0: 0.92, y1: 1.01 },
-];
-// Front-to-rear cross-sections for the 10.5 m pumper. The cab shell stops at
-// +/-5.15; firetruckTrimGeo's bumpers define the exact +/-5.25 m footprint.
-const FIRETRUCK_CAB = [
-  { z: 5.15, hw: 1.08, y0: 0.5, y1: 1.5 },
-  { z: 5.08, hw: 1.2, y0: 0.34, y1: 3.0 },
-  { z: 0.72, hw: 1.2, y0: 0.32, y1: 3.0 },
-  { z: 0.62, hw: 1.15, y0: 0.38, y1: 2.86 },
-];
-const TRUCK_CAB = [
-  { z: 8.2, hw: 0.85, y0: 0.55, y1: 1.15 }, // bumper nose
-  { z: 8.02, hw: 1.02, y0: 0.35, y1: 1.6 }, // grille
-  { z: 6.75, hw: 1.02, y0: 0.32, y1: 1.68 }, // hood
-  { z: 6.35, hw: 1.1, y0: 0.32, y1: 2.86 }, // windshield up to the roof
-  { z: 4.45, hw: 1.1, y0: 0.32, y1: 2.92 }, // sleeper rear
-];
-
-// A merged set of low-poly wheels (cylinders lying on the x axis): one
-// [x, z] mount per wheel, radius r, tire width w. Kept as separate meshes
-// from the bodies so tires stay dark while instance colors tint the paint.
-function wheelsGeo(spots, r, w) {
-  return mergeGeometries(
-    spots.map(([x, z]) =>
-      new THREE.CylinderGeometry(r, r, w, 10).rotateZ(Math.PI / 2).translate(x, r, z)
-    )
-  );
 }
 
 // --- scenery geometry ------------------------------------------------------

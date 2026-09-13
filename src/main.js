@@ -137,6 +137,7 @@ window.params = params;
 const H = 1 / 60;
 let last = performance.now();
 let acc = 0;
+let holdCurrentPose = false; // keep the paused endpoint until physics advances again
 let fpsFrames = 0; // render frames since the last HUD tick (FPS readout)
 
 function frame(now) {
@@ -153,10 +154,14 @@ function frame(now) {
       // freeway speeds (especially on high-refresh displays).
       renderer.captureCarPoses(sim.cars);
       sim.step(H);
+      renderer.advanceWheels(sim.cars, H);
+      holdCurrentPose = false;
       acc -= H;
       steps++;
     }
     if (steps === 30) acc = 0; // can't keep up; drop time instead of spiraling
+  } else {
+    holdCurrentPose = true;
   }
   // if the chased car left the world (exited, or wreck cleared), follow another
   if (renderer.chaseCar && !sim.cars.includes(renderer.chaseCar)) {
@@ -167,7 +172,9 @@ function frame(now) {
   // CSS keys the speedometer/legend/hint bottom-strip layout off this class
   document.body.classList.toggle('chasing', !!renderer.chaseCar);
   speedo.update(renderer.chaseCar, dt);
-  const renderAlpha = params.paused ? 1 : Math.max(0, Math.min(1, acc / H));
+  // A resumed high-refresh frame may not contain a physics step yet. Keep
+  // the paused pose instead of briefly interpolating bodies/wheels backward.
+  const renderAlpha = holdCurrentPose ? 1 : Math.max(0, Math.min(1, acc / H));
   renderer.setRain(sim.rainNow || 0);
   renderer.updateMeters(sim);
   renderer.update(sim.cars, renderAlpha);
