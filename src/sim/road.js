@@ -3,8 +3,8 @@ import * as THREE from 'three';
 // Road geometry. The centerline of lane 0 (the outermost lane) is a closed
 // path built from straight and circular-arc segments, so arc length, tangents
 // and lateral offsets are all exact — no spline approximation. The traffic
-// model itself never sees the shape: it treats the loop as a straight road of
-// length LOOP that wraps around; curvature is purely cosmetic.
+// model uses a shared wrapped plan-view coordinate. Optional road dynamics
+// read curvature and grade for speed targets without changing this coordinate.
 export const ROAD = {
   laneWidth: 3.7,    // m
   shoulderWidth: 3.0, // breakdown lane outside lane 0 (m)
@@ -128,8 +128,8 @@ export const SHAPES = {
       // back. Net turn is 0 — the lobes cancel — which is why the closure
       // check accepts any whole number of turns. The second straight rises
       // over the first on a raised-cosine hump: the model still drives a
-      // flat wrapped line (s stays plan-view arc length; elevation is
-      // cosmetic exactly like curvature), the renderer adds the bridge.
+      // wrapped line (s stays plan-view arc length); optional road dynamics
+      // add grade/curve speed effects, and the renderer adds the bridge.
       const r = 100 * k; // lobe radius
       const c = 175 * k; // lobe center distance from the crossing
       const beta = Math.asin(r / c); // tangent angle off the lobe axis
@@ -339,7 +339,7 @@ function poseAt(s) {
 
 // World position at arc length s, displaced sideways by `offset` meters
 // (positive = outward / driver's right, matching laneOffset()). y carries
-// the shape's cosmetic elevation (flat 0 on every shape but the eight).
+// the shape's elevation (flat 0 on every shape but the eight).
 export function pointAt(s, offset = 0, target = new THREE.Vector3()) {
   const p = poseAt(s);
   let { x, z } = p;
@@ -353,6 +353,25 @@ export function pointAt(s, offset = 0, target = new THREE.Vector3()) {
 export function forwardAt(s, target = new THREE.Vector3()) {
   const p = poseAt(s);
   return target.set(Math.cos(p.phi), 0, Math.sin(p.phi));
+}
+
+// Signed curvature of an offset lane, in 1/m. Exact on each straight/arc;
+// positive bends right. The lane's radius changes with its lateral offset.
+export function curvatureAt(s, offset = 0) {
+  s = wrap(s);
+  let seg = segs[0];
+  for (let i = segs.length - 1; i > 0; i--) {
+    if (segs[i].s0 <= s) { seg = segs[i]; break; }
+  }
+  if (seg.kind === 'straight') return 0;
+  return seg.d / Math.max(1, seg.r - offset * seg.d);
+}
+
+// Rise / plan-view run, sampled symmetrically across the wrap seam. This
+// keeps road coordinates unchanged while allowing a heavy vehicle to respond
+// to the actual bridge slope. No grade exists on the flat shapes.
+export function gradeAt(s) {
+  return elevFn ? elevFn(wrap(s + 0.5)) - elevFn(wrap(s - 0.5)) : 0;
 }
 
 // Signed lateral offset of a world point from the centerline at s

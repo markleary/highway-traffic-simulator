@@ -117,7 +117,7 @@ export class Speedometer {
     ctx.fillText(imp ? 'mph' : 'km/h', CX, CY + 40);
     ctx.textAlign = 'left';
 
-    const kind = vehicleLabel(car.kind);
+    const kind = vehicleLabel(car);
     const want = Math.round((params.desiredSpeed * car.v0Factor) / unit);
     this.cap.textContent =
       `following ${kind} #${car.id} · wants ${want} ${imp ? 'mph' : 'km/h'}${statusOf(car)}`;

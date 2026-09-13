@@ -6,11 +6,12 @@ import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../
 import { params, KMH, MPH, FT } from '../params.js';
 import { isEmergencyVehicle, vehicleLabel } from '../sim/car.js';
 import { buildCybertruckGeometry, CYBERTRUCK_LIGHTS } from './cybertruck.js';
+import { buildEVGeometry, EV_LIGHTS } from './ev.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
 const MAX_EMERGENCY = 8; // simulation caps all emergency kinds at this total
-const MAX_SHADOWS = MAX_CARS * 3 + MAX_TRUCKS + MAX_EMERGENCY; // every render pool combined
+const MAX_SHADOWS = MAX_CARS * 4 + MAX_TRUCKS + MAX_EMERGENCY; // every render pool combined
 const STROBE_RED = new THREE.Color(0xff2a2a);
 const STROBE_BLUE = new THREE.Color(0x2a6bff);
 // 'By type' color mode: the charts' categorical trio (speed/flow/cars series
@@ -87,7 +88,8 @@ const LIGHT_DIMS = {
       blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
     }, // hatchback
   ],
-  acc: CYBERTRUCK_LIGHTS,
+  cybertruck: CYBERTRUCK_LIGHTS,
+  ev: EV_LIGHTS,
   truck: {
     rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95,
     brakeZ: -7.895, brakeY: 0.72, brakeHalfW: 0.88, brakeW: 0.36, brakeH: 0.15,
@@ -127,7 +129,8 @@ const LIGHT_DIMS = {
 // the rendered footprint follows the physics record automatically.
 const RENDER_DIMS = {
   car: { shadowHalfW: 0.92, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
-  acc: { shadowHalfW: 1.02, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
+  cybertruck: { shadowHalfW: 1.02, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
+  ev: { shadowHalfW: 0.94, shadowInset: 0.18, hoverY: 2.6, chaseUp: 6 },
   truck: { shadowHalfW: 1.22, shadowInset: 0.5, hoverY: 4.2, chaseUp: 8.5 },
   ambulance: {
     shadowHalfW: 1.17, shadowInset: 0.22, hoverY: 3.1, chaseUp: 6,
@@ -142,6 +145,10 @@ const RENDER_DIMS = {
     strobe: { x: 0.62, y: 3.18, z: 3.65, sx: 0.52, sy: 0.17, sz: 0.3 },
   },
 };
+
+// Body geometry is independent of the controller/category used for colors.
+// The fallback supports external callers with pre-model Car-shaped records.
+const modelOf = (car) => car.model ?? (car.kind === 'acc' ? 'cybertruck' : car.kind);
 
 export class SceneRenderer {
   constructor(container) {
@@ -534,7 +541,7 @@ export class SceneRenderer {
     this.hoverTip.visible = !!car;
     if (!car) return;
     this.carPose(car, this._pos, this._tan);
-    const dims = RENDER_DIMS[car.kind] ?? RENDER_DIMS.car;
+    const dims = RENDER_DIMS[modelOf(car)] ?? RENDER_DIMS.car;
     this.hoverTip.position.set(
       this._pos.x,
       this._pos.y + dims.hoverY,
@@ -543,7 +550,7 @@ export class SceneRenderer {
     const imp = params.units === 'imperial';
     const unit = imp ? MPH : KMH;
     const want = params.desiredSpeed * car.v0Factor;
-    this.hoverName.textContent = `${vehicleLabel(car.kind)} #${car.id}`;
+    this.hoverName.textContent = `${vehicleLabel(car)} #${car.id}`;
     this.hoverSub.textContent =
       `${Math.round(car.v / unit)} (${Math.round(want / unit)}) ${imp ? 'mph' : 'km/h'}`;
   }
@@ -1244,6 +1251,20 @@ export class SceneRenderer {
     this.cyberFrontLens = new THREE.InstancedMesh(cyber.frontLens,
       new THREE.MeshStandardMaterial({ color: 0xe7edf0, roughness: 0.32 }), MAX_CARS);
     this.cyberRearLens = new THREE.InstancedMesh(cyber.rearLens, rearLensMat, MAX_CARS);
+    // A standard-car-length EV shares the ACC controller with the pickup.
+    // Every part is instanced, and only the body receives analytical colors.
+    const ev = buildEVGeometry();
+    this.ev = new THREE.InstancedMesh(ev.body, bodyMat, MAX_CARS);
+    this.evGlass = new THREE.InstancedMesh(ev.glass, glassMat, MAX_CARS);
+    this.evTrim = new THREE.InstancedMesh(ev.trim, trimMat, MAX_CARS);
+    this.evWheels = new THREE.InstancedMesh(ev.wheels, wheelMat, MAX_CARS);
+    this.evHubs = new THREE.InstancedMesh(ev.hubs,
+      new THREE.MeshStandardMaterial({ color: 0x656f79, roughness: 0.48, metalness: 0.4 }), MAX_CARS);
+    this.evFrontLens = new THREE.InstancedMesh(ev.frontLens,
+      new THREE.MeshStandardMaterial({ color: 0xe7edf0, roughness: 0.32 }), MAX_CARS);
+    this.evRearLens = new THREE.InstancedMesh(ev.rearLens, rearLensMat, MAX_CARS);
+    this._evMeshes = [this.ev, this.evGlass, this.evTrim, this.evWheels,
+      this.evHubs, this.evFrontLens, this.evRearLens];
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
     // up front, the taller patient module behind (+z = front, 5.4 m total
     // to match VEHICLE_LEN), dark glass over the cab, red belt stripe on
@@ -1384,6 +1405,7 @@ export class SceneRenderer {
       this.truckWheels, this.truckHubs,
       this.cyber, this.cyberTrim, this.cyberWheels, this.cyberHubs,
       this.cyberGlass, this.cyberFrontLens, this.cyberRearLens,
+      ...this._evMeshes,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambTrim,
       this.ambFrontLenses, this.ambRearLenses, this.ambWheels, this.ambHubs,
       this.policeBody, this.policeRoof, this.policeGlass, this.policePanels, this.policeTrim,
@@ -1453,7 +1475,8 @@ export class SceneRenderer {
     let ci = 0; // next free sedan instance
     let hi = 0; // next free hatchback instance
     let ti = 0; // next free truck instance
-    let ai = 0; // next free ACC-car instance
+    let ai = 0; // next free Cybertruck instance
+    let ei = 0; // next free EV instance
     let mi = 0; // next free ambulance instance
     let pi = 0; // next free police-interceptor instance
     let fi = 0; // next free fire-truck instance
@@ -1463,20 +1486,22 @@ export class SceneRenderer {
     let li = 0; // next free brake-light instance
     let ki = 0; // next free blinker instance
     for (const car of cars) {
-      const truck = car.kind === 'truck';
-      const acc = car.kind === 'acc';
+      const model = modelOf(car);
+      const truck = model === 'truck';
+      const cyber = model === 'cybertruck';
+      const ev = model === 'ev';
       const ambu = car.kind === 'ambulance';
       const police = car.kind === 'police';
       const firetruck = car.kind === 'firetruck';
       const emergency = isEmergencyVehicle(car.kind);
-      const dims = RENDER_DIMS[car.kind] ?? RENDER_DIMS.car;
-      const hatch = car.kind === 'car' && (car.id & 1) === 1; // stable body style per car
+      const dims = RENDER_DIMS[model] ?? RENDER_DIMS.car;
+      const hatch = model === 'car' && (car.id & 1) === 1; // stable body style per car
       if (
         truck ? ti >= MAX_TRUCKS
           : ambu ? mi >= MAX_EMERGENCY
             : police ? pi >= MAX_EMERGENCY
               : firetruck ? fi >= MAX_EMERGENCY
-                : (acc ? ai : hatch ? hi : ci) >= MAX_CARS
+                : (cyber ? ai : ev ? ei : hatch ? hi : ci) >= MAX_CARS
       )
         continue;
       const poseS = this.carPose(car, this._pos, this._tan);
@@ -1516,7 +1541,7 @@ export class SceneRenderer {
       }
       // Per-car presentation exposes bare stainless; analytical modes retain
       // their full speed/type tint so the vehicle remains readable as data.
-      if (acc && !car.incident && params.colorMode === 'random') this._bodyColor.set(0xbfc6c9);
+      if (cyber && !car.incident && params.colorMode === 'random') this._bodyColor.set(0xbfc6c9);
       // Emergency liveries remain recognizable under every color mode.
       if (emergency && !car.incident) this._bodyColor.copy(TYPE_COLORS[car.kind]);
       if (truck) {
@@ -1569,7 +1594,7 @@ export class SceneRenderer {
         this.fireHubs.setMatrixAt(fi, this._dummy.matrix);
         this.fireBody.setColorAt(fi, this._bodyColor);
         fi++;
-      } else if (acc) {
+      } else if (cyber) {
         this.cyber.setMatrixAt(ai, this._dummy.matrix);
         this.cyberTrim.setMatrixAt(ai, this._dummy.matrix);
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
@@ -1579,6 +1604,9 @@ export class SceneRenderer {
         this.cyberRearLens.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
+      } else if (ev) {
+        for (const mesh of this._evMeshes) mesh.setMatrixAt(ei, this._dummy.matrix);
+        this.ev.setColorAt(ei++, this._bodyColor);
       } else {
         const body = hatch ? this.hatch : this.sedan;
         const cabin = hatch ? this.hatchCabin : this.sedanCabin;
@@ -1610,7 +1638,7 @@ export class SceneRenderer {
 
       // brake lights + blinkers (incident cars blink their whole body amber)
       if (!car.incident) {
-        const L = car.kind === 'car' ? LIGHT_DIMS.car[car.id & 1] : LIGHT_DIMS[car.kind];
+        const L = model === 'car' ? LIGHT_DIMS.car[car.id & 1] : LIGHT_DIMS[model];
         if (car.brakeLit) {
           if (L.brakeHalfW != null && li + 1 < MAX_LIGHTS) {
             // Conventional paired lamps sit directly over the dormant red
@@ -1624,7 +1652,7 @@ export class SceneRenderer {
               );
             }
           } else if (li < MAX_LIGHTS) {
-            // ACC keeps its thin signature tailgate strip.
+            // Both electric bodies use a thin full-width rear strip.
             this.placeLight(
               this.brakeLights, li++, rotY,
               0, L.brakeY ?? L.y, L.brakeZ ?? L.rear,
@@ -1678,6 +1706,7 @@ export class SceneRenderer {
     this.cyberWheels.count = ai;
     this.cyberHubs.count = ai;
     this.cyberGlass.count = ai;
+    for (const mesh of this._evMeshes) mesh.count = ei;
     this.cyberFrontLens.count = ai;
     this.cyberRearLens.count = ai;
     this.ambBody.count = mi;
@@ -1797,7 +1826,7 @@ export class SceneRenderer {
     // hang further back (and higher) behind long vehicles so they don't fill
     // the whole frame
     const back = 14 + Math.max(0, this.chaseCar.len - 4.6);
-    const up = (RENDER_DIMS[this.chaseCar.kind] ?? RENDER_DIMS.car).chaseUp;
+    const up = (RENDER_DIMS[modelOf(this.chaseCar)] ?? RENDER_DIMS.car).chaseUp;
     // spherical offset around the car: at yaw = pitch = 0 this lands exactly
     // on the classic back/up follow position; a held drag swings it around,
     // and the wheel/pinch dolly scales the radius (which leaves the framing
@@ -1879,7 +1908,7 @@ export class SceneRenderer {
 
   // Measured vs. requested flow, so it's visible when a ramp can't keep up
   // (queue backing up) or how much traffic an exit share amounts to.
-  updateRampLabels(flows, queues) {
+  updateRampLabels(flows, queues, demand) {
     for (const ramp of RAMPS) {
       const el = this.rampFlowEls[ramp.id];
       if (!el) continue;
@@ -1893,8 +1922,10 @@ export class SceneRenderer {
       // shown once cars are actually waiting, so a free-flowing ramp label
       // stays as short as it was.
       const queued = queues?.[ramp.id] ?? 0;
+      const upstream = demand?.[ramp.id]?.waiting ?? 0;
       el.textContent =
-        `${measured} of ${params[ramp.rateKey]} /min` + (queued ? ` · ${queued} queued` : '');
+        `${measured} of ${params[ramp.rateKey]} /min` +
+        (queued ? ` · ${queued} on ramp` : '') + (upstream ? ` · ${upstream} upstream` : '');
     }
   }
 

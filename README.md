@@ -121,14 +121,21 @@ branch → `main` / root**. That's it — there is nothing to build.
     grade-separated overpass — one straight bridges over the other), road
     scale (1–3×: longer stretches between interchanges give jam waves room to
     develop and travel), number of interchanges (2–4 — each shape fits what
-    its geometry allows; bigger roads unlock more), and number of lanes (2–4)
+    its geometry allows; bigger roads unlock more), and number of lanes (2–4).
+    Reducing lanes resets traffic safely; use **Work zone** for a live closure.
+    Optional **Hills & curves** adds advance slowing for tight bends and reduces
+    heavy-vehicle climbing speed on the figure-eight bridge.
   - **Drivers** — percentage of semi trucks in the mix (long, slow, gentle,
     keep right), percentage of non-semi vehicles on **adaptive cruise control**
-    (shown as Cybertrucks, using an idealized controller that can soften
-    stop-and-go waves, not a simulation of Tesla software), desired speed, per-car
+    (a random 50/50 mix of Cybertrucks and compact electric cars, using an
+    idealized controller that can soften stop-and-go waves, not a simulation
+    of Tesla software), desired speed, per-car
     speed spread, time headway (following distance), minimum gap, acceleration,
-    comfortable braking
+    comfortable braking. **Driver differences** varies each human driver's
+    following distance, acceleration and courtesy consistently; **Human response
+    (s)** smooths normal acceleration changes while urgent braking stays immediate.
   - **Lane changing** — politeness, incentive threshold, safety braking limit
+    (maneuvers take 3–5 seconds and reserve both lanes until complete)
   - **Ramps** — cars/minute entering at each on-ramp, % of traffic taking each
     exit, and **ramp meters**: signals at every on-ramp that release one car
     per green at a rate you set, instead of letting platoons shove into the
@@ -137,7 +144,9 @@ branch → `main` / root**. That's it — there is nothing to build.
     The map label at each ramp shows its *measured* flow over the last minute:
     on-ramps show achieved vs. requested (they fall behind when the merge
     queue backs up — or when the meter holds them), exits show what their
-    share % currently amounts to in cars/min.
+    share % currently amounts to in cars/min. **Arrival spacing** selects variable
+    arrivals or regular intervals. Unmet demand waits upstream, separately labeled
+    from cars stopped on the ramp; setting a rate to zero lets existing queues drain.
   - **View** — color cars by speed (red = stopped → green = at desired speed),
     **by type** (human / adaptive cruise / truck, matching the legend), or per
     car (stainless steel for Cybertrucks); live charts, **space-time diagram**, and **fundamental diagram**
@@ -150,6 +159,8 @@ branch → `main` / root**. That's it — there is nothing to build.
     and contact shadows that keep every vehicle planted on the road.
     The Cybertruck has a forward roof peak, separate glass roof and ribbed bed
     cover, recessed polygonal wheel arches, aero wheels, and a front light bar.
+    The compact EV has a grilleless nose, panoramic glass, flush handles,
+    and aero wheels, with the same 4.6 m footprint as a standard car.
     Close chase zoom centers the vehicle while you orbit it.
 - The space-time diagram (bottom left) is the classic traffic-flow plot: each
   column is one second, bottom-to-top is one lap of the loop, color is speed.
@@ -190,7 +201,14 @@ raise the adaptive-cruise share and reset to compare the jam stripes. This is
 an illustrative research controller, not a replication of the Stern experiment
 or a production ACC system. To inspect the new vehicle art, choose **View →
 Car colors → Per car**, raise **Adaptive cruise (%)**, reset, and right-click
-a Cybertruck to chase it; scroll in and drag to inspect its front and sides.
+either a Cybertruck or a compact EV to chase it; scroll in and drag to inspect
+its front and sides. Each new adaptive car independently picks either body
+with equal probability, so small groups will not always split exactly in half.
+Watch a car change lanes: both the following traffic and the car itself respect
+the space it occupies throughout the crossing. For a queue experiment, enable
+ramp meters, raise inflow and lower the meter rate; the map will show demand
+waiting upstream once the ramp fills. On **Figure eight**, enable **Hills &
+curves** and follow a semi over the bridge to see its climbing pace change.
 Or pick **Sudden downpour**
 and watch a comfortably flowing road collapse into stop-and-go one minute
 later when the storm arrives. Right-click a vehicle you want to follow through
@@ -210,7 +228,21 @@ outer lane; cars roll a die upstream of each exit to decide whether to leave, th
 work their way to the outer lane in time. Adaptive-cruise cars temper IDM with the
 constant-acceleration heuristic, which can reduce abrupt braking responses.
 Real ACC performance varies; this model is not calibrated to a manufacturer.
-The Cybertruck's 5.683 m collision footprint follows its rendered pickup size.
+Vehicle body and controller are separate: ACC spawns randomly choose a 5.683 m
+Cybertruck or a 4.6 m EV. Reset packing and ramp entry use the chosen model's
+actual length; an upstream FIFO keeps every blocked request and its selected model.
+Variable arrivals use exponentially distributed intervals; regular mode keeps
+constant spacing. Requested demand is counted separately from admitted traffic.
+Lane changes use smooth 3–5 second lateral trajectories with both lanes occupied;
+the more restrictive leader controls acceleration until the maneuver completes.
+Ramp cars reserve a gap in queue order and follow the original ramp curve into
+it. When no gap is available, their whole body stops clear of mainline traffic.
+New arrivals match a stopped or crawling ramp queue's speed.
+ACC predictions use a consistent prior-step state across the loop seam, and
+breakdowns wait for a clear return gap even after their driver loses patience.
+Human preferences are stable per driver, and a bounded first-order response
+smooths normal acceleration. Urgent braking bypasses that lag. These are
+illustrative behaviors, not a fit to a measured driver population.
 Rain scales the whole driver model — slower targets, longer
 headways, less grip — which is why a stable regime tips when a storm rolls in.
 Emergency vehicles share the same siren-aware lane logic, with model-specific
@@ -218,8 +250,8 @@ length, acceleration, following, braking, and top-speed characteristics.
 Everything is rendered with three.js (instanced meshes) — the low-poly cars,
 trucks, ambulance, police car, fire truck, and golden-hour landscape included —
 so thousands of cars stay smooth.
-All vehicle geometry remains procedural. The Cybertruck's geometry provider
-returns named instanced parts with a common meter-scale coordinate system;
+All vehicle geometry remains procedural. The Cybertruck and EV geometry providers
+return named instanced parts with a common meter-scale coordinate system;
 an authored glTF/GLB could supply that contract later without changing driver
 behavior. No asset loader or additional runtime dependency is needed today.
 The landscape uses sparse, broad faceted ground relief, faint wheel-wear
@@ -234,18 +266,25 @@ weather, fading with the camera's distance from the road.
 
 ## Roadmap
 
-Next realism priorities: lane changes with several seconds of occupancy in
-both lanes; stable per-driver following and courtesy preferences; calibrated
-reaction/anticipation; variable ramp arrivals with an explicit upstream queue;
-and optional grade/curve effects on truck performance. These are future work,
-not behaviors the current model claims to reproduce.
-Vehicle shape and controller should eventually be independent: changing ACC
-share currently changes the mix of 4.6 m cars and 5.683 m pickups as well as
-the following model, so it is not a controlled comparison of software alone.
+Next realism priorities are calibration against measured speed, gap and
+lane-change distributions; perception delay and multi-vehicle anticipation;
+and explicit upstream road geometry instead of an off-screen demand queue.
+The new driver response is acceleration adaptation, not a complete human
+reaction model. Lane reservations remain conservative until the whole maneuver
+finishes. Optional hill/curve limits approximate comfortable cornering and heavy
+vehicle climbing; banking, tire forces and a full powertrain are not modeled.
+Body and controller can now be selected independently in code for controlled
+tests. A future comparison control could hold the whole fleet's body mix fixed:
+the default ACC mix still averages longer than ordinary cars, so changing ACC
+share is not yet a controlled comparison of following software alone.
 
-Known live-edit limitation: reducing the lane count can stack vehicles from
-removed lanes into the same remaining gap. Reset after a lane reduction;
-a staged lane closure or an explicit reset-on-change remains future work.
+The shared longitudinal coordinate still follows lane 0 in plan view. Curve
+speed targets account for the different lane radii, but per-lane driven distance
+and the bridge's added 3D path length remain approximations.
+
+Model references: [IDM/ACC and driver parameters](https://traffic-simulation.de/info/info_IDM.html),
+[human response and anticipation](https://www.mtreiber.de/publications/timedelay_CACAIE_07.pdf),
+and [FHWA guidance on variable entry headways](https://ops.fhwa.dot.gov/trafficanalysistools/tat_vol4/app_e.htm).
 
 Keep procedural low-poly art as the default. Authored low-poly glTF/GLB vehicle
 parts remain an option if visual iteration becomes cumbersome, provided they
