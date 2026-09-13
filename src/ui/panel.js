@@ -326,7 +326,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   );
   tip(
     fDrv.add(params, 'accShare', 0, 100, 5).name('Adaptive cruise (%)'),
-    'Share of cars (never trucks) driving on adaptive cruise control — the angular wedge-shaped ones. They never brake harder than physics actually requires, so they absorb stop-and-go waves instead of amplifying them: crank the on-ramps until the space-time diagram striping appears, then raise this and watch the stripes dissolve. Applies to new spawns and on reset.'
+    'Share of non-semi vehicles using an idealized adaptive-cruise controller, shown as Cybertrucks. It softens abrupt following responses and can reduce stop-and-go waves; real ACC systems vary. This does not reproduce Tesla software. Applies to new spawns and on reset.'
   );
   tip(
     fDrv
@@ -391,7 +391,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   const fRamps = gui.addFolder('Ramps');
   tip(
     fRamps.add(params, 'metering').name('🚦 Ramp meters'),
-    'Signals at every on-ramp release one car per green instead of letting platoons shove in. Queues grow on the ramps, but the mainline keeps flowing — the classic counterintuitive fix. Applies live.'
+    'Signals at every on-ramp release one car per green. Compare mainline speed and achieved flow against extra ramp waiting; the benefit depends on demand and meter rate. Applies live.'
   );
   tip(
     fRamps.add(params, 'meterRate', 2, 20, 1).name('Meter rate (cars/min)'),
@@ -509,7 +509,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
     fView
       .add(params, 'colorMode', { 'By speed': 'speed', 'By type': 'type', 'Per car': 'random' })
       .name('Car colors'),
-    'By speed: red = stopped, green = at desired speed — jams pop out instantly. By type: human / adaptive-cruise / truck each get a fixed color (see the legend) — watch who absorbs the waves. Per car: each car keeps a fixed random color, good for following individuals.'
+    'By speed: red = stopped, green = at desired speed — jams pop out instantly. By type: human / adaptive-cruise / truck each get a fixed color (see the legend). Per car: fixed individual paint colors, stainless steel for Cybertrucks, and emergency liveries.'
   );
   tip(
     fView

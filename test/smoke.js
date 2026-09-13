@@ -1037,7 +1037,7 @@ run('trucks in the mix', { truckShare: 20 }, 120, (sim) => {
 run('ACC cars in the mix', { accShare: 50, truckShare: 20 }, 120, (sim) => {
   const accs = sim.cars.filter((c) => c.kind === 'acc');
   check('ACC cars present', accs.length > 10, `(${accs.length})`);
-  check('ACC cars are car-sized', accs.every((c) => c.len === 4.6));
+  check('ACC cars use their model length', accs.every((c) => c.len === VEHICLE_LEN.acc));
   check(
     'trucks never get ACC',
     sim.cars.every((c) => c.kind !== 'truck' || (c.accelK < 1 && c.len > 10))

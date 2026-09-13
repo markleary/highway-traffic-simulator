@@ -3,8 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../sim/road.js';
-import { params, KMH, MPH } from '../params.js';
+import { params, KMH, MPH, FT } from '../params.js';
 import { isEmergencyVehicle, vehicleLabel } from '../sim/car.js';
+import { buildCybertruckGeometry, CYBERTRUCK_LIGHTS } from './cybertruck.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
@@ -86,14 +87,7 @@ const LIGHT_DIMS = {
       blinkWF: 0.32, blinkHF: 0.11, blinkDepthF: 0.025,
     }, // hatchback
   ],
-  // acc overrides the shared mount fields: the brake light is a thin
-  // full-width strip along the top of the tailgate, and the blinkers are
-  // thin low strips — just above the front bumper, riding the rear one
-  acc: {
-    rear: -2.33, front: 2.2, halfW: 0.62, y: 1.0,
-    brakeZ: -2.39, brakeY: 1.12, brakeW: 1.72, brakeH: 0.07,
-    blinkYF: 0.48, blinkYR: 0.3, blinkW: 0.5, blinkH: 0.07,
-  },
+  acc: CYBERTRUCK_LIGHTS,
   truck: {
     rear: -7.77, front: 7.6, halfW: 0.99, y: 0.95,
     brakeZ: -7.895, brakeY: 0.72, brakeHalfW: 0.88, brakeW: 0.36, brakeH: 0.15,
@@ -215,6 +209,10 @@ export class SceneRenderer {
     this.sun = new THREE.DirectionalLight(0xffdcae, 2.1); // golden-hour key light
     this.sun.position.copy(SUN_DIR).multiplyScalar(450);
     this.scene.add(this.sun);
+    // A small, generated sky/ground reflection map gives metal and glass a
+    // readable horizon. Baked once; no image downloads or per-frame captures.
+    this._environment = proceduralEnvironment(this.renderer);
+    this.scene.environment = this._environment.texture;
 
     this.groundMat = new THREE.MeshStandardMaterial({
       color: GROUND_DRY,
@@ -585,18 +583,12 @@ export class SceneRenderer {
 
     for (let l = 1; l < params.lanes; l++) {
       const off = outer - l * ROAD.laneWidth;
-      const pts = [];
-      const SEG = Math.ceil(LOOP / 2);
-      for (let i = 0; i <= SEG; i++) {
-        const p = pointAt(((i % SEG) / SEG) * LOOP, off);
-        pts.push(new THREE.Vector3(p.x, p.y + 0.04, p.z));
-      }
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineDashedMaterial({ color: 0xb9c2cc, dashSize: 4, gapSize: 6 })
-      );
-      line.computeLineDistances();
-      g.add(line);
+      // Actual pavement-width paint, not a one-pixel GL line: close chase
+      // views retain a readable stripe. Approx. 10 ft marks / 30 ft gaps.
+      g.add(new THREE.Mesh(
+        dashedLaneGeo(off),
+        new THREE.MeshBasicMaterial({ color: 0xb9c2cc, side: THREE.DoubleSide })
+      ));
     }
 
     // Two subtle wheel-polished ribbons per lane break up the perfectly flat
@@ -712,6 +704,7 @@ export class SceneRenderer {
     // staying bright under a slate sky (the old black scene hid this)
     this.sun.intensity = 2.1 * (1 - 0.65 * r);
     this.hemi.intensity = 1.0 * (1 - 0.45 * r);
+    this.scene.environmentIntensity = 0.8 * (1 - 0.65 * r);
     this.sunDisc.material.opacity = 0.9 * Math.max(0, 1 - r * 1.6); // storm swallows the sun first
     // clouds are Lambert-lit for puffy facets but sit on an emissive floor so
     // their shaded sides never go charcoal against a bright sky
@@ -753,6 +746,8 @@ export class SceneRenderer {
         void main() {
           float t = pow(clamp(vH, 0.0, 1.0), 0.55);
           gl_FragColor = vec4(mix(horizonColor, topColor, t), 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }`,
       side: THREE.BackSide,
       depthWrite: false,
@@ -1232,46 +1227,23 @@ export class SceneRenderer {
       hubMat,
       MAX_TRUCKS
     );
-    // ACC cars: an angular stainless wedge — unmistakable from above — plus
-    // constant dark trim (bumpers, rocker cladding, slatted tonneau) that
-    // rides the same matrices, so the paint tints but the composite doesn't
-    this.cyber = new THREE.InstancedMesh(
-      cybertruckGeo(),
-      new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide }),
-      MAX_CARS
-    );
-    this.cyberTrim = new THREE.InstancedMesh(
-      cyberTrimGeo(),
-      new THREE.MeshStandardMaterial({ color: 0x33383e, roughness: 0.85 }),
-      MAX_CARS
-    );
-    // its own wheel set, wider and taller than the cars': the wheels stand
-    // fully exposed inside the polygonal arch flares instead of tucking
-    // under the shell
-    this.cyberWheels = new THREE.InstancedMesh(
-      wheelsGeo([[0.98, 1.4], [-0.98, 1.4], [0.98, -1.4], [-0.98, -1.4]], 0.38, 0.28),
-      wheelMat,
-      MAX_CARS
-    );
-    this.cyberHubs = new THREE.InstancedMesh(
-      hubcapsGeo([[0.98, 1.4], [-0.98, 1.4], [0.98, -1.4], [-0.98, -1.4]], 0.38, 0.28),
-      hubMat,
-      MAX_CARS
-    );
-    // (no front light bar: it's a headlight, and no vehicle here runs
-    // headlights — lights are reserved for driver-state signals). The glass
-    // set adds a broad windshield and two polygonal side panes per flank;
-    // those dark side windows are a major part of the Cybertruck silhouette.
-    this.cyberGlass = new THREE.InstancedMesh(
-      cyberGlassGeo(),
-      glassMat,
-      MAX_CARS
-    );
-    this.cyberRearLens = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.76, 0.08, 0.035).translate(0, 1.12, -2.34),
-      rearLensMat,
-      MAX_CARS
-    );
+    // Geometry providers share metres / +z-forward / road-level origin. An
+    // authored asset could later supply the same buffers without touching
+    // the simulation or instance update path.
+    const cyber = buildCybertruckGeometry();
+    this.cyber = new THREE.InstancedMesh(cyber.body,
+      new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.72 }), MAX_CARS);
+    this.cyberTrim = new THREE.InstancedMesh(cyber.trim, trimMat, MAX_CARS);
+    this.cyberWheels = new THREE.InstancedMesh(cyber.wheels, wheelMat, MAX_CARS);
+    this.cyberHubs = new THREE.InstancedMesh(cyber.hubs,
+      new THREE.MeshStandardMaterial({ color: 0x353b42, roughness: 0.6, metalness: 0.35 }), MAX_CARS);
+    this.cyberGlass = new THREE.InstancedMesh(cyber.glass,
+      new THREE.MeshStandardMaterial({ color: 0x182b3c, roughness: 0.24, metalness: 0.22 }), MAX_CARS);
+    // Pale dormant lens: its signature light bar is visible in daylight,
+    // while red brake and amber turn lamps still communicate driver state.
+    this.cyberFrontLens = new THREE.InstancedMesh(cyber.frontLens,
+      new THREE.MeshStandardMaterial({ color: 0xe7edf0, roughness: 0.32 }), MAX_CARS);
+    this.cyberRearLens = new THREE.InstancedMesh(cyber.rearLens, rearLensMat, MAX_CARS);
     // ambulance: a Type-I style rig rather than a plain box — hood and cab
     // up front, the taller patient module behind (+z = front, 5.4 m total
     // to match VEHICLE_LEN), dark glass over the cab, red belt stripe on
@@ -1411,7 +1383,7 @@ export class SceneRenderer {
       this.truckFrontLenses, this.truckRearLenses, this.truckIndicators,
       this.truckWheels, this.truckHubs,
       this.cyber, this.cyberTrim, this.cyberWheels, this.cyberHubs,
-      this.cyberGlass, this.cyberRearLens,
+      this.cyberGlass, this.cyberFrontLens, this.cyberRearLens,
       this.ambBody, this.ambStripe, this.ambGlass, this.ambTrim,
       this.ambFrontLenses, this.ambRearLenses, this.ambWheels, this.ambHubs,
       this.policeBody, this.policeRoof, this.policeGlass, this.policePanels, this.policeTrim,
@@ -1542,6 +1514,9 @@ export class SceneRenderer {
       } else {
         this._bodyColor.setHSL(car.hue, 0.65, 0.55);
       }
+      // Per-car presentation exposes bare stainless; analytical modes retain
+      // their full speed/type tint so the vehicle remains readable as data.
+      if (acc && !car.incident && params.colorMode === 'random') this._bodyColor.set(0xbfc6c9);
       // Emergency liveries remain recognizable under every color mode.
       if (emergency && !car.incident) this._bodyColor.copy(TYPE_COLORS[car.kind]);
       if (truck) {
@@ -1600,6 +1575,7 @@ export class SceneRenderer {
         this.cyberWheels.setMatrixAt(ai, this._dummy.matrix);
         this.cyberHubs.setMatrixAt(ai, this._dummy.matrix);
         this.cyberGlass.setMatrixAt(ai, this._dummy.matrix);
+        this.cyberFrontLens.setMatrixAt(ai, this._dummy.matrix);
         this.cyberRearLens.setMatrixAt(ai, this._dummy.matrix);
         this.cyber.setColorAt(ai, this._bodyColor);
         ai++;
@@ -1702,6 +1678,7 @@ export class SceneRenderer {
     this.cyberWheels.count = ai;
     this.cyberHubs.count = ai;
     this.cyberGlass.count = ai;
+    this.cyberFrontLens.count = ai;
     this.cyberRearLens.count = ai;
     this.ambBody.count = mi;
     this.ambStripe.count = mi;
@@ -1836,9 +1813,12 @@ export class SceneRenderer {
       this._pos.y + dist * Math.sin(el),
       this._pos.z + bz * dist * Math.cos(el)
     );
-    // aim ahead of the car when behind it, at the car itself when abeam, and
-    // "through" it from the front — cos(yaw) does all three
-    aimOut.copy(this._pos).addScaledVector(this._tan, 16 * cos);
+    // Keep the vehicle in frame at close dolly distances and while orbiting.
+    // A fixed 16 m look-ahead aimed past it and pushed it off-screen at the
+    // front-quarter view. The ordinary rear chase keeps its road preview.
+    const lookAhead = 16 * Math.max(0, cos) ** 3
+      * THREE.MathUtils.clamp((this._chaseZoom - CHASE_ZOOM_MIN) / (1 - CHASE_ZOOM_MIN), 0, 1);
+    aimOut.copy(this._pos).addScaledVector(this._tan, lookAhead);
     aimOut.y += 1.5;
   }
 
@@ -2019,6 +1999,60 @@ export class SceneRenderer {
   }
 }
 
+function dashedLaneGeo(offset) {
+  const count = Math.max(1, Math.round(LOOP / (40 * FT)));
+  const period = LOOP / count; // even spacing across the wrap seam
+  const tris = [];
+  const point = (s, lateral) => {
+    const p = pointAt(wrap(s), lateral);
+    return [p.x, p.y + 0.035, p.z];
+  };
+  for (let i = 0; i < count; i++) {
+    for (let step = 0; step < 3; step++) {
+      const s0 = i * period + step * (10 * FT / 3);
+      const s1 = s0 + 10 * FT / 3;
+      const a = point(s0, offset - 0.075);
+      const b = point(s0, offset + 0.075);
+      const c = point(s1, offset + 0.075);
+      const d = point(s1, offset - 0.075);
+      tris.push([a, b, c], [a, c, d]);
+    }
+  }
+  return triangleSurfaceGeo(tris);
+}
+
+// Low-resolution linear-light environment, generated entirely from colors.
+// The broad horizon supplies the reflection edge that makes flat steel read
+// as metal; roughness prefiltering keeps it soft and low-poly rather than chrome.
+function proceduralEnvironment(renderer) {
+  const width = 128;
+  const height = 64;
+  const pixels = new Float32Array(width * height * 4);
+  const sky = new THREE.Color(0xb5cbe1);
+  const horizon = new THREE.Color(0xf3e3c9);
+  const ground = new THREE.Color(0x596351);
+  const c = new THREE.Color();
+  for (let y = 0; y < height; y++) {
+    // Equirectangular v runs from the ground pole to the sky pole.
+    const altitude = Math.sin(((y + 0.5) / height - 0.5) * Math.PI);
+    if (altitude >= 0) c.copy(horizon).lerp(sky, Math.pow(altitude, 0.35));
+    else c.copy(horizon).lerp(ground, Math.min(1, -altitude * 7));
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      pixels.set([c.r, c.g, c.b, 1], i);
+    }
+  }
+  const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat, THREE.FloatType);
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  texture.colorSpace = THREE.LinearSRGBColorSpace;
+  texture.needsUpdate = true;
+  const generator = new THREE.PMREMGenerator(renderer);
+  const result = generator.fromEquirectangular(texture);
+  texture.dispose();
+  generator.dispose();
+  return result;
+}
+
 // A single colored ground surface replaces the old stack of patch planes.
 // Every triangle owns its three color vertices, so each cell can carry a
 // restrained value shift without another depth layer (and therefore without
@@ -2087,156 +2121,11 @@ function facetedGroundGeo() {
   return geo;
 }
 
-// ACC cars: a low-poly Cybertruck-style wedge. The broad lower flank is now
-// one genuinely planar panel from the clipped nose to the tail. The previous
-// triangle fan converged on the front axle and created a large shaded chevron
-// that read as a dent. Above that clean belt line, a few intentional planes
-// form the stainless shoulder, roof peak and sloping bed cover.
-function cybertruckGeo() {
-  const N = (s) => [s * 0.98, 0.98, 2.3];   // fascia top / hood crease
-  const C = (s) => [s * 0.98, 0.62, 2.22];  // clipped front shoulder
-  const A = (s) => [s * 0.92, 0.35, 2.16];  // mild chamfer, not an inset corner
-  const F = (s) => [s, 0.35, 1.9];           // lower flank, front
-  const D = (s) => [s, 0.78, 1.9];           // belt line, front
-  const M = (s) => [s, 0.78, -0.25];         // belt line, roof peak
-  const R = (s) => [s, 0.78, -2.3];          // belt line, tail
-  const P = (s) => [s * 0.82, 1.62, -0.25]; // roof peak
-  const T = (s) => [s * 0.92, 1.18, -2.3];  // tail top
-  const B = (s) => [s, 0.35, -2.3];          // tail bottom
-  const tris = [
-    // Blank stainless fascia and the two signature top planes.
-    [N(-1), N(1), C(1)], [N(-1), C(1), A(1)], [N(-1), A(1), A(-1)], [N(-1), A(-1), C(-1)],
-    [N(-1), N(1), P(1)], [N(-1), P(1), P(-1)],
-    [P(-1), P(1), T(1)], [P(-1), T(1), T(-1)],
-    [T(1), B(1), B(-1)], [T(1), B(-1), T(-1)],
-    // Right: clipped fender, flat lower door/bed panel, then upper facets.
-    [C(1), A(1), F(1)], [C(1), F(1), D(1)],
-    [F(1), B(1), R(1)], [F(1), R(1), D(1)],
-    [D(1), M(1), P(1)], [D(1), P(1), N(1)], [D(1), N(1), C(1)],
-    [M(1), R(1), T(1)], [M(1), T(1), P(1)],
-    // Left: same panels with winding mirrored.
-    [C(-1), F(-1), A(-1)], [C(-1), D(-1), F(-1)],
-    [F(-1), R(-1), B(-1)], [F(-1), D(-1), R(-1)],
-    [D(-1), P(-1), M(-1)], [D(-1), N(-1), P(-1)], [D(-1), C(-1), N(-1)],
-    [M(-1), T(-1), R(-1)], [M(-1), P(-1), T(-1)],
-    // Closed underside.
-    [A(1), A(-1), F(-1)], [A(1), F(-1), F(1)],
-    [F(1), F(-1), B(-1)], [F(1), B(-1), B(1)],
-  ];
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
 function triangleSurfaceGeo(tris) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris.flat(2)), 3));
   geo.computeVertexNormals();
   return geo;
-}
-
-function cyberGlassGeo() {
-  const parts = [
-    // Broad dark windshield inset into the front roof plane.
-    new THREE.BoxGeometry(1.48, 0.03, 1.34).rotateX(0.246).translate(0, 1.431, 0.57),
-  ];
-  for (const side of [-1, 1]) {
-    const x = (n) => side * n;
-    const front = [
-      [x(1.018), 0.84, 1.48], [x(0.965), 1.16, 1.45],
-      [x(0.89), 1.47, 0.38], [x(1.018), 0.84, 0.38],
-    ];
-    const rear = [
-      [x(1.018), 0.84, 0.29], [x(0.885), 1.49, 0.29],
-      [x(0.84), 1.56, -0.18], [x(1.018), 0.84, -0.38],
-    ];
-    parts.push(
-      triangleSurfaceGeo([[front[0], front[1], front[2]], [front[0], front[2], front[3]]]),
-      triangleSurfaceGeo([[rear[0], rear[1], rear[2]], [rear[0], rear[2], rear[3]]])
-    );
-  }
-  return mergeSolids(parts);
-}
-
-// One cohesive polygonal wheel-arch flare: a hexagonal band hugging the
-// wheel (r 0.38 at the axle origin), extruded as a single solid so there
-// are no seams between brow and shoulders. Shape coords: x = along the car
-// relative to the axle, y = height relative to the axle; the extrusion
-// (0.16 deep) becomes the car's lateral thickness after the rotate.
-function archGeo() {
-  const s = new THREE.Shape();
-  s.moveTo(-0.72, -0.08); // outer boundary, up and over the wheel
-  s.lineTo(-0.33, 0.58);
-  s.lineTo(0.33, 0.58);
-  s.lineTo(0.72, -0.08);
-  s.lineTo(0.58, -0.08); // inner boundary back, ~0.1 m off the tire
-  s.lineTo(0.24, 0.46);
-  s.lineTo(-0.24, 0.46);
-  s.lineTo(-0.58, -0.08);
-  s.closePath();
-  return new THREE.ExtrudeGeometry(s, { depth: 0.16, bevelEnabled: false })
-    .rotateY(-Math.PI / 2); // shape-x → car z, extrusion depth → car x
-}
-
-// Dark backing for a wheel opening: a trapezoid matching the arch's inner
-// boundary, so its whole silhouette hides behind the band and the tire. A
-// square plate here read as a "dog house" around the wheel from the side —
-// the visible shape below the arch must be the tire, nothing else.
-function wellGeo() {
-  const s = new THREE.Shape();
-  s.moveTo(-0.62, -0.12);
-  s.lineTo(-0.24, 0.5);
-  s.lineTo(0.24, 0.5);
-  s.lineTo(0.62, -0.12);
-  s.closePath();
-  return new THREE.ExtrudeGeometry(s, { depth: 0.03, bevelEnabled: false })
-    .rotateY(-Math.PI / 2);
-}
-
-// Dark composite trim for the ACC wedge, one instance per truck riding the
-// same matrix as the body (like the wheel sets): a heavy vertically-thin
-// front bumper with clipped corners tucked under the raked fascia, a plain
-// rear bumper (the rear blinker strips sit proud of its outer ends), rocker
-// cladding, a slatted tonneau cover over the bed, and the truck's signature
-// polygonal wheel-arch flares framing the fully-exposed wheels (the ACC
-// wheel set rides wider than the shell for exactly this reason). A dark
-// well trapezoid backs each opening so it shows tire and shadow — never
-// the body-colored side wall.
-function cyberTrimGeo() {
-  const slope = Math.atan2(1.62 - 1.18, 2.3 - 0.25); // bed-cover pitch (P to T)
-  const parts = [
-    // A single blunt bumper reinforces the broad fascia. The former rotated
-    // corner blocks projected into the front three-quarter silhouette and
-    // made the chamfer above them look like a dent.
-    new THREE.BoxGeometry(1.9, 0.16, 0.22).translate(0, 0.27, 2.2),
-    new THREE.BoxGeometry(1.7, 0.16, 0.14).translate(0, 0.27, -2.26), // rear bumper
-    new THREE.BoxGeometry(2.02, 0.15, 2.1).translate(0, 0.3, 0), // rocker cladding
-    // tonneau: a recessed panel lying on the bed plane, ribbed with slats
-    new THREE.BoxGeometry(1.56, 0.04, 1.95).rotateX(-slope).translate(0, 1.42, -1.27),
-  ];
-  for (const f of [0.18, 0.38, 0.58, 0.78, 0.95]) {
-    parts.push(
-      new THREE.BoxGeometry(1.6, 0.05, 0.1)
-        .rotateX(-slope)
-        .translate(0, 1.62 - 0.44 * f + 0.03, -0.25 - 2.05 * f)
-    );
-  }
-  // arch flare + well backing per wheel (axles at z ±1.4, y 0.38). The
-  // flare spans x 0.97–1.13, embedding into the ±1.0 side wall and running
-  // flush with the wheel's outer face; the well sits at ±1.02–1.05, between
-  // wall and tire, ≥2 cm clear of both (no coplanar pairs).
-  for (const zc of [1.4, -1.4]) {
-    for (const side of [1, -1]) {
-      parts.push(
-        archGeo().translate(side === 1 ? 1.13 : -0.97, 0.38, zc),
-        wellGeo().translate(side === 1 ? 1.05 : -1.02, 0.38, zc)
-      );
-    }
-  }
-  // ExtrudeGeometry is non-indexed while the boxes are indexed; normalize
-  // so mergeGeometries accepts the mix
-  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
 }
 
 // Normalize hand-built and primitive geometry before merging: loft() carries
@@ -2587,7 +2476,7 @@ function contactShadowGeo() {
 }
 
 // Low-poly vehicle shell: a loft of rectangular cross-sections along the
-// vehicle's length (+z = front, same frame as cybertruckGeo). Each section is
+// vehicle's length (+z = front, same frame as cybertruck.js). Each section is
 // {z, hw, y0, y1} — half-width plus rocker and top heights; walls stitch
 // between neighbours and the ends are capped. Non-indexed triangles +
 // computeVertexNormals = flat facets, and the DoubleSide vehicle material

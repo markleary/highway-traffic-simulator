@@ -500,14 +500,10 @@ test/smoke.js          runs the sim headless under several parameter regimes
   down it toward an open gap. The speed split is bimodal in every regime
   (nothing between ~2 and the 12 m/s spawn speed), so the cut isn't delicate.
   Signals (stop bar + two-lamp post, `buildMeter`/`updateMeters`) show per
-  ramp; green flashes ~1 s per release. Calibrated on the rush regime at
-  `meterRate` 8 (issue #49 — the earlier 12 sat so near the flood's own merge
-  rate it barely shaped demand and averaged flat across seeds): metering lifts
-  settled mainline speed ~14% at 25 min (~+5% and noisier at 10 min) with flow
-  holding, measured as a cross-seed mean, not a single trajectory. It's a
-  distribution — most seeds win, a minority don't, and the effect builds with
-  the horizon. The smoke test pins a small multi-seed 20-min mean (NOT one
-  recorded run — that masked the effect drifting flat before) as the regression.
+  ramp; green flashes ~1 s per release. The rush preset's
+  `meterRate` 8 is a restrictive comparison, not a guaranteed rescue. Speed outcomes
+  depend on traffic patterns and demand. Treat the smoke test's selected
+  calibration regimes as comparisons, not a universal guarantee.
 - Work zone (`sim.workZone()`, Events panel; `workZone`/`workZonePos`/
   `workZoneLen` params): cones close the INNERMOST lane over a stretch —
   ramps attach to lane 0 and exits drift there, so the inner lane is the only
@@ -546,24 +542,28 @@ test/smoke.js          runs the sim headless under several parameter regimes
   slower with less spread, and scale the global IDM knobs via per-car factors
   (`accelK`/`headwayK`/`brakeK` — see `idm(car, …)`). They need 2.5× the
   lane-change incentive and never enter the innermost lane on 3+ lane roads.
-- 'acc' cars (adaptive cruise control; never trucks — the knob is a share of
-  cars) are car-sized and keep the human speed spread, but follow with IDM
-  tempered by the Constant-Acceleration Heuristic (`accACC`, Treiber & Kesting):
-  they refuse to brake much harder than a constant-acceleration prediction of
-  the leader actually requires, so they absorb stop-and-go waves instead of
-  amplifying them (mainline only; ramp queues keep plain IDM). Rendered as a
-  Cybertruck-style wedge: one flat full-width hood plane from fascia to roof
-  peak carrying an inset dark windshield, a blank raked face with clipped
-  lower corners (no headlight bar — no vehicle runs headlights; lights are
-  reserved for driver-state signals), dark composite trim (heavy bumper,
-  rocker, slatted tonneau, polygonal wheel-arch flares framing a wider
-  fully-exposed wheel set), and strip lights — thin brake bar atop the
-  tailgate, low blinker strips — so nose and tail read differently at a
-  glance. The wave-damping
-  is regression-tested by comparing stop-and-go exposure at 0% vs 100% ACC
-  in a flood regime.
+- 'acc' vehicles use an idealized IDM + Constant-Acceleration Heuristic
+  research controller, not a calibrated Tesla or universal commercial ACC
+  model. They can damp some perturbations; behavior depends on parameters.
+  Their physical length is 5.683 m to match the procedural Cybertruck pickup.
+  `src/render/cybertruck.js` supplies named body/glass/trim/wheel/hub/lens
+  buffers and light mounts in meters, +z forward, origin on the road at the
+  footprint center. Preserve this contract if authored low-poly assets are
+  introduced later; keep physics independent of asset loading. The body has
+  actual wheel cutouts, a forward roof peak, separate glass roof and ribbed
+  tonneau, aero covers, and a dormant pale front light bar. Per-car mode shows
+  stainless; speed/type modes preserve analytical tint. Dynamic lamps remain
+  aligned with the dormant lens mounts.
+- Renderer lighting includes one procedurally generated, prefiltered sky/ground
+  reflection map, built once and dimmed with rain. The custom sky shader uses
+  tone-mapping and color-space output chunks, like standard scene materials.
+  Dashed lane paint has 0.15 m physical width with approx. 10 ft marks / 30 ft
+  gaps and follows bridge elevation. Chase look-ahead contracts at close zoom
+  and when orbiting, keeping the followed vehicle visible.
 
 ## Roadmap
 
-Empty — the original roadmap and every feature batch added along the way has
-shipped. New ideas start as conversations, not backlog entries.
+See README.md for the visual-audit follow-ups: finite-duration lane changes,
+driver diversity and reaction/anticipation calibration, explicit upstream
+ramp demand, and optional grade/curve effects. Procedural art remains the
+default; the named geometry-part contract keeps an authored-asset path open.
