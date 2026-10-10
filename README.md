@@ -167,6 +167,8 @@ branch → `main` / root**. That's it — there is nothing to build.
     exposed chassis and eighteen tires, including dual drive/trailer wheels.
     Every tire and hub rotates at its vehicle's speed, scaled to wheel size;
     stopped traffic and a paused simulation hold their wheels still.
+    During lane changes, vehicles gently turn toward the new lane and straighten
+    as they settle in; the steering angle is more noticeable in slow traffic.
     Ambulances and fire engines add medical markings, compartment hardware,
     steps and equipment. Per-car mode gives semis painted cabs and neutral
     trailers; speed/type colors still cover both.
@@ -217,8 +219,10 @@ For the rest of the fleet, raise **Trucks (%)** and reset, or use **Events →
 Emergency vehicle** to dispatch a responder. Right-click (or long-press on
 touch) to chase one, zoom in, and orbit around its wheels and bodywork.
 Watch a car change lanes: both the following traffic and the car itself respect
-the space it occupies throughout the crossing. For a queue experiment, enable
-ramp meters, raise inflow and lower the meter rate; the map will show demand
+the space it occupies throughout the crossing. In slow traffic, watch its nose
+turn toward the new lane, then straighten as the crossing finishes.
+For a queue experiment, enable ramp meters, raise inflow and lower the meter
+rate; the map will show demand
 waiting upstream once the ramp fills. On **Figure eight**, enable **Hills &
 curves** and follow a semi over the bridge to see its climbing pace change.
 Or pick **Sudden downpour**
@@ -283,8 +287,10 @@ lane-change distributions; perception delay and multi-vehicle anticipation;
 and explicit upstream road geometry instead of an off-screen demand queue.
 The new driver response is acceleration adaptation, not a complete human
 reaction model. Lane reservations remain conservative until the whole maneuver
-finishes. Optional hill/curve limits approximate comfortable cornering and heavy
-vehicle climbing; banking, tire forces and a full powertrain are not modeled.
+finishes. Lane-change body steering is a visual cue; tire steering and vehicle
+turning dynamics remain future work. Optional hill/curve limits approximate
+comfortable cornering and heavy vehicle climbing; banking, tire forces and a
+full powertrain are not modeled.
 Body and controller can now be selected independently in code for controlled
 tests. A future comparison control could hold the whole fleet's body mix fixed:
 the default ACC mix still averages longer than ordinary cars, so changing ACC

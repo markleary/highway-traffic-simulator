@@ -13,6 +13,7 @@ import { buildSemiGeometry, SEMI_LIGHTS, SEMI_WHEELS } from './semi.js';
 import { buildAmbulanceGeometry, buildFiretruckGeometry, AMBULANCE_LIGHTS, FIRETRUCK_LIGHTS, AMBULANCE_STROBE, FIRETRUCK_STROBE, AMBULANCE_WHEELS, FIRETRUCK_WHEELS } from './service-vehicles.js';
 import { annotateRollingGeometry, makeWheelMaterial } from './wheel-material.js';
 import { WheelMotion } from './wheel-motion.js';
+import { laneChangeYaw } from './lane-change-heading.js';
 
 const MAX_CARS = 1500;
 const MAX_TRUCKS = 400;
@@ -1386,7 +1387,18 @@ export class SceneRenderer {
       pose.s = car.s;
       pose.renderLane = car.renderLane;
       pose.rampPos = car.rampPos;
+      pose.laneChangeYaw = laneChangeYaw(car);
     }
+  }
+
+  // Match body steering to pose interpolation, including the final step that
+  // clears laneChange. Keep carPose's road tangent stable for the chase camera.
+  carHeading(car) {
+    const yaw = laneChangeYaw(car);
+    const prev = this._previousCarPoses.get(car);
+    return prev && prev.state === car.state && prev.ramp === car.ramp
+      ? THREE.MathUtils.lerp(prev.laneChangeYaw, yaw, this._renderAlpha)
+      : yaw;
   }
 
   update(cars, renderAlpha = 1) {
@@ -1426,7 +1438,7 @@ export class SceneRenderer {
       )
         continue;
       const poseS = this.carPose(car, this._pos, this._tan);
-      let rotY = Math.atan2(this._tan.x, this._tan.z);
+      let rotY = Math.atan2(this._tan.x, this._tan.z) + this.carHeading(car);
       if (!car.ramp && car.wreckYaw && car.v < 3) rotY += car.wreckYaw; // skidded askew
       // grade: pitch the body up/down the bridge approaches (rotation order
       // is YXZ so pitch turns about the yawed, car-local right axis); the
