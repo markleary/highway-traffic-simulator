@@ -325,6 +325,12 @@ src/render/vehicle-geometry.js small shared procedural geometry helpers; side
 src/render/wheel-motion.js per-car WeakMap of wheel phases; integrates resolved
                        speed / rolling radius in fixed sim time, interpolated
                        with body poses, independent of render rate/pool ordering
+src/render/lane-change-heading.js cosmetic body yaw from quintic lateral speed;
+                       stronger at low speed, smoothly limited to 12 degrees,
+                       and interpolated with fixed-step poses. Bodies, wheels,
+                       lights and shadows share the angle; the chase camera
+                       keeps the road tangent. Ramps retain their curve heading,
+                       accidents retain their existing wreck rotation
 src/render/wheel-material.js axle pivots on tire/hub vertices + one shared
                        per-instance angle buffer per model rotate positions and
                        normals in the vertex shader without extra draw calls;
