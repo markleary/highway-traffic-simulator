@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { Vector3 } from 'three';
+import { Scene, MeshStandardMaterial, Object3D, PerspectiveCamera, Texture, Vector3 } from 'three';
 import { ROAD, SHAPES, pointAt, setShape } from '../src/sim/road.js';
+import { params } from '../src/params.js';
+import { SceneRenderer } from '../src/render/renderer.js';
 import { pavementGeometry } from '../src/render/road-finish.js';
 
 // The batched surface is single-sided. Reversing its index order makes the
@@ -27,4 +29,27 @@ for (const shape of Object.keys(SHAPES)) {
     road.dispose();
   }
 }
-console.log('Pavement geometry passed for all five loops at minimum and maximum lane counts.');
+// The live Lanes slider rebuilds the road alone. Measure the physical verge
+// posts after that exact entry point, including a return to the narrower road.
+setShape('circle');
+const renderer = Object.assign(Object.create(SceneRenderer.prototype), {
+  scene: new Scene(), camera: new PerspectiveCamera(), controls: {}, skyDome: new Object3D(),
+  signAtlas: new Texture(), asphaltMat: new MeshStandardMaterial(),
+  viewFit: () => ({ h: 800 }), applyWeather: () => {},
+});
+for (const lanes of [2, 4, 2]) {
+  params.lanes = lanes;
+  renderer.buildRoad();
+  let minRadius = Infinity;
+  renderer.scene.traverse(obj => {
+    const pos = obj.geometry?.getAttribute('position');
+    if (!pos) return;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > 0.45) minRadius = Math.min(minRadius, Math.hypot(pos.getX(i), pos.getZ(i)));
+    }
+  });
+  const innerEdge = pointAt(0, ROAD.laneWidth / 2 - lanes * ROAD.laneWidth).length();
+  assert.ok(minRadius < innerEdge && minRadius >= innerEdge - 1,
+    'median fixtures follow the live lane count and sit within the one-metre apron');
+}
+console.log('Pavement geometry and live median fixture placement passed.');

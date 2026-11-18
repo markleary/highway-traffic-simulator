@@ -219,8 +219,8 @@ export class SceneRenderer {
     this.rampFlowEls = {};
     this._rain = 0;
     this.buildSky(); // before buildRoad: applyWeather drives the sky uniforms
-    this.buildRoad();
     this.signAtlas = exitAtlas();
+    this.buildRoad();
     this.buildRamps();
     this.buildScenery();
     this.buildWorkZone();
@@ -565,6 +565,8 @@ export class SceneRenderer {
     g.add(new THREE.Mesh(mergeGeometries(edges),
       new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
 
+    // The live Lanes slider rebuilds this group while the ramps stay fixed.
+    g.add(roadsideFixtures(RAMPS, params.lanes, this.signAtlas));
     this.buildBridgeInto(g); // concrete under any elevated span (figure eight)
 
     this.roadGroup = g;
@@ -994,8 +996,7 @@ export class SceneRenderer {
       g.add(labelObj);
     }
     g.add(new THREE.Mesh(mergeGeometries(surfaces), this.asphaltMat),
-      new THREE.Mesh(mergeGeometries(stripes), new THREE.MeshBasicMaterial({ color: 0xcdd1c9, side: THREE.DoubleSide })),
-      roadsideFixtures(RAMPS, params.lanes, this.signAtlas));
+      new THREE.Mesh(mergeGeometries(stripes), new THREE.MeshBasicMaterial({ color: 0xcdd1c9, side: THREE.DoubleSide })));
     this.rampLabelPairs = [...pairs.values()];
     this.rampGroup = g;
     this.scene.add(g);
