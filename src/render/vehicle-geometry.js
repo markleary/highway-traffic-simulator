@@ -5,6 +5,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // buffers contain presentation only; vehicle footprints remain simulation data.
 export const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 
+export function painted(geo, color) {
+  const c = new THREE.Color(color);
+  const count = geo.getAttribute('position').count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) c.toArray(colors, i * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
 export function merge(parts) {
   const normalized = parts.map(g => {
     const out = g.index ? g.toNonIndexed() : g;

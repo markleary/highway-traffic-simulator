@@ -20,6 +20,7 @@ export function buildPanel({ sim, renderer, audio }) {
   let open = !smallScreen();
   let touched = false; // the user toggled the panel: it's theirs now
   const rebuild = () => {
+    const folders = new Map(gui?.folders.map(f => [f._title, !f._closed]));
     if (gui) {
       open = !gui._closed;
       gui.destroy();
@@ -27,6 +28,10 @@ export function buildPanel({ sim, renderer, audio }) {
     }
     // defer: destroying the GUI from inside its own onChange handler
     gui = makeGui({ sim, renderer, audio, onRebuild: () => setTimeout(rebuild, 0) });
+    for (const folder of gui.folders) {
+      const wasOpen = folders.get(folder._title);
+      if (wasOpen !== undefined) folder.open(wasOpen);
+    }
     // user toggles claim the panel. Watch the title CLICK, not onOpenClose:
     // lil-gui routes taps and keyboard Enter/Space through $title.click(),
     // while programmatic open()/close() (rebuild restore, breakpoint flip)
@@ -377,6 +382,8 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
     'Deceleration drivers consider comfortable. They plan their approach to slower traffic so they rarely have to brake harder than this.'
   );
 
+  fDrv.close();
+
   const fLc = gui.addFolder('Lane changing');
   tip(
     fLc.add(params, 'politeness', 0, 1, 0.05).name('Politeness'),
@@ -430,6 +437,8 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
       .onChange((v) => (params.rampSpeed = v * spd)),
     'Target speed on ramp pavement. In the merge zone, entering cars accelerate past this to match mainline traffic.'
   );
+
+  fRamps.close();
 
   const fEvents = gui.addFolder('Events');
   tip(
@@ -495,6 +504,8 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
     'How much road the cones close off. Longer zones move the bottleneck, not its capacity — the queue lives at the taper.'
   );
 
+  fEvents.close();
+
   const fView = gui.addFolder('View');
   // chart toggles: .listen() so a viewport-driven auto flip (watchViewport)
   // shows in the checkbox; .onChange claims the knob for the user for good
@@ -519,7 +530,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   );
   tip(
     fView.add(params, 'scenery').name('Scenery'),
-    'Landscape dressing: trees, hills, clouds. Purely cosmetic — turn it off for maximum frame rate on modest hardware.'
+    'Show farm fields, tree groves, distant ridges and clouds. Switch off for a simpler view on modest hardware.'
   );
   tip(
     fView
@@ -546,7 +557,7 @@ function makeGui({ sim, renderer, audio, onRebuild }) {
   // Opening/collapsing the panel (folders too) resizes the column that
   // renderer.viewFit reserves; re-fit a parked auto view once lil-gui's
   // ~300 ms height transition lands so the measurement sees the final rect.
-  // Registered last: the fLc/fView.close() calls above shouldn't fire it.
+  // Registered last: the initial folder close() calls above shouldn't fire it.
   gui.onOpenClose((changed) => {
     if (changed === gui) document.body.classList.toggle('panel-open', !gui._closed);
     setTimeout(() => renderer.refitView(), 350);

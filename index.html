@@ -13,9 +13,9 @@
   <meta property="og:image" content="https://markleary.github.io/highway-traffic-simulator/assets/social.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Low-poly highway traffic with a semi-truck, police cruiser, Cybertruck and electric cars on a curved freeway with an on-ramp" />
+  <meta property="og:image:alt" content="A semi-truck, police cruiser, Cybertruck and electric sedan pass an on-ramp beneath low-poly hills" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image:alt" content="Low-poly highway traffic with a semi-truck, police cruiser, Cybertruck and electric cars on a curved freeway with an on-ramp" />
+  <meta name="twitter:image:alt" content="A semi-truck, police cruiser, Cybertruck and electric sedan pass an on-ramp beneath low-poly hills" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>" />
   <!-- Installed-app metadata. The manifest carries the icons, the slate
        #46586b splash (same color as the page background, so launching the
@@ -107,16 +107,29 @@
     /* absolute, not fixed: the panels' containing block is #stage, the box
        that actually covers the screen (see above). Same pixels in a
        browser tab, where #stage IS the ICB. */
+    :root {
+      --instrument: #1e302e;
+      --instrument-text: #edf1e8;
+      --instrument-muted: #b6c7be;
+      --signal: #f4c576;
+      --hairline: rgba(201, 220, 207, 0.22);
+      --readout: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
     .panel {
-      position: absolute; color: #dbe4ee; background: rgba(10, 16, 14, 0.72);
-      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
-      padding: 10px 14px; backdrop-filter: blur(6px);
+      position: absolute; color: var(--instrument-text); background: rgba(22, 38, 36, 0.94);
+      border: 1px solid var(--hairline); border-radius: 7px;
+      box-shadow: 0 2px 6px #0f231c26; padding: 10px 14px;
       pointer-events: none; user-select: none;
     }
     .hud { left: 12px; top: 12px; font-size: 13px; line-height: 1.55; min-width: 190px; }
-    .hud h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; letter-spacing: 0.02em; }
-    .hud .row { display: flex; justify-content: space-between; gap: 18px; }
-    .hud .row span:last-child { font-variant-numeric: tabular-nums; color: #fff; }
+    .hud h1 { color: var(--signal); font-size: 14px; margin: 0 0 6px; font-weight: 680; letter-spacing: -0.015em; }
+    .hud h1::before {
+      content: ''; display: inline-block; width: 11px; height: 12px; margin-right: 7px;
+      vertical-align: -1px; border-inline: 2px solid currentColor; transform: skew(-14deg);
+      background: repeating-linear-gradient(to bottom, currentColor 0 3px, transparent 3px 6px) center / 1px 100% no-repeat;
+    }
+    .hud .row { display: flex; justify-content: space-between; gap: 18px; color: var(--instrument-muted); }
+    .hud .row span:last-child { font: 600 0.94em/1.65 var(--readout); color: var(--instrument-text); }
     /* bottom-left dock: the legend, then the hint pushed to the right. One
        flex row whose right edge clears the control panel column (245px +
        15px inset + gap), so the hint shrinks and wraps inside the row —
@@ -134,14 +147,15 @@
       height: 8px; width: 180px; border-radius: 4px;
       background: linear-gradient(to right, hsl(0 90% 50%), hsl(60 90% 50%), hsl(120 70% 45%));
     }
-    .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-top: 4px; }
-    .hint { margin-left: auto; font-size: 11px; color: #9fb0c0; }
+    .legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--instrument-muted); margin-top: 4px; }
+    .hint { margin-left: auto; font-size: 11px; color: var(--instrument-muted); }
     .map-label {
-      color: #dbe4ee; background: rgba(10, 16, 14, 0.78);
-      border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px;
+      color: var(--instrument-text); background: var(--instrument);
+      border: 1px solid var(--hairline); border-radius: 4px;
       padding: 1px 7px; font-size: 11px; white-space: nowrap;
       pointer-events: none; user-select: none;
     }
+    .map-label > :first-child { font-weight: 680; }
     .map-label.on { border-left: 3px solid #7ec8a0; }
     .map-label.off { border-left: 3px solid #d9b64a; }
     .map-label.hover { border-left: 3px solid #3987e5; }
@@ -195,15 +209,22 @@
     .charts canvas { display: block; width: 320px; height: 56px; pointer-events: auto; touch-action: none; }
     .charts canvas.diagram, .charts canvas.fund { height: 120px; }
     .charts canvas.diagram { cursor: crosshair; } /* click-through: flies the camera to that spot */
+    .charts canvas {
+      border-radius: 3px;
+      background-color: #152623;
+      background-image: linear-gradient(to top, #aecabc12 1px, transparent 1px),
+                        linear-gradient(to right, #aecabc0c 1px, transparent 1px);
+      background-size: 100% 25%, 20% 100%;
+    }
     .charts .chart + .chart { margin-top: 6px; }
-    .charts .chead { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c0; margin-bottom: 2px; }
+    .charts .chead { display: flex; justify-content: space-between; font-size: 11px; color: var(--instrument-muted); margin-bottom: 2px; }
     .charts .chead.tall { min-height: 27px; align-items: flex-start; } /* two lines: a wrapping hover readout must not resize the panel */
     .charts .chead i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
     .charts .chead .cval { color: #fff; font-variant-numeric: tabular-nums; }
-    .map-label .sub { font-size: 10px; color: #9fb0c0; font-variant-numeric: tabular-nums; }
+    .map-label .sub { font-size: 10px; color: var(--instrument-muted); font-variant-numeric: tabular-nums; }
     .speedo { left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px 8px; text-align: center; }
     .speedo canvas { display: block; width: 180px; height: 110px; }
-    .speedo .cap { font-size: 11px; color: #9fb0c0; }
+    .speedo .cap { font-size: 11px; color: var(--instrument-muted); }
     /* while the control panel hangs open (main.js/panel.js flag the body),
        center the speedometer in the free strip left of its ~260px column —
        viewport-centering ran it under the panel on mid-width windows and
@@ -262,7 +283,12 @@
     @media (max-width: 760px) {
       .hud { font-size: 11px; line-height: 1.45; min-width: 0; max-width: 46vw; padding: 6px 10px; }
       .hud h1 { font-size: 11px; margin: 0 0 4px; }
-      .hud .row { gap: 10px; }
+      .hud h1::before {
+      content: ''; display: inline-block; width: 11px; height: 12px; margin-right: 7px;
+      vertical-align: -1px; border-inline: 2px solid currentColor; transform: skew(-14deg);
+      background: repeating-linear-gradient(to bottom, currentColor 0 3px, transparent 3px 6px) center / 1px 100% no-repeat;
+    }
+    .hud .row { gap: 10px; }
       .legend .bar { width: 130px; }
       .hint { display: none; } /* the dock row is too narrow for a usefully wrapped tip line */
       .charts { width: min(320px, calc(100vw - 44px)); padding: 8px 8px; }
@@ -280,6 +306,20 @@
     .speedo { bottom: max(12px, env(safe-area-inset-bottom)); }
     /* lil-gui's own fixed inset (top 0, right 15px) ignores the cutout; on
        non-notched screens env() is 0 and these collapse to its defaults */
+    .lil-gui.root, .lil-gui.root .lil-gui {
+      --background-color: var(--instrument); --text-color: var(--instrument-text);
+      --title-background-color: #263c37; --title-text-color: var(--instrument-text);
+      --widget-color: #364b45; --hover-color: #465e53; --focus-color: #526e60;
+      --number-color: var(--signal); --string-color: #a8d2ad;
+    }
+    .lil-gui.root {
+      border-radius: 0 0 7px 7px; box-shadow: 0 2px 7px #0f231c38;
+    }
+    .lil-gui.root > .title {
+      color: var(--signal); box-shadow: inset 3px 0 var(--signal);
+      padding-left: 9px; letter-spacing: 0.035em;
+    }
+    .lil-gui.root .lil-gui > .title { border-color: var(--hairline); }
     .lil-gui.autoPlace {
       top: max(0px, env(safe-area-inset-top));
       right: max(15px, env(safe-area-inset-right));
@@ -289,7 +329,7 @@
        label on touch. Above lil-gui (1001) and the chase button (1002). */
     .gui-tip {
       position: fixed; z-index: 1003; display: none; max-width: 300px;
-      color: #dbe4ee; background: rgba(10, 16, 14, 0.92);
+      color: var(--instrument-text); background: var(--instrument);
       border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px;
       padding: 8px 10px; font: 12px/1.45 system-ui, sans-serif;
       white-space: pre-line; pointer-events: none;
@@ -323,7 +363,7 @@
       max-width: min(92vw, 760px);
     }
     #debug-panel div {
-      color: #9fb0c0; font-size: 10px;
+      color: var(--instrument-muted); font-size: 10px;
       word-break: break-all; margin-top: 3px;
     }
     .boot-error { left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: 320px; font-size: 13px; line-height: 1.5; }

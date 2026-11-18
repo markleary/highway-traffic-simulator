@@ -264,11 +264,11 @@ src/render/renderer.js sizes itself from its CONTAINER (#app inside #stage),
                        its correction after first paint fires no window
                        event at all. setSize(w, h, false) leaves the display
                        size to CSS so canvas and box cannot disagree.
-                       Then: three.js golden-hour diorama: gradient sky dome + sun disc
-                       (camera-tied), cloud carousel, unlit pre-hazed hill ring,
-                       and trees/bushes/rocks scattered by rejection sampling
-                       against a road+ramp keep-out corridor (re-run on shape
-                       changes; `params.scenery` hides the dressing live).
+                       The late-afternoon sky shades uncovered pixels at far depth.
+                       Vertex-lit meadows, grouped trees and instanced ground shadows
+                       surround the loop. Scenery hides farms, vegetation, clouds
+                       and both ridges. Paired ramp labels separate as their
+                       projected anchors converge on small screens.
                        Canvas pointer routing arms crash picks only for the
                        primary button; a button-2 `contextmenu` pick starts
                        the chase. That handler suppresses the native menu
@@ -311,6 +311,11 @@ src/render/renderer.js sizes itself from its CONTAINER (#app inside #stage),
                        one shared wheel pool. Emergency liveries stay fixed;
                        semi trailers are neutral in per-car mode and follow
                        speed/type/hazard colors in analytical modes.
+src/render/countryside.js seeded farm sites, field rows, barns, silos and hedgerows
+                       outside road/ramp clearance circles, plus layered ridge geometry
+src/render/road-finish.js one vertex-colored mainline with baked wheel paths,
+                       wet/dry material shared with ramp paving, median fixtures,
+                       and a single generated atlas for all lettered exit signs
 src/render/passenger.js sedan/hatch shells with actual wheel openings, segmented
                        glazing, separate headlight/indicator lenses and shared rims
 src/render/police.js   black-and-white patrol sedan, procedural POLICE lettering,
