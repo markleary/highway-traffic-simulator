@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, wrap, elevAt } from '../sim/road.js';
+import { ROAD, RAMPS, LOOP, bounds, pointAt, forwardAt, forwardDist, wrap, elevAt } from '../sim/road.js';
 import { params, KMH, MPH, FT } from '../params.js';
 import { isEmergencyVehicle, vehicleLabel } from '../sim/car.js';
 import { buildCybertruckGeometry, CYBERTRUCK_LIGHTS, CYBERTRUCK_WHEELS } from './cybertruck.js';
@@ -13,6 +13,9 @@ import { buildSemiGeometry, SEMI_LIGHTS, SEMI_WHEELS } from './semi.js';
 import { buildAmbulanceGeometry, buildFiretruckGeometry, AMBULANCE_LIGHTS, FIRETRUCK_LIGHTS, AMBULANCE_STROBE, FIRETRUCK_STROBE, AMBULANCE_WHEELS, FIRETRUCK_WHEELS } from './service-vehicles.js';
 import { annotateRollingGeometry, makeWheelMaterial } from './wheel-material.js';
 import { WheelMotion } from './wheel-motion.js';
+import { pavementGeometry, exitAtlas, roadsideFixtures } from './road-finish.js';
+import { painted } from './vehicle-geometry.js';
+import { buildFarms, ridgeGeometry, sceneryRandom } from './countryside.js';
 import { laneChangeYaw } from './lane-change-heading.js';
 
 const MAX_CARS = 1500;
@@ -58,18 +61,21 @@ export function isSecondaryClick(event) {
 // whole scene — sky, fog, hills, clouds — not just the lighting.
 const SKY_R = 4500; // dome base radius; buildRoad rescales it to the far plane
 const SKY = {
-  topDry: new THREE.Color(0x527ab0),
+  topDry: new THREE.Color(0x477fa9),
   topWet: new THREE.Color(0x37445e),
-  horizonDry: new THREE.Color(0xe8c49a),
+  horizonDry: new THREE.Color(0xc9d8cd),
   horizonWet: new THREE.Color(0x5a6675),
 };
 const SUN_DIR = new THREE.Vector3(320, 210, -240).normalize(); // low in the west
+const SUN_HAZE_DRY = new THREE.Color(0xffcb94);
+const SUN_HAZE_WET = new THREE.Color(0x687381);
 const CLOUD_DRY = new THREE.Color(0xf2efe7);
 const CLOUD_WET = new THREE.Color(0x525c66);
-const HILL_DRY = new THREE.Color(0x77866f); // pre-hazed: hills skip the fog
-const HILL_WET = new THREE.Color(0x424c55);
-const GROUND_DRY = new THREE.Color(0x5c6a49);
-const GROUND_WET = new THREE.Color(0x39464a);
+const HILL_DRY = new THREE.Color(0xffffff); // pre-hazed: hills skip the fog
+const HILL_WET = new THREE.Color().setRGB(SKY.horizonWet.r / SKY.horizonDry.r,
+  SKY.horizonWet.g / SKY.horizonDry.g, SKY.horizonWet.b / SKY.horizonDry.b);
+const GROUND_DRY = new THREE.Color(0x73875b);
+const GROUND_WET = new THREE.Color(0x485c55);
 const GLASS_TINT = new THREE.Color(0x263d4c);
 const _sky = new THREE.Color(); // applyWeather scratch
 
@@ -194,9 +200,8 @@ export class SceneRenderer {
     this._environment = proceduralEnvironment(this.renderer);
     this.scene.environment = this._environment.texture;
 
-    this.groundMat = new THREE.MeshStandardMaterial({
+    this.groundMat = new THREE.MeshLambertMaterial({
       color: GROUND_DRY,
-      roughness: 1,
       vertexColors: true,
     });
     const ground = new THREE.Mesh(
@@ -206,6 +211,7 @@ export class SceneRenderer {
     ground.position.y = -0.15;
     this.scene.add(ground);
 
+    this.asphaltMat = new THREE.MeshStandardMaterial({ vertexColors: true });
     this.roadGroup = null;
     this.rampGroup = null;
     this.coneGroup = null;
@@ -214,6 +220,7 @@ export class SceneRenderer {
     this._rain = 0;
     this.buildSky(); // before buildRoad: applyWeather drives the sky uniforms
     this.buildRoad();
+    this.signAtlas = exitAtlas();
     this.buildRamps();
     this.buildScenery();
     this.buildWorkZone();
@@ -262,6 +269,7 @@ export class SceneRenderer {
     this._longPress = 0;
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
+    this._labelSize = new THREE.Vector2();
 
     // Primary-click detection (as opposed to an orbit drag): small movement,
     // quick release. main.js assigns onRoadClick to crash a picked car, and
@@ -537,7 +545,7 @@ export class SceneRenderer {
     if (this.roadGroup) {
       this.roadGroup.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) o.material.dispose();
+        if (o.material && o.material !== this.asphaltMat) o.material.dispose();
       });
       this.scene.remove(this.roadGroup);
     }
@@ -545,58 +553,17 @@ export class SceneRenderer {
     const outer = ROAD.laneWidth / 2; // outer edge of lane 0
     const inner = outer - params.lanes * ROAD.laneWidth;
 
-    const paving = (offOut, offIn, color) =>
-      new THREE.Mesh(
-        loopStrip(offOut, offIn, 0),
-        new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide })
-      );
-    g.add(paving(outer, inner - 1.0, 0x33363b)); // travel lanes + inner apron
-    // breakdown lane: slightly darker strip outside the travel lanes
-    g.add(paving(outer + ROAD.shoulderWidth, outer, 0x2b2e34));
+    g.add(new THREE.Mesh(pavementGeometry(params.lanes), this.asphaltMat));
 
-    const edge = (off, color) =>
-      new THREE.Mesh(
-        loopStrip(off + 0.15, off - 0.15, 0.02),
-        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
-      );
-    g.add(edge(outer - 0.2, 0xc8cfd6)); // white outer edge line
-    g.add(edge(inner + 0.2, 0xd9b64a)); // yellow inner edge line
-
+    const edges = [
+      painted(loopStrip(outer - 0.05, outer - 0.35, 0.028, true).toNonIndexed(), 0xd5d6c7),
+      painted(loopStrip(inner + 0.35, inner + 0.05, 0.028).toNonIndexed(), 0xe6ba58),
+    ];
     for (let l = 1; l < params.lanes; l++) {
-      const off = outer - l * ROAD.laneWidth;
-      // Actual pavement-width paint, not a one-pixel GL line: close chase
-      // views retain a readable stripe. Approx. 10 ft marks / 30 ft gaps.
-      g.add(new THREE.Mesh(
-        dashedLaneGeo(off),
-        new THREE.MeshBasicMaterial({ color: 0xb9c2cc, side: THREE.DoubleSide })
-      ));
+      edges.push(painted(dashedLaneGeo(outer - l * ROAD.laneWidth), 0xcdd1c9));
     }
-
-    // Two subtle wheel-polished ribbons per lane break up the perfectly flat
-    // asphalt. They are one merged mesh, so the extra road detail costs a
-    // single draw call regardless of lane count or loop size.
-    const wear = [];
-    for (let l = 0; l < params.lanes; l++) {
-      const center = -l * ROAD.laneWidth;
-      for (const track of [-0.78, 0.78]) {
-        wear.push(loopStrip(center + track + 0.16, center + track - 0.16, 0.045));
-      }
-    }
-    g.add(
-      new THREE.Mesh(
-        mergeGeometries(wear),
-        new THREE.MeshBasicMaterial({
-          color: 0x1c2025,
-          transparent: true,
-          opacity: 0.16,
-          depthWrite: false,
-          polygonOffset: true,
-          polygonOffsetFactor: -2,
-          polygonOffsetUnits: -2,
-          side: THREE.DoubleSide,
-        })
-      )
-    );
+    g.add(new THREE.Mesh(mergeGeometries(edges),
+      new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
 
     this.buildBridgeInto(g); // concrete under any elevated span (figure eight)
 
@@ -677,6 +644,7 @@ export class SceneRenderer {
     this.skyMat.uniforms.topColor.value.copy(SKY.topDry).lerp(SKY.topWet, r);
     _sky.copy(SKY.horizonDry).lerp(SKY.horizonWet, r);
     this.skyMat.uniforms.horizonColor.value.copy(_sky);
+    this.skyMat.uniforms.sunHaze.value.copy(SUN_HAZE_DRY).lerp(SUN_HAZE_WET, r);
     this.scene.background.copy(_sky); // matches the dome where the far plane clips it
     this.scene.fog.color.copy(_sky); // distance fades into the horizon band
     this.scene.fog.near = h * 1.35 * (1 - 0.45 * r);
@@ -685,6 +653,9 @@ export class SceneRenderer {
     // staying bright under a slate sky (the old black scene hid this)
     this.sun.intensity = 2.1 * (1 - 0.65 * r);
     this.hemi.intensity = 1.0 * (1 - 0.45 * r);
+    // The existing prefiltered sky gives wet aggregate a broad sheen.
+    this.asphaltMat.color.setScalar(1 - 0.40 * r);
+    this.asphaltMat.roughness = 0.96 - 0.57 * r;
     this.scene.environmentIntensity = 0.8 * (1 - 0.65 * r);
     this.sunDisc.material.opacity = 0.9 * Math.max(0, 1 - r * 1.6); // storm swallows the sun first
     // clouds are Lambert-lit for puffy facets but sit on an emissive floor so
@@ -693,9 +664,9 @@ export class SceneRenderer {
     this.cloudMat.color.copy(_sky).multiplyScalar(0.5);
     this.cloudMat.emissive.copy(_sky).multiplyScalar(0.62);
     this.hillMat.color.copy(HILL_DRY).lerp(HILL_WET, r);
-    this.groundMat.color.copy(GROUND_DRY).lerp(GROUND_WET, r);
+    this.groundMat.color.copy(GROUND_DRY).lerp(GROUND_WET, r).multiplyScalar(1.22);
     if (this.terrainReliefMat) {
-      this.terrainReliefMat.color.copy(GROUND_DRY).lerp(GROUND_WET, r);
+      this.terrainReliefMat.color.copy(this.groundMat.color);
     }
     this.sunHalo.material.opacity = 0.16 * Math.max(0, 1 - r * 1.8);
     if (this.rainPts) {
@@ -713,20 +684,27 @@ export class SceneRenderer {
       uniforms: {
         topColor: { value: SKY.topDry.clone() },
         horizonColor: { value: SKY.horizonDry.clone() },
+        sunHaze: { value: SUN_HAZE_DRY.clone() },
+        sunDir: { value: SUN_DIR },
       },
       vertexShader: `
-        varying float vH;
+        uniform vec3 sunDir;
+        varying float vH, vGlow;
         void main() {
-          vH = normalize(position).y;
+          vec3 dir = normalize(position);
+          vH = dir.y;
+          vGlow = pow(max(0.0, dot(dir, sunDir)), 4.0);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_Position.z = gl_Position.w; // use the far depth even when the horizon is beyond the dome
         }`,
       fragmentShader: `
         uniform vec3 topColor;
         uniform vec3 horizonColor;
-        varying float vH;
+        uniform vec3 sunHaze;
+        varying float vH, vGlow;
         void main() {
-          float t = pow(clamp(vH, 0.0, 1.0), 0.55);
-          gl_FragColor = vec4(mix(horizonColor, topColor, t), 1.0);
+          float t = pow(clamp(vH * 1.6, 0.0, 1.0), 0.47);
+          gl_FragColor = vec4(mix(mix(horizonColor, sunHaze, vGlow), topColor, t), 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
@@ -735,7 +713,7 @@ export class SceneRenderer {
       fog: false,
     });
     this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(SKY_R, 24, 12), this.skyMat);
-    this.skyDome.renderOrder = -1; // paint first; everything else draws over it
+    this.skyDome.renderOrder = 1; // shade only the sky pixels left after opaque terrain and traffic
     this.skyDome.frustumCulled = false;
 
     this.sunDisc = new THREE.Mesh(
@@ -770,17 +748,19 @@ export class SceneRenderer {
     // World-fixed (not camera-tied) so they parallax over the map; fog is off
     // because distance fog would eat them entirely on small road scales.
     this.cloudMat = new THREE.MeshLambertMaterial({ color: CLOUD_DRY, flatShading: true, fog: false });
+    const random = sceneryRandom(819);
     const N_CLOUDS = 16;
     const clouds = new THREE.InstancedMesh(cloudGeo(), this.cloudMat, N_CLOUDS);
     const d = new THREE.Object3D();
     for (let i = 0; i < N_CLOUDS; i++) {
-      const a = (i / N_CLOUDS) * Math.PI * 2 + Math.random() * 0.6;
+      const a = (i / N_CLOUDS) * Math.PI * 2 + random() * 0.6;
       // high and pushed out past the biggest road: a low cloud drifting
       // through the default view reads as a boulder sitting on the map
-      const rad = 1000 + Math.random() * 1400;
-      d.position.set(Math.cos(a) * rad, 280 + Math.random() * 150, Math.sin(a) * rad);
-      d.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      d.scale.setScalar(0.8 + Math.random() * 1.1);
+      const rad = 1000 + random() * 1400;
+      d.position.set(Math.cos(a) * rad, 280 + random() * 150, Math.sin(a) * rad);
+      d.rotation.set(0, random() * Math.PI * 2, 0);
+      const k = 1.25 + random() * 1.5;
+      d.scale.set(k * 2.3, k * 0.8, k * 1.3);
       d.updateMatrix();
       clouds.setMatrixAt(i, d.matrix);
     }
@@ -789,24 +769,8 @@ export class SceneRenderer {
     this.cloudSpin.add(clouds);
     this.scene.add(this.cloudSpin);
 
-    // hill ring on the horizon: overlapping low-poly cones, one merged mesh.
-    // Unlit — a lit hill this side of the sun renders as a charcoal wall —
-    // with per-cone brightness baked as vertex color so the overlaps read as
-    // hazy layered ridges. Pre-hazed color instead of fog (they'd sit past
-    // fog.far and vanish).
-    const cones = [];
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2 + Math.random() * 0.2;
-      const rad = 2650 + Math.random() * 850;
-      const hgt = 90 + Math.random() * 170;
-      const cone = new THREE.ConeGeometry(280 + Math.random() * 400, hgt, 5 + Math.floor(Math.random() * 3));
-      cone.rotateY(Math.random() * Math.PI);
-      cone.translate(Math.cos(a) * rad, hgt / 2 - 6, Math.sin(a) * rad);
-      const shade = 0.8 + Math.random() * 0.35;
-      cones.push(colored(cone, new THREE.Color(shade, shade, shade).getHex()));
-    }
     this.hillMat = new THREE.MeshBasicMaterial({ color: HILL_DRY, vertexColors: true, fog: false });
-    this.hillMesh = new THREE.Mesh(mergeGeometries(cones), this.hillMat);
+    this.hillMesh = new THREE.Mesh(ridgeGeometry(SKY.horizonDry), this.hillMat);
     this.scene.add(this.hillMesh);
   }
 
@@ -816,6 +780,7 @@ export class SceneRenderer {
   buildScenery() {
     if (this.greenGroup) {
       this.greenGroup.traverse((o) => {
+        if (o.isInstancedMesh) o.dispose();
         if (o.geometry) o.geometry.dispose();
         if (o.material) o.material.dispose();
       });
@@ -845,54 +810,77 @@ export class SceneRenderer {
     };
     const b = bounds();
     const R = Math.max(b.halfX, b.halfZ) + 420; // scatter square half-size
-    const scatter = (count, dRoad, dRamp, dOther = 0) => {
+    // A geometry-derived seed keeps the landscape fixed across traffic resets
+    // and presets, independent of the simulation's arrival/driver randomness.
+    const random = sceneryRandom(Math.round(LOOP * 100));
+    const clear = (x, z, dRoad, dRamp) =>
+      clearOf(road, x, z, dRoad) && clearOf(ramps, x, z, dRamp);
+    const g = new THREE.Group();
+    const { sites, mesh: farms, hedges } = buildFarms(b, clear, random);
+    if (farms) g.add(farms);
+    const scatter = (count, dRoad, dRamp, spacing = 0, clusters = []) => {
       const out = [];
-      let guard = count * 12; // rejection sampling; dense shapes just get fewer
+      let guard = count * 18;
       while (out.length < count && guard-- > 0) {
-        const x = (Math.random() * 2 - 1) * R;
-        const z = (Math.random() * 2 - 1) * R;
-        const separate = !dOther || out.every(([ox, oz]) => (
-          (ox - x) ** 2 + (oz - z) ** 2 >= dOther ** 2
-        ));
-        if (
-          separate
-          && clearOf(road, x, z, dRoad)
-          && clearOf(ramps, x, z, dRamp)
-        ) out.push([x, z]);
+        const tuft = clusters.length && random() < 0.85
+          ? clusters[Math.floor(random() * clusters.length)] : null;
+        const x = tuft ? tuft[0] + (random() - 0.5) * 36 : (random() * 2 - 1) * R;
+        const z = tuft ? tuft[1] + (random() - 0.5) * 36 : (random() * 2 - 1) * R;
+        const nearFarm = sites.some(site =>
+          (site.x - x) ** 2 + (site.z - z) ** 2 < (site.radius + spacing / 2) ** 2
+        );
+        if (nearFarm || !clear(x, z, dRoad, dRamp)) continue;
+        const spaced = !spacing || out.every(([ox, oz]) =>
+          (ox - x) ** 2 + (oz - z) ** 2 >= spacing ** 2
+        );
+        if (spaced) out.push([x, z]);
       }
       return out;
     };
 
-    const g = new THREE.Group();
     const d = new THREE.Object3D();
     const tint = new THREE.Color();
-    // one InstancedMesh per prop kind; vertex colors carry the trunk/canopy
-    // split and the per-instance color multiplies the whole prop for variety
-    const plant = (geo, spots, s0, ds, autumn = false) => {
-      const mesh = new THREE.InstancedMesh(
-        geo,
-        new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
-        spots.length
-      );
+    const shadows = [];
+    const plant = (geo, spots, s0, ds, shadowRadius, deciduous = false) => {
+      const mesh = new THREE.InstancedMesh(geo,
+        new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }), spots.length);
       spots.forEach(([x, z], i) => {
-        const k = s0 + Math.random() * ds;
-        d.position.set(x, 0, z);
-        d.rotation.set(0, Math.random() * Math.PI * 2, 0);
-        d.scale.set(k, k * (0.9 + Math.random() * 0.25), k);
+        const k = s0 + random() * ds;
+        d.position.set(x, -0.14, z);
+        d.rotation.set(0, random() * Math.PI * 2, 0);
+        d.scale.set(k, k * (0.9 + random() * 0.25), k);
         d.updateMatrix();
         mesh.setMatrixAt(i, d.matrix);
-        const v = 0.85 + Math.random() * 0.3;
-        if (autumn && Math.random() < 0.18) tint.setRGB(1.5 * v, 0.85 * v, 0.4 * v);
+        const v = 0.8 + random() * 0.35;
+        if (deciduous && random() < 0.32) tint.setRGB(1.45 * v, 0.88 * v, 0.49 * v);
         else tint.setRGB(v, v, v);
         mesh.setColorAt(i, tint);
+        shadows.push([x, z, k * shadowRadius]);
       });
-      mesh.frustumCulled = false;
+      mesh.computeBoundingSphere();
       g.add(mesh);
     };
-    plant(pineGeo(), scatter(160, 30, 18), 0.7, 0.7);
-    plant(broadleafGeo(), scatter(120, 30, 18), 0.7, 0.6, true);
-    plant(bushGeo(), scatter(70, 21, 12), 0.8, 0.9);
-    plant(rockGeo(), scatter(30, 19, 12), 0.6, 1.0);
+    const groves = scatter(42, 36, 23, 23);
+    plant(pineGeo(), scatter(135, 27, 15, 4.5, groves), 0.95, 0.85, 3.0);
+    const deciduous = scatter(Math.max(35, 120 - hedges.length), 27, 15, 5, groves);
+    plant(broadleafGeo(), [...hedges, ...deciduous], 0.95, 0.75, 3.5, true);
+    plant(bushGeo(), scatter(64, 21, 12, 2, groves), 0.85, 0.9, 1.35);
+    plant(rockGeo(), scatter(28, 19, 12), 0.8, 1.3, 1.05);
+
+    // Ground contact and the low sun's direction, baked at road-build time.
+    // The whole treeline shares one eight-sided fading footprint template.
+    const shade = new THREE.InstancedMesh(treeShadowGeometry(), new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, depthWrite: false, color: 0x263d36,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    }), shadows.length);
+    shadows.forEach(([x, z, r], i) => {
+      d.position.set(x - SUN_DIR.x * r, -0.10, z - SUN_DIR.z * r);
+      d.rotation.set(0, Math.atan2(SUN_DIR.x, SUN_DIR.z), 0);
+      d.scale.set(r, 1, r * 1.75);
+      d.updateMatrix();
+      shade.setMatrixAt(i, d.matrix);
+    });
+    g.add(shade);
 
     // Sparse, broad mounds make the landscape visibly dimensional from the
     // normal overview without bringing back the coplanar patch overlay that
@@ -903,27 +891,23 @@ export class SceneRenderer {
       Math.min(44, Math.max(26, Math.round(R / 24))),
       115,
       95,
-      100
+      125
     );
-    this.terrainReliefMat = new THREE.MeshStandardMaterial({
-      color: GROUND_DRY.clone().lerp(GROUND_WET, this._rain),
-      roughness: 1,
-      flatShading: true,
-    });
+    this.terrainReliefMat = new THREE.MeshLambertMaterial({ color: this.groundMat.color });
     const mounds = new THREE.InstancedMesh(
       terrainMoundGeo(),
       this.terrainReliefMat,
       moundSpots.length
     );
     moundSpots.forEach(([x, z], i) => {
-      const sx = 38 + Math.random() * 24;
-      const sz = sx * (0.8 + Math.random() * 0.4);
+      const sx = 38 + random() * 24;
+      const sz = sx * (0.8 + random() * 0.4);
       d.position.set(x, -0.15, z);
-      d.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      d.scale.set(sx, 22 + Math.random() * 8, sz);
+      d.rotation.set(0, random() * Math.PI * 2, 0);
+      d.scale.set(sx, 22 + random() * 8, sz);
       d.updateMatrix();
       mounds.setMatrixAt(i, d.matrix);
-      const v = 0.98 + Math.random() * 0.03;
+      const v = 0.98 + random() * 0.03;
       tint.setRGB(v, v, v);
       mounds.setColorAt(i, tint);
     });
@@ -966,7 +950,8 @@ export class SceneRenderer {
     if (this.rampGroup) {
       this.rampGroup.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) o.material.dispose();
+        // The renderer reuses the same wet/dry material across road rebuilds.
+        if (o.material && o.material !== this.asphaltMat) o.material.dispose();
         if (o.isCSS2DObject) o.element.remove(); // CSS2DRenderer never GCs the div itself
       });
       this.scene.remove(this.rampGroup);
@@ -974,19 +959,15 @@ export class SceneRenderer {
     const g = new THREE.Group();
     this.rampFlowEls = {};
     this.meterSignals = []; // {rampId, group, redMat, greenMat}, driven by updateMeters
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x3a3d44,
-      roughness: 1,
-      side: THREE.DoubleSide,
-    });
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xc8cfd6 });
+    const surfaces = [], stripes = [];
+    const pairs = new Map();
     for (const ramp of RAMPS) {
-      g.add(new THREE.Mesh(rampRibbon(ramp.curve, 6.0), mat));
-      // Outer (right-hand) edge line runs the full ramp; the inner one stops
-      // short of the merge/diverge area so it doesn't scribble on the road.
-      g.add(rampEdgeLine(ramp.curve, 2.7, lineMat, 0, 1));
-      if (ramp.type === 'on') g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0, 0.55));
-      else g.add(rampEdgeLine(ramp.curve, -2.7, lineMat, 0.45, 1));
+      surfaces.push(painted(rampStrip(ramp.curve, 3, -3, -0.05), 0x45494b));
+      stripes.push(rampStrip(ramp.curve, 2.8, 2.60, 0.021));
+      // The inner stripe ends where the ramp opens onto the mainline.
+      stripes.push(ramp.type === 'on'
+        ? rampStrip(ramp.curve, -2.60, -2.8, 0.021, 0, 0.55)
+        : rampStrip(ramp.curve, -2.60, -2.8, 0.021, 0.45, 1));
       if (ramp.type === 'on') g.add(this.buildMeter(ramp));
 
       // Label at the ramp's outer end, nudged past the pavement.
@@ -1007,8 +988,15 @@ export class SceneRenderer {
       anchor.y = 2;
       const labelObj = new CSS2DObject(el);
       labelObj.position.copy(anchor);
+      const letter = ramp.id.at(-1);
+      if (!pairs.has(letter)) pairs.set(letter, {});
+      pairs.get(letter)[ramp.type] = labelObj;
       g.add(labelObj);
     }
+    g.add(new THREE.Mesh(mergeGeometries(surfaces), this.asphaltMat),
+      new THREE.Mesh(mergeGeometries(stripes), new THREE.MeshBasicMaterial({ color: 0xcdd1c9, side: THREE.DoubleSide })),
+      roadsideFixtures(RAMPS, params.lanes, this.signAtlas));
+    this.rampLabelPairs = [...pairs.values()];
     this.rampGroup = g;
     this.scene.add(g);
   }
@@ -1746,11 +1734,7 @@ export class SceneRenderer {
     this.sunHalo.lookAt(this.camera.position);
     // scenery toggle applies live (panel writes params, we read — as ever)
     const scenery = !!params.scenery;
-    if (this.greenGroup.visible !== scenery) {
-      this.greenGroup.visible = scenery;
-      this.cloudSpin.visible = scenery;
-      this.hillMesh.visible = scenery;
-    }
+    this.greenGroup.visible = this.cloudSpin.visible = this.hillMesh.visible = scenery;
     if (scenery) this.cloudSpin.rotation.y += 0.003 * dt; // lazy wall-clock drift
     if (this.rainPts.visible) {
       // wall-clock fall (rain is scenery, not physics), sheet follows the camera
@@ -1764,7 +1748,25 @@ export class SceneRenderer {
       this.rainPts.position.set(this.camera.position.x, 0, this.camera.position.z);
     }
     this.renderer.render(this.scene, this.camera);
+    this.spaceRampLabels();
     this.labelRenderer.render(this.scene, this.camera);
+  }
+
+  // A compact screen or a distant camera can project both ends of a diamond
+  // onto the same label. Anchor each card away from its mate as they meet.
+  // Use CSS-pixel camera projections so this costs no DOM layout reads.
+  spaceRampLabels() {
+    const { x: width, y: height } = this.renderer.getSize(this._labelSize);
+    for (const { on, off } of this.rampLabelPairs) {
+      const a = this._v1.copy(on.position).project(this.camera);
+      const b = this._v2.copy(off.position).project(this.camera);
+      const dx = Math.abs(a.x - b.x) * width / 2;
+      const dy = (a.y - b.y) * height / 2;
+      const nearX = 1 - THREE.MathUtils.smoothstep(dx, 82, 108);
+      const shift = nearX * Math.max(0, 1 - Math.abs(dy) / 32) * (dy >= 0 ? 0.56 : -0.56);
+      on.center.y = 0.5 + shift;
+      off.center.y = 0.5 - shift;
+    }
   }
 
   // Measured vs. requested flow, so it's visible when a ramp can't keep up
@@ -1952,9 +1954,15 @@ function proceduralEnvironment(renderer) {
 // radial fan or checkerboard while remaining deterministic between reloads.
 function facetedGroundGeo() {
   const radius = 4000;
-  const divisions = 45;
+  const divisions = 52;
   const step = (radius * 2) / divisions;
   const points = [];
+  // Concentrate vertices in the playable valley, with wider cells at the
+  // fog line. Meadow colors interpolate across the cells on the ground itself.
+  const coord = i => {
+    const t = (i / divisions) * 2 - 1;
+    return radius * (0.22*t + 0.78*t*t*t);
+  };
   const hash = (x, z, salt = 0) => {
     const n = Math.sin(x * 127.1 + z * 311.7 + salt * 73.3) * 43758.5453;
     return n - Math.floor(n);
@@ -1963,11 +1971,11 @@ function facetedGroundGeo() {
     const row = [];
     for (let ix = 0; ix <= divisions; ix++) {
       const edge = ix === 0 || iz === 0 || ix === divisions || iz === divisions;
-      const jitter = edge ? 0 : step * 0.15;
+      const jitter = edge ? 0 : Math.min(coord(ix+1)-coord(ix), coord(iz+1)-coord(iz)) * 0.55;
       row.push([
-        -radius + ix * step + (hash(ix, iz, 1) - 0.5) * jitter,
+        coord(ix) + (hash(ix, iz, 1) - 0.5) * jitter,
         0,
-        -radius + iz * step + (hash(ix, iz, 2) - 0.5) * jitter,
+        coord(iz) + (hash(ix, iz, 2) - 0.5) * jitter,
       ]);
     }
     points.push(row);
@@ -1978,15 +1986,17 @@ function facetedGroundGeo() {
   const normals = [];
   const addTriangle = (a, b, c, value) => {
     positions.push(...a, ...b, ...c);
-    for (let i = 0; i < 3; i++) {
-      colors.push(value, value, value);
+    for (const [x, , z] of [a,b,c]) {
+      const meadow = Math.sin(x * 0.014 + Math.sin(z * 0.009)) * Math.cos(z * 0.012)
+        + 0.45 * Math.sin(x * 0.032 - z * 0.017);
+      colors.push(value*(1 + 0.15*meadow), value*(1 + 0.085*meadow), value*(1 - 0.055*meadow));
       normals.push(0, 1, 0);
     }
   };
   for (let iz = 0; iz < divisions; iz++) {
     for (let ix = 0; ix < divisions; ix++) {
-      const cx = -radius + (ix + 0.5) * step;
-      const cz = -radius + (iz + 0.5) * step;
+      const cx = coord(ix + 0.5);
+      const cz = coord(iz + 0.5);
       if (cx * cx + cz * cz > (radius + step * 0.65) ** 2) continue;
       const a = points[iz][ix];
       const b = points[iz][ix + 1];
@@ -2030,50 +2040,42 @@ function contactShadowGeo() {
 
 // --- scenery geometry ------------------------------------------------------
 
-// Paint a whole geometry one vertex color (normalized to non-indexed so mixed
-// primitives can merge), letting one vertex-colored material carry a prop's
-// trunk/canopy split in a single instanced draw.
-function colored(geo, hex) {
-  const g = geo.index ? geo.toNonIndexed() : geo;
-  const c = new THREE.Color(hex);
-  const n = g.attributes.position.count;
-  const arr = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) arr.set([c.r, c.g, c.b], i * 3);
-  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+function treeShadowGeometry() {
+  const g = new THREE.CircleGeometry(1, 8).rotateX(-Math.PI / 2);
+  const rgba = new Float32Array(g.attributes.position.count * 4);
+  for (let i = 0; i < g.attributes.position.count; i++) rgba.set([1, 1, 1, i === 0 ? 0.47 : 0], i * 4);
+  g.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
   return g;
 }
 
 function pineGeo() {
-  return mergeGeometries([
-    colored(new THREE.CylinderGeometry(0.22, 0.3, 1.6, 6).translate(0, 0.8, 0), 0x7a5a3e),
-    colored(new THREE.ConeGeometry(2.3, 3.4, 7).translate(0, 3.0, 0), 0x41684a),
-    colored(new THREE.ConeGeometry(1.7, 2.8, 7).translate(0, 5.1, 0), 0x487252),
-    colored(new THREE.ConeGeometry(1.05, 2.1, 7).translate(0, 6.9, 0), 0x50795a),
-  ]);
+  const trunk = new THREE.CylinderGeometry(0.24, 0.33, 2.2, 5, 1, true).translate(0, 1.1, 0);
+  const tiers = [[2.6, 4.6, 3.45, 0x365d4c], [2.0, 3.8, 5.45, 0x466f58], [1.3, 3.5, 7.0, 0x598064]];
+  const parts = [painted(trunk.toNonIndexed(), 0x70543c)];
+  tiers.forEach(([radius, height, y, color], i) => {
+    const tier = new THREE.ConeGeometry(radius, height, 6, 1, true).rotateY(i * 0.35).translate(0, y, 0);
+    parts.push(painted(tier.toNonIndexed(), color));
+  });
+  return mergeGeometries(parts);
 }
 
 function broadleafGeo() {
+  const trunk = new THREE.CylinderGeometry(0.3, 0.5, 3.8, 5, 1, true).translate(0, 1.9, 0);
+  const crown = (r, x, y, z, color) =>
+    painted(new THREE.IcosahedronGeometry(r, 0).scale(1, 0.88, 1).translate(x, y, z), color);
   return mergeGeometries([
-    colored(new THREE.CylinderGeometry(0.26, 0.36, 2.4, 6).translate(0, 1.2, 0), 0x7a5a3e),
-    colored(
-      new THREE.IcosahedronGeometry(2.7, 0).scale(1, 0.85, 1).translate(0, 4.3, 0),
-      0x5e8a4a
-    ),
+    painted(trunk.toNonIndexed(), 0x715943),
+    crown(3.4, 0.4, 5.2, 0, 0x729454),
+    crown(2.4, -1.65, 3.8, 0.45, 0x597e50),
   ]);
 }
 
 function bushGeo() {
-  return colored(
-    new THREE.IcosahedronGeometry(1.2, 0).scale(1, 0.62, 1).translate(0, 0.6, 0),
-    0x628549
-  );
+  return painted(new THREE.IcosahedronGeometry(1.4, 0).scale(1, 0.72, 1).translate(0, 0.7, 0), 0x738551);
 }
 
 function rockGeo() {
-  return colored(
-    new THREE.DodecahedronGeometry(1.0, 0).scale(1, 0.7, 1).translate(0, 0.45, 0),
-    0x969a92
-  );
+  return painted(new THREE.DodecahedronGeometry(1.15, 0).scale(1, 0.7, 1).translate(0, 0.48, 0), 0xa4a393);
 }
 
 // A broad, shallow irregular dome with two rings of deliberately flat faces.
@@ -2126,9 +2128,9 @@ function cloudGeo() {
 
 // Triangle strip swept around the whole loop between two lateral offsets
 // (positive = outward of lane 0's centerline), riding the shape's elevation
-// (pointAt's y) with `y` added as a small lift. Used for pavement and the
-// solid edge lines; same vertex layout and winding as rampRibbon below.
-function loopStrip(offOut, offIn, y) {
+// (pointAt's y) with `y` added as a small lift. Used for edge paint,
+// with the same vertex layout and winding as the ramp strips.
+function loopStrip(offOut, offIn, y, markJunctions = false) {
   const N = Math.ceil(LOOP / 2); // ~2 m samples: chord error is sub-mm at our radii
   const positions = new Float32Array((N + 1) * 2 * 3);
   const normals = new Float32Array((N + 1) * 2 * 3);
@@ -2148,6 +2150,9 @@ function loopStrip(offOut, offIn, y) {
     positions[o + 5] = b.z;
     normals.set([0, 1, 0, 0, 1, 0], o);
     if (i < N) {
+      // Short broken paint opens the shoulder line through each merge/diverge.
+      if (markJunctions && i % 3 !== 0 && RAMPS.some(ramp =>
+        (ramp.type === 'on' ? forwardDist(s, ramp.sJoin) : forwardDist(ramp.sDiverge, s)) < 38)) continue;
       const v = i * 2;
       indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
     }
@@ -2188,30 +2193,9 @@ function bridgeSkirt(s0, s1, off) {
   return geo;
 }
 
-// Edge line following a curve at a lateral offset (+ = right of travel),
-// drawn only over the [u0, u1] stretch of the curve.
-function rampEdgeLine(curve, offset, material, u0, u1) {
-  const pts = [];
-  const p = new THREE.Vector3();
-  const t = new THREE.Vector3();
-  const side = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
-  const N = 60;
-  for (let i = 0; i <= N; i++) {
-    const u = u0 + (i / N) * (u1 - u0);
-    curve.getPointAt(u, p);
-    curve.getTangentAt(u, t);
-    side.crossVectors(t, up).normalize();
-    pts.push(new THREE.Vector3(p.x + side.x * offset, 0.02, p.z + side.z * offset));
-  }
-  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), material);
-}
-
-// Flat ribbon mesh following a curve, used for ramp pavement. Sits slightly
-// below the main road so the overlap near merge/diverge points never z-fights.
-function rampRibbon(curve, width) {
-  const N = 80;
-  const half = width / 2;
+// Physical-width paint and pavement use the same curve samples at junctions.
+function rampStrip(curve, outside, inside, height, u0 = 0, u1 = 1) {
+  const N = Math.ceil(80 * (u1 - u0));
   const positions = new Float32Array((N + 1) * 2 * 3);
   const normals = new Float32Array((N + 1) * 2 * 3);
   const indices = [];
@@ -2220,17 +2204,17 @@ function rampRibbon(curve, width) {
   const side = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
   for (let i = 0; i <= N; i++) {
-    const u = i / N;
+    const u = u0 + (u1 - u0) * i / N;
     curve.getPointAt(u, p);
     curve.getTangentAt(u, t);
     side.crossVectors(t, up).normalize();
     const o = i * 6;
-    positions[o] = p.x + side.x * half;
-    positions[o + 1] = -0.05;
-    positions[o + 2] = p.z + side.z * half;
-    positions[o + 3] = p.x - side.x * half;
-    positions[o + 4] = -0.05;
-    positions[o + 5] = p.z - side.z * half;
+    positions[o] = p.x + side.x * outside;
+    positions[o + 1] = height;
+    positions[o + 2] = p.z + side.z * outside;
+    positions[o + 3] = p.x + side.x * inside;
+    positions[o + 4] = height;
+    positions[o + 5] = p.z + side.z * inside;
     normals.set([0, 1, 0, 0, 1, 0], o);
     if (i < N) {
       const a = i * 2;

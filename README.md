@@ -1,6 +1,6 @@
 # Highway Traffic Simulator
 
-[![Low-poly highway traffic with a semi-truck, police cruiser, Cybertruck and electric cars on a curved freeway with an on-ramp](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
+[![A semi-truck, police cruiser, Cybertruck and electric sedan pass an on-ramp beneath low-poly hills](assets/social.png)](https://markleary.github.io/highway-traffic-simulator/)
 
 **[▶ Try it live](https://markleary.github.io/highway-traffic-simulator/)** — no install, works on phones (and adds to the home screen as a full-screen app).
 
@@ -58,6 +58,9 @@ Push this repository to GitHub, then: **Settings → Pages → Source: Deploy fr
 branch → `main` / root**. That's it — there is nothing to build.
 
 ## Controls
+
+Simulation and Road start expanded on desktop. Open the other folders as needed.
+Your open folders stay open when you change units, road layout, or scenario.
 
 - **Scenario dropdown** (top of the panel) — one-click demo setups that stage
   the good regimes and reset: Rush hour, Metered rush hour, Accident storm,
@@ -151,7 +154,7 @@ branch → `main` / root**. That's it — there is nothing to build.
     **by type** (human / adaptive cruise / truck, matching the legend), or per
     car (stainless steel for Cybertrucks); live charts, **space-time diagram**, and **fundamental diagram**
     toggles; an FPS counter; a **Scenery** toggle for the landscape dressing
-    (trees, hills, clouds — off for modest GPUs); overhead vs. perspective
+    (fields, farmsteads, tree groves, ridges and clouds — off for modest GPUs); overhead vs. perspective
     camera; and a **chase camera** that rides along behind a random car with a
     working speedometer — hold the mouse to swing the camera around the car
     (Esc to exit). Chase view also shows the vehicle art up close: faceted
@@ -203,6 +206,11 @@ wait until the window is tall enough to hold them without riding up over the
 stats panel. The defaults keep re-deriving as you resize or rotate (once you
 flip a toggle yourself, your setting wins), and the camera re-frames itself
 around whichever panels are actually open.
+
+For a roadside view, choose **View → Car colors → Per car** and chase a car
+past a green exit sign. The letter matches the ramp on the map. The solid
+shoulder line breaks into short dashes where traffic joins or leaves. Raise
+**Events → Rain (steady)** to see the pavement darken and catch the sky.
 
 Try it: pick **Rush hour** from the Scenario dropdown and watch jams grow
 backwards from the merge points — then pick **Metered rush hour** with the
@@ -270,9 +278,11 @@ All vehicle geometry remains procedural. Each vehicle family has a geometry
 provider returning named instanced parts with a common meter-scale coordinate system;
 an authored glTF/GLB could supply that contract later without changing driver
 behavior. No asset loader or additional runtime dependency is needed today.
-The landscape uses sparse, broad faceted ground relief, faint wheel-wear
-ribbons, and a polygonal sun halo to keep the diorama graphic without looking
-busy. A small generated environment supplies soft sky reflections for metal
+Farm fields, red barns, silos and hedgerows give each loop recognizable
+landmarks. The field layout repeats when you return to the same road setup.
+Two layers of faceted hills catch the haze behind the treeline. Wheel wear is
+colored into the pavement, and small groups of guardrails mark exits and the
+figure-eight bridge. A small generated environment supplies soft sky reflections for metal
 and glass, the sky shares the scene's color conversion, and dashed lane paint
 has physical width so it remains readable in chase view. Rain
 grades the whole scene: the sky dome, terrain, clouds, hills, and fog all darken
@@ -304,6 +314,6 @@ Model references: [IDM/ACC and driver parameters](https://traffic-simulation.de/
 [human response and anticipation](https://www.mtreiber.de/publications/timedelay_CACAIE_07.pdf),
 and [FHWA guidance on variable entry headways](https://ops.fhwa.dot.gov/trafficanalysistools/tat_vol4/app_e.htm).
 
-Keep procedural low-poly art as the default. Authored low-poly glTF/GLB vehicle
-parts remain an option if visual iteration becomes cumbersome, provided they
+Keep future roadside landmarks procedural and batched, with the Scenery toggle
+available for simpler views. Authored low-poly glTF/GLB vehicle parts remain an option if visual iteration becomes cumbersome, provided they
 preserve instancing, physical dimensions, live colors, and small material counts.
